@@ -42,7 +42,11 @@ Reason Network Chat 把它们放到同一个页面。
 </tr>
 <tr>
 <td width="50%" valign="top"><img src="docs/why/zh/card-3.svg" width="100%" alt="就地发送：发送框替你调用 reason network send"></td>
-<td width="50%" valign="top"><img src="docs/why/zh/card-4.svg" width="100%" alt="只读，仅限本机：数据库以只读方式打开，只监听 127.0.0.1"></td>
+<td width="50%" valign="top"><img src="docs/why/zh/card-4.svg" width="100%" alt="就地启动会话：选文件夹、智能体、模型、强度，列表都来自智能体本身"></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/why/zh/card-5.svg" width="100%" alt="只在本机：数据库只读，只监听 127.0.0.1，每个操作都校验令牌"></td>
+<td></td>
 </tr>
 </table>
 
@@ -78,15 +82,48 @@ Reason Network Chat 把它们放到同一个页面。
 | 只看一个会话 | 在左栏点它，或点气泡上的名字。 |
 | 给智能体发消息 | 在 **发送给** 里选择，输入后按 Enter。Shift+Enter 换行。 |
 | 留言但不打断对方 | 勾选 **不唤醒**，消息只进收件箱。 |
+| 启动智能体 | **+ 新会话**，见[下文](#启动新会话)。 |
 | 切换语言 | 左上角 KO / EN / 中。 |
 
 你发的消息署名为 `<你的名字>/terminal`，回复会自动出现在时间线里。
+
+## 启动新会话
+
+<p align="center">
+  <img src="docs/launcher.zh.svg" width="560" alt="新会话表单：文件夹、智能体（Claude Code、Codex、Antigravity）、运行方式（网络 worker 或终端窗口）、模型、推理强度、会话名称。">
+</p>
+
+**+ 新会话** 依次询问文件夹、智能体、运行方式，最后选模型和推理强度。
+列表不写死在代码里：模型列表来自所选智能体，强度列表来自所选模型。
+
+| 智能体 | 模型列表来源 | 强度列表来源 |
+|---|---|---|
+| Codex | `~/.codex/models_cache.json` | 该模型支持的档位 |
+| Claude Code | `claude --help` 中的别名，加上 `~/.claude.json` 里的额外模型 | `claude --help` 中的 `--effort` |
+| Antigravity | `agy models` | 模型 id 的结尾（`-low`、`-high` …） |
+
+运行方式有两种：
+
+| | 网络 worker | 终端窗口 |
+|---|---|---|
+| 启动的是 | `reason network serve`（无界面） | 在新窗口中运行智能体自己的 CLI |
+| 何时回复消息 | 立即，你不在时也会回复 | 该会话下一轮运行时 |
+| 能否直接输入 | 不能 | 能 |
+| 支持的智能体 | Claude Code、Codex | Claude Code、Codex、Antigravity（Windows） |
+
+为什么分两种：空闲的应用或 CLI 会话可能要到下一轮才读消息。想在本页提问的会话用 worker，想亲自操作的会话开窗口。
+
+- 关闭页面后 worker 仍在运行。在列表中选中它，点 **停止 worker**，网络上会显示为已停止。
+- 终端窗口在智能体开始会话后出现在列表里。Codex 在你发出第一条提示时才开始会话。
+- `reason network serve` 没有模型选项。Codex worker 通过 `~/.reason-network-chat/codex-shim` 里的小启动器拿到模型，
+  Claude worker 通过 `ANTHROPIC_MODEL` 和 `CLAUDE_CODE_EFFORT_LEVEL`。
 
 ## 须知
 
 - 空闲的 Codex **桌面应用** 会话可能要等到下一轮才收取消息。用 `reason network serve` 启动的智能体会立即回复。
 - 时间线只显示经过本机的消息。多台电脑组成的网络里，每台电脑只看到自己的那部分。
 - 页面会显示智能体消息原文。服务只监听 127.0.0.1，其他电脑无法访问。
+  发送、启动、停止都需要页面加载时拿到的令牌，其他网站无法代为触发。
 - 非官方工具，与 Reason 无关。
 
 ## 故障排查

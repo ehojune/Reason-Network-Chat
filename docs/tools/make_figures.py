@@ -1,7 +1,8 @@
 """Generate the README figures in ko/en/zh: python docs/tools/make_figures.py
 
-Writes docs/how-it-works.<lang>.svg, docs/screen.<lang>.svg and docs/why/<lang>/card-<n>.svg.
-Edit the TEXT table and rerun; never hand-edit the SVGs.
+Writes docs/how-it-works.<lang>.svg, docs/screen.<lang>.svg, docs/launcher.<lang>.svg and
+docs/why/<lang>/card-<n>.svg. Edit the TEXT table and rerun; never hand-edit the SVGs.
+All data in the pictures is made up.
 """
 from pathlib import Path
 from xml.sax.saxutils import escape as x
@@ -13,54 +14,77 @@ MONO = '"Consolas", "Menlo", monospace'
 C = {"claude": "#C96442", "codex": "#2563EB", "agent": "#7C3AED", "cli": "#0F766E", "me": "#C96442",
      "busy": "#D97706", "idle": "#16A34A", "off": "#A3A3A3", "ink": "#1F2328", "sub": "#57606A", "line": "#D0D7DE"}
 
+CARDS = ["room", "status", "send", "launch", "local"]  # README order
+CARD_COLORS = {"room": ("#FFF9E8", "#E3B341", "#FFF0BE", "#9A6700"), "status": ("#F0F6FF", "#79A8F2", "#DCEBFF", "#1F6FEB"),
+               "send": ("#F0FAF3", "#6CC08B", "#D8F2E0", "#1A7F37"), "launch": ("#F6F2FF", "#B69CF5", "#EDE5FF", "#7C3AED"),
+               "local": ("#F6F8FA", "#D0D7DE", "#EAEEF2", "#57606A")}
+
 TEXT = {
     "ko": {
-        "cards": [
-            ("한 방에서 본다", "Claude, Codex 같은 여러 에이전트", "대화를 타임라인 하나로"),
-            ("누가 일하는지 보인다", "작업 중인지 대기 중인지,", "무슨 일을 하는지 왼쪽에"),
-            ("여기서 바로 보낸다", "보내기 칸이 reason network", "send를 대신 불러 준다"),
-            ("읽기만, 이 PC에서만", "DB는 읽기 전용으로 열고", "127.0.0.1에만 묶인다"),
-        ],
+        "cards": {
+            "room": ("한 방에서 본다", "Claude, Codex 같은 여러 에이전트", "대화를 타임라인 하나로"),
+            "status": ("누가 일하는지 보인다", "작업 중인지 대기 중인지,", "무슨 일을 하는지 왼쪽에"),
+            "send": ("여기서 바로 보낸다", "보내기 칸이 reason network", "send를 대신 불러 준다"),
+            "launch": ("여기서 세션을 연다", "폴더·에이전트·모델·강도를 고른다", "목록은 에이전트가 직접 준다"),
+            "local": ("이 PC 안에서만", "DB는 읽기 전용, 127.0.0.1에만,", "모든 동작에 토큰 확인"),
+        },
         "flow": ("에이전트 세션", "Reason Network 데몬", "Reason Network Chat", "읽기: SQLite 읽기 전용 + who --json",
-                 "보내기: reason network send", "Claude 데스크톱 Browser pane 또는 아무 브라우저"),
+                 "보내기: reason network send", "Claude 데스크톱 Browser pane 또는 아무 브라우저",
+                 "시작: reason network serve 또는 터미널 창"),
         "busy": "작업 중", "idle": "대기", "gone": "종료됨", "all": "전체 대화", "online": "접속 중",
         "history": "기록에만 남은 세션", "send": "보내기", "to": "받는 세션", "me": "나",
-        "ph": "메시지 (Enter 보내기)",
+        "ph": "메시지 (Enter 보내기)", "new": "+ 새 세션", "wk": "워커",
         "msgs": ["결제 webhook이 5xx에 재시도해?", "응, 지수 백오프로 3번. retry.ts 42행 참고.",
                  "README 설치 표 갱신 부탁해", "갱신했어. 3줄 바뀜."],
         "day": "2026년 10월 23일 (금)", "read": "읽음", "others": "다른 에이전트",
+        "lf": {"title": "새 세션 열기", "folder": "폴더", "agent": "에이전트", "runAs": "실행 방식", "model": "모델",
+               "effort": "추론 강도", "name": "세션 이름", "worker": "네트워크 워커", "window": "터미널 창",
+               "hint": "reason network serve로 띄우는 헤드리스 에이전트. 메시지에 바로 답한다.",
+               "cancel": "취소", "start": "시작"},
     },
     "en": {
-        "cards": [
-            ("One room", "Claude, Codex and other agents", "in one timeline"),
-            ("See who's busy", "Busy or idle, and what each", "session is doing right now"),
-            ("Reply from here", "The send box runs", "reason network send for you"),
-            ("Read-only, local", "Opens the database read-only,", "listens on 127.0.0.1 only"),
-        ],
+        "cards": {
+            "room": ("One room", "Claude, Codex and other agents", "in one timeline"),
+            "status": ("See who's busy", "Busy or idle, and what each", "session is doing right now"),
+            "send": ("Reply from here", "The send box runs", "reason network send for you"),
+            "launch": ("Start a session", "Folder, agent, model, effort:", "each list comes from the agent"),
+            "local": ("Local and guarded", "Database read-only, 127.0.0.1,", "a token on every action"),
+        },
         "flow": ("Agent sessions", "Reason Network daemon", "Reason Network Chat", "read: SQLite read-only + who --json",
-                 "send: reason network send", "Claude desktop Browser pane, or any browser"),
+                 "send: reason network send", "Claude desktop Browser pane, or any browser",
+                 "start: reason network serve or a terminal window"),
         "busy": "busy", "idle": "idle", "gone": "gone", "all": "All messages", "online": "Online",
         "history": "History only", "send": "Send", "to": "To", "me": "me",
-        "ph": "Message (Enter to send)",
+        "ph": "Message (Enter to send)", "new": "+ New session", "wk": "worker",
         "msgs": ["Does the billing webhook retry on 5xx?", "Yes, 3 times with backoff. See retry.ts:42.",
                  "Please update the install table in the README", "Done, 3 lines changed."],
         "day": "Fri, October 23, 2026", "read": "read", "others": "Other agents",
+        "lf": {"title": "Start a new session", "folder": "Folder", "agent": "Agent", "runAs": "Run as", "model": "Model",
+               "effort": "Effort", "name": "Session name", "worker": "Network worker", "window": "Terminal window",
+               "hint": "A headless agent started with reason network serve. It answers messages right away.",
+               "cancel": "Cancel", "start": "Start"},
     },
     "zh": {
-        "cards": [
-            ("一个房间看全部", "Claude、Codex 等智能体", "的消息汇成一条时间线"),
-            ("谁在忙一目了然", "工作中还是空闲、", "正在做什么，都在左栏"),
-            ("就地发送", "发送框替你调用", "reason network send"),
-            ("只读，仅限本机", "数据库以只读方式打开，", "只监听 127.0.0.1"),
-        ],
+        "cards": {
+            "room": ("一个房间看全部", "Claude、Codex 等智能体", "的消息汇成一条时间线"),
+            "status": ("谁在忙一目了然", "工作中还是空闲、", "正在做什么，都在左栏"),
+            "send": ("就地发送", "发送框替你调用", "reason network send"),
+            "launch": ("就地启动会话", "选文件夹、智能体、模型、强度，", "列表都来自智能体本身"),
+            "local": ("只在本机", "数据库只读，只监听 127.0.0.1，", "每个操作都校验令牌"),
+        },
         "flow": ("智能体会话", "Reason Network 守护进程", "Reason Network Chat", "读取：SQLite 只读 + who --json",
-                 "发送：reason network send", "Claude 桌面版 Browser pane 或任意浏览器"),
+                 "发送：reason network send", "Claude 桌面版 Browser pane 或任意浏览器",
+                 "启动：reason network serve 或终端窗口"),
         "busy": "工作中", "idle": "空闲", "gone": "已结束", "all": "全部消息", "online": "在线",
         "history": "仅在记录中", "send": "发送", "to": "发送给", "me": "我",
-        "ph": "输入消息（Enter 发送）",
+        "ph": "输入消息（Enter 发送）", "new": "+ 新会话", "wk": "worker",
         "msgs": ["支付 webhook 遇到 5xx 会重试吗？", "会，指数退避重试 3 次，见 retry.ts:42。",
                  "请更新 README 里的安装表格", "已更新，改了 3 行。"],
         "day": "2026年10月23日 周五", "read": "已读", "others": "其他智能体",
+        "lf": {"title": "启动新会话", "folder": "文件夹", "agent": "智能体", "runAs": "运行方式", "model": "模型",
+               "effort": "推理强度", "name": "会话名称", "worker": "网络 worker", "window": "终端窗口",
+               "hint": "用 reason network serve 启动的无界面智能体，收到消息立即回复。",
+               "cancel": "取消", "start": "启动"},
     },
 }
 
@@ -106,16 +130,16 @@ def pill(xc, y, label, fill, w=None):
 
 
 def card(n, lang):
+    kind = CARDS[n - 1]
     t = TEXT[lang]
-    head, l1, l2 = t["cards"][n - 1]
-    bg, stroke, blob, num = [("#FFF9E8", "#E3B341", "#FFF0BE", "#9A6700"), ("#F0F6FF", "#79A8F2", "#DCEBFF", "#1F6FEB"),
-                             ("#F0FAF3", "#6CC08B", "#D8F2E0", "#1A7F37"), ("#F6F8FA", "#D0D7DE", "#EAEEF2", "#57606A")][n - 1]
+    head, l1, l2 = t["cards"][kind]
+    bg, stroke, blob, num = CARD_COLORS[kind]
     parts = [f'<rect x=".5" y=".5" width="479" height="259" rx="18" fill="{bg}" stroke="{stroke}"/>',
              f'<circle cx="380" cy="130" r="92" fill="{blob}"/>',
              f'<circle cx="42" cy="74" r="14" fill="{num}"/><text class="n" x="42" y="79" text-anchor="middle">{n}</text>',
              f'<text class="h" x="28" y="128">{x(head)}</text>',
              f'<text class="l" x="28" y="164">{x(l1)}</text><text class="l" x="28" y="188">{x(l2)}</text>']
-    if n == 1:  # three agents flow into one window
+    if kind == "room":  # three agents flow into one window
         for i, (k, label) in enumerate([("claude", "claude"), ("codex", "codex"), ("agent", "agent")]):
             y = 62 + i * 52
             parts.append(f'<rect x="262" y="{y}" width="52" height="24" rx="12" fill="{C[k]}"/>'
@@ -130,7 +154,7 @@ def card(n, lang):
             parts.append(f'<rect x="{xx}" y="{y}" width="{w}" height="24" rx="10" fill="{"#F0E6DC" if right else "#FFFFFF"}" stroke="#D0D7DE"/>'
                          f'<rect x="{xx + 6}" y="{y + 10}" width="6" height="6" rx="3" fill="{C[k]}"/>'
                          f'<path d="M{xx + 18} {y + 13}h{w - 28}" stroke="#8C959F" stroke-width="3" stroke-linecap="round"/>')
-    elif n == 2:  # session list with status dots
+    elif kind == "status":  # session list with status dots
         parts.append('<rect x="290" y="38" width="174" height="184" rx="10" fill="#FFFFFF" stroke="#57606A" stroke-width="2"/>')
         rows = [("api-claude", "claude", "busy", t["busy"]), ("web-codex", "codex", "idle", t["idle"]),
                 ("docs-agent", "agent", "idle", t["idle"]), ("ask-3f2a", "cli", "off", t["gone"])]
@@ -141,7 +165,7 @@ def card(n, lang):
                          f'<rect x="318" y="{y + 19}" width="34" height="13" rx="3" fill="{C[k]}"/>'
                          f'<path d="M358 {y + 26}h{40 if s == "busy" else 26}" stroke="#D0D7DE" stroke-width="3" stroke-linecap="round"/>'
                          + pill(456 - max(40, tw(label, 11) + 14) / 2, y, label, C[s], max(40, tw(label, 11) + 14)))
-    elif n == 3:  # send box, then the agent's answer comes back
+    elif kind == "send":  # send box, then the agent's answer comes back
         parts.append('<rect x="300" y="40" width="150" height="34" rx="12" fill="#FFFFFF" stroke="#D0D7DE"/>'
                      f'<rect x="310" y="51" width="38" height="13" rx="3" fill="{C["codex"]}"/>'
                      '<path d="M354 57h84" stroke="#8C959F" stroke-width="3" stroke-linecap="round"/>'
@@ -153,19 +177,38 @@ def card(n, lang):
                      '<path d="M434 194h16M444 188l6 6-6 6" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'
                      '<path d="M442 170C442 150 430 140 410 132" fill="none" stroke="#1A7F37" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#a-green)"/>'
                      '<path d="M330 92C318 86 316 80 318 78" fill="none" stroke="#2563EB" stroke-width="2" marker-end="url(#a-codex)"/>')
-    else:  # read-only and localhost only
+    elif kind == "launch":  # a small new-session form: folder, agent chips, model and effort, start
+        parts.append('<rect x="292" y="34" width="172" height="192" rx="10" fill="#FFFFFF" stroke="#57606A" stroke-width="2"/>'
+                     '<path d="M306 54h8l3 3h14v11h-25z" fill="#D4A72C"/>'
+                     '<rect x="338" y="52" width="112" height="18" rx="5" fill="#F6F8FA" stroke="#D0D7DE"/>'
+                     '<path d="M346 61h70" stroke="#8C959F" stroke-width="3" stroke-linecap="round"/>')
+        for i, (k, on) in enumerate([("claude", False), ("codex", True), ("agent", False)]):
+            xx = 306 + i * 50
+            parts.append(f'<rect x="{xx}" y="86" width="44" height="20" rx="10" fill="{C[k] if on else "#FFFFFF"}" stroke="{C[k]}" stroke-width="1.5"/>'
+                         f'<circle cx="{xx + 12}" cy="96" r="3.5" fill="{"#FFFFFF" if on else C[k]}"/>'
+                         f'<path d="M{xx + 20} 96h14" stroke="{"#FFFFFF" if on else "#8C959F"}" stroke-width="3" stroke-linecap="round"/>')
+        for xx, w, label in [(306, 82, "6.1-sol"), (394, 56, "high")]:
+            parts.append(f'<rect x="{xx}" y="122" width="{w}" height="22" rx="6" fill="#F6F8FA" stroke="#D0D7DE"/>'
+                         f'<text class="m" x="{xx + 7}" y="137" style="font-weight:400">{label}</text>'
+                         f'<path d="M{xx + w - 13} 131l4 4 4-4" fill="none" stroke="#57606A" stroke-width="1.5"/>')
+        parts.append('<path d="M347 148v8M421 148v8" stroke="#B69CF5" stroke-width="2"/>'
+                     '<rect x="306" y="162" width="144" height="16" rx="5" fill="#F6F8FA" stroke="#D0D7DE"/>'
+                     '<path d="M314 170h60" stroke="#8C959F" stroke-width="3" stroke-linecap="round"/>'
+                     '<rect x="392" y="192" width="58" height="22" rx="7" fill="#7C3AED"/>'
+                     '<path d="M412 203h16M424 198l5 5-5 5" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>')
+    else:  # local: read-only, localhost only, token
         parts.append('<path d="M380 44l58 22v52c0 40-26 68-58 82-32-14-58-42-58-82V66z" fill="#FFFFFF" stroke="#57606A" stroke-width="2.5" stroke-linejoin="round"/>'
                      '<rect x="360" y="116" width="40" height="32" rx="6" fill="#57606A"/>'
                      '<path d="M368 116v-10a12 12 0 0 1 24 0v10" fill="none" stroke="#57606A" stroke-width="5"/>'
                      '<circle cx="380" cy="130" r="4" fill="#FFFFFF"/><path d="M380 132v8" stroke="#FFFFFF" stroke-width="3"/>'
                      + pill(380, 214, "127.0.0.1", "#1F6FEB", 92) + pill(424, 40, "mode=ro", "#1A7F37", 70)
-                     + pill(306, 40, "stdlib", "#57606A", 56))
+                     + pill(306, 40, "token", "#57606A", 56))
     return svg(480, 260, head, f"{head}: {l1} {l2}", "\n".join("  " + p for p in parts), lang)
 
 
 def flow(lang):
-    a, d, r, read, send, pane = TEXT[lang]["flow"]
-    p = [f'<rect x=".5" y=".5" width="879" height="299" rx="18" fill="#FFFFFF" stroke="#D0D7DE"/>',
+    a, d, r, read, send, pane, start = TEXT[lang]["flow"]
+    p = [f'<rect x=".5" y=".5" width="879" height="309" rx="18" fill="#FFFFFF" stroke="#D0D7DE"/>',
          f'<text class="t" x="100" y="42" text-anchor="middle">{x(a)}</text>']
     for i, (k, name) in enumerate([("claude", "Claude Code"), ("codex", "Codex"), ("agent", TEXT[lang]["others"])]):
         y = 62 + i * 64
@@ -194,8 +237,12 @@ def flow(lang):
              f'<path d="M652 178H438" stroke="#C96442" stroke-width="2.5" marker-end="url(#a-claude)"/>'
              f'<text class="s" x="543" y="198" text-anchor="middle">{x(send)}</text>'
              f'<text class="s" x="856" y="258" text-anchor="end">{x(pane)}</text>'
-             '<path d="M758 234v8" stroke="#8C959F" stroke-width="2"/>')
-    return svg(880, 300, f"Reason Network Chat — {d}", f"{a} → {d} → {r}. {read}. {send}.", "\n".join("  " + q for q in p), lang)
+             '<path d="M758 234v8" stroke="#8C959F" stroke-width="2"/>'
+             # new sessions: from the chat page around the daemon to the agents
+             '<path d="M656 214H470V284H100V244" fill="none" stroke="#7C3AED" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#a-agent)"/>'
+             f'<text class="s" x="285" y="276" text-anchor="middle">{x(start)}</text>')
+    return svg(880, 310, f"Reason Network Chat — {d}", f"{a} → {d} → {r}. {read}. {send}. {start}.",
+               "\n".join("  " + q for q in p), lang)
 
 
 def screen(lang):
@@ -203,22 +250,30 @@ def screen(lang):
     p = ['<rect x=".5" y=".5" width="879" height="439" rx="14" fill="#F7F7F5" stroke="#D0D7DE"/>',
          '<path d="M14 .5h206v438H14a13.5 13.5 0 0 1-13.5-13.5V14A13.5 13.5 0 0 1 14 .5z" fill="#FFFFFF" stroke="#D0D7DE"/>',
          '<text class="t" x="18" y="32">Reason Network Chat</text><text class="s" x="18" y="52">My network</text>',
-         '<path d="M1 64h219" stroke="#E4E3DF"/>',
-         f'<rect x="8" y="72" width="204" height="30" rx="8" fill="#E8E2D8"/><circle cx="22" cy="87" r="4" fill="#16A34A"/>'
-         f'<text class="b" x="34" y="92" style="font-weight:700">{x(t["all"])}</text><text class="s" x="200" y="92" text-anchor="end">4</text>',
-         f'<text class="s" x="16" y="124" style="font-size:11px">{x(t["online"])}</text>']
-    rows = [("api-refactor-claude", "claude-code", "claude", "busy", t["busy"]),
-            ("billing-codex", "codex", "codex", "idle", t["idle"]), ("docs-agent", "agent", "agent", "idle", t["idle"])]
-    for i, (name, ag, k, s, sub) in enumerate(rows):
-        y = 134 + i * 46
+         f'<rect x="10" y="62" width="200" height="24" rx="7" fill="#F7F7F5" stroke="#E4E3DF"/>'
+         f'<text class="s" x="110" y="78" text-anchor="middle" style="font-weight:700;fill:{C["ink"]}">{x(t["new"])}</text>',
+         '<path d="M1 96h219" stroke="#E4E3DF"/>',
+         f'<rect x="8" y="104" width="204" height="30" rx="8" fill="#E8E2D8"/><circle cx="22" cy="119" r="4" fill="#16A34A"/>'
+         f'<text class="b" x="34" y="124" style="font-weight:700">{x(t["all"])}</text><text class="s" x="200" y="124" text-anchor="end">4</text>',
+         f'<text class="s" x="16" y="156" style="font-size:11px">{x(t["online"])}</text>']
+    rows = [("api-refactor-claude", "claude-code", "claude", "busy", t["busy"], False),
+            ("billing-codex", "codex", "codex", "idle", t["idle"], True), ("docs-agent", "agent", "agent", "idle", t["idle"], False)]
+    for i, (name, ag, k, s, sub, worker) in enumerate(rows):
+        y = 166 + i * 46
+        sx = 44 + tw(ag, 10) + 6
         p.append(f'<circle cx="22" cy="{y + 8}" r="4" fill="{C[s]}"/><text class="b" x="34" y="{y + 13}" style="font-weight:700">{name}</text>'
                  f'<rect x="34" y="{y + 20}" width="{tw(ag, 10) + 10:.0f}" height="15" rx="4" fill="{C[k]}"/>'
-                 f'<text class="w" x="39" y="{y + 31}" style="font-size:10px">{ag}</text>'
-                 f'<text class="s" x="{44 + tw(ag, 10) + 6:.0f}" y="{y + 32}">{x(sub)}</text>')
-    p.append(f'<text class="s" x="16" y="286" style="font-size:11px">{x(t["history"])}</text>'
-             '<g opacity=".55"><circle cx="22" cy="304" r="4" fill="#A3A3A3"/><text class="b" x="34" y="309" style="font-weight:700">ask-3f2a</text>'
-             f'<rect x="34" y="316" width="27" height="15" rx="4" fill="{C["cli"]}"/><text class="w" x="39" y="327" style="font-size:10px">cli</text>'
-             f'<text class="s" x="68" y="328">{x(t["gone"])}</text></g>')
+                 f'<text class="w" x="39" y="{y + 31}" style="font-size:10px">{ag}</text>')
+        if worker:
+            ww = tw(t["wk"], 10) + 10
+            p.append(f'<rect x="{sx:.0f}" y="{y + 20}" width="{ww:.0f}" height="15" rx="4" fill="#FFFFFF" stroke="#D0D7DE"/>'
+                     f'<text class="s" x="{sx + 5:.0f}" y="{y + 31}" style="font-size:10px">{x(t["wk"])}</text>')
+            sx += ww + 6
+        p.append(f'<text class="s" x="{sx:.0f}" y="{y + 32}">{x(sub)}</text>')
+    p.append(f'<text class="s" x="16" y="318" style="font-size:11px">{x(t["history"])}</text>'
+             '<g opacity=".55"><circle cx="22" cy="336" r="4" fill="#A3A3A3"/><text class="b" x="34" y="341" style="font-weight:700">ask-3f2a</text>'
+             f'<rect x="34" y="348" width="27" height="15" rx="4" fill="{C["cli"]}"/><text class="w" x="39" y="359" style="font-size:10px">cli</text>'
+             f'<text class="s" x="68" y="360">{x(t["gone"])}</text></g>')
     p.append(f'<path d="M220 52h659" stroke="#E4E3DF"/><text class="t" x="238" y="32">{x(t["all"])}</text>'
              f'<text class="s" x="550" y="76" text-anchor="middle">{x(t["day"])}</text>')
     msgs = [("claude", "claude-code", "api-refactor-claude", "billing-codex", t["msgs"][0], False),
@@ -250,13 +305,53 @@ def screen(lang):
                "\n".join("  " + q for q in p), lang)
 
 
+def launcher(lang):
+    """The new-session form, filled with made-up values."""
+    t = TEXT[lang]["lf"]
+    p = ['<rect x=".5" y=".5" width="559" height="459" rx="16" fill="#FFFFFF" stroke="#D0D7DE"/>',
+         f'<text class="t" x="24" y="40" style="font-size:16px">{x(t["title"])}</text>']
+
+    def label(y, s):
+        p.append(f'<text class="s" x="24" y="{y}">{x(s)}</text>')
+
+    def chips(y, items):
+        xx = 24
+        for name, on in items:
+            w = tw(name, 13) + 26
+            p.append(f'<rect x="{xx:.0f}" y="{y}" width="{w:.0f}" height="26" rx="13" fill="{"#F0E6DC" if on else "#F7F7F5"}" '
+                     f'stroke="{"#C96442" if on else "#E4E3DF"}"/>'
+                     f'<text class="b" x="{xx + 13:.0f}" y="{y + 18}" style="{"font-weight:700" if on else ""}">{x(name)}</text>')
+            xx += w + 8
+
+    def field(xx, y, w, value, select=False, mono=False):
+        p.append(f'<rect x="{xx}" y="{y}" width="{w}" height="32" rx="8" fill="#F7F7F5" stroke="#E4E3DF"/>'
+                 f'<text class="{"m" if mono else "b"}" x="{xx + 10}" y="{y + 21}" style="{"font-size:13px;font-weight:400;fill:" + C["ink"] if mono else ""}">{x(value)}</text>')
+        if select:
+            p.append(f'<path d="M{xx + w - 20} {y + 13}l5 5 5-5" fill="none" stroke="#57606A" stroke-width="1.6"/>')
+
+    label(72, t["folder"]); field(24, 80, 512, "C:\\work\\billing-api", mono=True)
+    label(136, t["agent"]); chips(144, [("Claude Code", False), ("Codex", True), ("Antigravity", False)])
+    label(196, t["runAs"]); chips(204, [(t["worker"], True), (t["window"], False)])
+    label(256, t["model"]); field(24, 264, 250, "GPT-6.1-Sol", select=True)
+    p.append(f'<text class="s" x="286" y="256">{x(t["effort"])}</text>'); field(286, 264, 250, "high", select=True)
+    label(320, t["name"]); field(24, 328, 512, "billing-api-codex", mono=True)
+    p.append(f'<text class="s" x="24" y="388">{x(t["hint"])}</text>'
+             '<rect x="384" y="408" width="70" height="32" rx="8" fill="#F7F7F5" stroke="#E4E3DF"/>'
+             f'<text class="b" x="419" y="429" text-anchor="middle">{x(t["cancel"])}</text>'
+             '<rect x="462" y="408" width="74" height="32" rx="8" fill="#C96442"/>'
+             f'<text class="w" x="499" y="429" text-anchor="middle" style="font-size:13px">{x(t["start"])}</text>')
+    return svg(560, 460, t["title"], f'{t["title"]}: {t["folder"]} → {t["agent"]} → {t["runAs"]} → {t["model"]} → {t["effort"]}',
+               "\n".join("  " + q for q in p), lang)
+
+
 def main():
     for lang in TEXT:
         (DOCS / "why" / lang).mkdir(parents=True, exist_ok=True)
-        for n in range(1, 5):
+        for n in range(1, len(CARDS) + 1):
             (DOCS / "why" / lang / f"card-{n}.svg").write_text(card(n, lang), encoding="utf-8", newline="\n")
         (DOCS / f"how-it-works.{lang}.svg").write_text(flow(lang), encoding="utf-8", newline="\n")
         (DOCS / f"screen.{lang}.svg").write_text(screen(lang), encoding="utf-8", newline="\n")
+        (DOCS / f"launcher.{lang}.svg").write_text(launcher(lang), encoding="utf-8", newline="\n")
     print("figures written under", DOCS)
 
 

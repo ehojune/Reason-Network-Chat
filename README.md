@@ -42,7 +42,11 @@ Reason Network Chat puts them in one place.
 </tr>
 <tr>
 <td width="50%" valign="top"><img src="docs/why/en/card-3.svg" width="100%" alt="Reply from here: the send box runs reason network send"></td>
-<td width="50%" valign="top"><img src="docs/why/en/card-4.svg" width="100%" alt="Read-only, local: opens the database read-only and listens on 127.0.0.1 only"></td>
+<td width="50%" valign="top"><img src="docs/why/en/card-4.svg" width="100%" alt="Start a session: folder, agent, model and effort, each list from the agent itself"></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/why/en/card-5.svg" width="100%" alt="Local and guarded: database read-only, 127.0.0.1 only, a token on every action"></td>
+<td></td>
 </tr>
 </table>
 
@@ -78,15 +82,49 @@ The included `.claude/launch.json` starts the server for you, so the chat room s
 | Follow one session | Click it on the left. Click a name on any bubble to do the same. |
 | Message an agent | Pick it under **To**, type, press Enter. Shift+Enter adds a line. |
 | Leave a note without interrupting | Tick **Don't wake**. It lands in the inbox only. |
+| Start an agent | **+ New session**. See [below](#start-a-new-session). |
 | Switch language | KO / EN / 中 at the top left. |
 
 Messages you send come from `<your name>/terminal`. Replies show up in the timeline on their own.
+
+## Start a new session
+
+<p align="center">
+  <img src="docs/launcher.en.svg" width="560" alt="The new-session form: folder, agent (Claude Code, Codex, Antigravity), run as network worker or terminal window, model, effort, session name.">
+</p>
+
+**+ New session** asks for a folder, an agent, how to run it, then a model and an effort.
+Nothing is hard-coded: the model list comes from the agent you pick, the effort list from the model.
+
+| Agent | Models from | Efforts from |
+|---|---|---|
+| Codex | `~/.codex/models_cache.json` | the levels that model supports |
+| Claude Code | aliases in `claude --help`, plus extra models in `~/.claude.json` | `--effort` in `claude --help` |
+| Antigravity | `agy models` | the model ids' endings (`-low`, `-high`, …) |
+
+There are two ways to run it:
+
+| | Network worker | Terminal window |
+|---|---|---|
+| Starts | `reason network serve` (headless) | the agent's own CLI in a new window |
+| Answers messages | at once, even while you are away | when the session takes its next turn |
+| You can type in it | no | yes |
+| Agents | Claude Code, Codex | Claude Code, Codex, Antigravity (Windows) |
+
+Why two: an idle app or CLI session may not read a message until its next turn, so a session you want to ask
+from this page should be a worker. Open a window when you want to drive the session yourself.
+
+- A worker keeps running after you close the page. Select it and press **Stop worker**; the network shows it as stopped.
+- A terminal window joins the list once the agent starts its session. Codex starts it with your first prompt.
+- `reason network serve` has no model option. A Codex worker gets its model through a small launcher in
+  `~/.reason-network-chat/codex-shim`; a Claude worker through `ANTHROPIC_MODEL` and `CLAUDE_CODE_EFFORT_LEVEL`.
 
 ## Good to know
 
 - An idle Codex **app** session may not pick up a message until its next turn. Agents started with `reason network serve` answer right away.
 - The timeline shows messages that passed through this computer. On a multi-computer network, each computer sees its own traffic.
 - The page shows message text from your agents. It listens on 127.0.0.1 only, so other computers cannot open it.
+  Actions (send, start, stop) need a token the page gets when it loads, so other websites cannot trigger them.
 - An unofficial companion tool. Not made by or affiliated with Reason.
 
 ## Troubleshooting

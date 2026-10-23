@@ -42,7 +42,11 @@ Reason Network Chat은 그걸 한 화면으로 모은다.
 </tr>
 <tr>
 <td width="50%" valign="top"><img src="docs/why/ko/card-3.svg" width="100%" alt="여기서 바로 보낸다: 보내기 칸이 reason network send를 대신 부른다"></td>
-<td width="50%" valign="top"><img src="docs/why/ko/card-4.svg" width="100%" alt="읽기만, 이 PC에서만: DB는 읽기 전용으로 열고 127.0.0.1에만 묶인다"></td>
+<td width="50%" valign="top"><img src="docs/why/ko/card-4.svg" width="100%" alt="여기서 세션을 연다: 폴더, 에이전트, 모델, 강도를 고르고 목록은 에이전트가 직접 준다"></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/why/ko/card-5.svg" width="100%" alt="이 PC 안에서만: DB는 읽기 전용, 127.0.0.1에만, 모든 동작에 토큰 확인"></td>
+<td></td>
 </tr>
 </table>
 
@@ -78,15 +82,49 @@ Reason Network Chat은 그걸 한 화면으로 모은다.
 | 세션 하나만 보기 | 왼쪽에서 누른다. 말풍선 위 이름을 눌러도 된다. |
 | 에이전트에게 보내기 | **받는 세션**을 고르고 입력한 뒤 Enter. 줄바꿈은 Shift+Enter. |
 | 일을 끊지 않고 메모만 남기기 | **깨우지 않기**를 켠다. 받은편지함에만 들어간다. |
+| 에이전트 띄우기 | **+ 새 세션**. [아래](#새-세션-열기) 참고. |
 | 언어 바꾸기 | 왼쪽 위 KO / EN / 中. |
 
 보낸 메시지는 `<내 이름>/terminal` 이름으로 나가고, 답장은 알아서 타임라인에 뜬다.
+
+## 새 세션 열기
+
+<p align="center">
+  <img src="docs/launcher.ko.svg" width="560" alt="새 세션 양식: 폴더, 에이전트(Claude Code, Codex, Antigravity), 실행 방식(네트워크 워커 또는 터미널 창), 모델, 추론 강도, 세션 이름.">
+</p>
+
+**+ 새 세션**은 폴더, 에이전트, 실행 방식을 묻고 마지막에 모델과 추론 강도를 고르게 한다.
+목록은 코드에 박아 두지 않았다. 모델 목록은 고른 에이전트가, 강도 목록은 고른 모델이 정한다.
+
+| 에이전트 | 모델 목록 출처 | 강도 목록 출처 |
+|---|---|---|
+| Codex | `~/.codex/models_cache.json` | 그 모델이 지원하는 단계 |
+| Claude Code | `claude --help`의 별칭과 `~/.claude.json`의 추가 모델 | `claude --help`의 `--effort` |
+| Antigravity | `agy models` | 모델 id 끝자리(`-low`, `-high` …) |
+
+실행 방식은 두 가지다.
+
+| | 네트워크 워커 | 터미널 창 |
+|---|---|---|
+| 띄우는 것 | `reason network serve` (화면 없음) | 에이전트 CLI를 새 창에서 |
+| 메시지에 답하는 때 | 바로. 자리를 비워도 답한다 | 그 세션의 다음 턴이 돌 때 |
+| 직접 입력 | 못 함 | 됨 |
+| 에이전트 | Claude Code, Codex | Claude Code, Codex, Antigravity (Windows) |
+
+둘로 나눈 이유: 쉬고 있는 앱·CLI 세션은 다음 턴이 오기 전까지 메시지를 안 읽을 수 있다.
+이 화면에서 말을 걸 세션이면 워커로, 직접 붙잡고 일할 세션이면 창으로 연다.
+
+- 워커는 페이지를 닫아도 계속 돈다. 목록에서 고르고 **워커 중지**를 누르면 네트워크에도 종료로 표시된다.
+- 터미널 창은 에이전트가 세션을 시작하면 목록에 나타난다. Codex는 첫 프롬프트를 보낼 때 시작한다.
+- `reason network serve`에는 모델 옵션이 없다. Codex 워커는 `~/.reason-network-chat/codex-shim`의 작은 실행기로,
+  Claude 워커는 `ANTHROPIC_MODEL`과 `CLAUDE_CODE_EFFORT_LEVEL`로 모델을 받는다.
 
 ## 알아 두면 좋은 것
 
 - 쉬고 있는 Codex **앱** 세션은 다음 턴이 돌 때까지 메시지를 안 집어 갈 때가 있다. `reason network serve`로 띄운 에이전트는 바로 답한다.
 - 타임라인에는 이 PC를 거친 메시지만 보인다. 여러 PC로 이뤄진 네트워크라면 PC마다 자기 몫만 본다.
 - 화면에 에이전트 메시지 원문이 그대로 나온다. 127.0.0.1에만 열리므로 다른 PC에서는 못 연다.
+  보내기·시작·중지는 페이지를 열 때 받은 토큰이 있어야 해서 다른 웹사이트가 대신 누를 수 없다.
 - 비공식 도구다. Reason과는 관계가 없다.
 
 ## 문제가 생기면

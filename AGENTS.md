@@ -5,12 +5,15 @@ The README is for the human; this file has the procedure, checks, configuration 
 
 ## What it is
 
-A local web page that shows Reason Network messages on this computer as a chat room, and sends messages.
+A local web page that shows Reason Network messages on this computer as a chat room, sends messages,
+and starts new agent sessions.
 
 | Part | Role |
 |---|---|
 | `server.py` | Python standard library HTTP server on `127.0.0.1:8765`. No dependencies. |
+| `launcher.py` | New sessions: model catalogs, `reason network serve` workers, terminal windows, the Codex model shim. |
 | `index.html` | The whole UI (one file, no build). Polls `/api/state` every 3 s. Strings in ko/en/zh. |
+| `tests/` | `python -m unittest discover tests` — request validation and catalog parsing, no agent needed. |
 | `.claude/launch.json` | Lets the Claude desktop app start the server and show the page in its Browser pane. |
 | `docs/tools/make_figures.py` | Regenerates every README figure. Never hand-edit the SVGs. |
 
@@ -54,20 +57,35 @@ then stop the worker.
 | `REASON_CHAT_PORT` | `8765` | Listening port. Also change `port` in `launch.json`. |
 | `REASON_CHAT_DB` | `~/.reason/network/network.db` | Daemon database path. |
 | `REASON_BIN` | `%LOCALAPPDATA%\Reason\bin\reason.exe` on Windows, else `reason` on PATH | The Reason CLI. |
-| `NODE_EXTRA_CA_CERTS` | unset | Root CA file for TLS-inspecting corporate networks. The CLI (Bun) needs it there; inherited by subprocesses. |
+| `NODE_EXTRA_CA_CERTS` | unset | Root CA file for TLS-inspecting corporate networks. The CLI (Bun) needs it there. On Windows, children get it from the stored user environment even if the server started before it was set. |
+| `REASON_CHAT_HOME` | `~/.reason-network-chat` | Worker registry (`workers.json`), worker logs (`logs/`), the Codex shim (`codex-shim/`). |
+| `REASON_CHAT_CLAUDE`, `REASON_CHAT_CODEX`, `REASON_CHAT_AGY` | found automatically | Full path to an agent CLI. On Windows it must be an `.exe`. |
 
 ## HTTP API
 
-Both endpoints accept only `Host: 127.0.0.1:<port>` or `localhost:<port>` (DNS-rebinding guard).
+Every endpoint accepts only `Host: 127.0.0.1:<port>` or `localhost:<port>` (DNS-rebinding guard).
+Every POST also needs `Origin: http://127.0.0.1:<port>` (or `localhost`), `Content-Type: application/json`, and
+`X-Reason-Chat-Token` equal to the token in the page's `<meta name="reason-chat-token">` (new each server start).
+Responses forbid framing. To act from a script, use the `reason` CLI instead.
 
 - `GET /api/state` →
-  `{team, me, sessions[], messages[], whoError, now}`.
+  `{team, me, sessions[], messages[], launched[], whoError, now}`.
   `me` is the address the page sends as (`<person>/terminal`).
   `sessions[]` = live entries from `who --all --json` (`address, name, agent, status, doing, cwd, tier, live: true`)
   plus addresses seen only in history (`status: "gone"`, `live: false`).
   `messages[]` = rows of the `messages` table ordered by `sent_at` (ms epoch).
-- `POST /api/send` with `Content-Type: application/json` and `{to, body, fyi}` → runs
-  `reason network send <to> <body> [--fyi]`. Returns `{ok, rc, out, err}`; HTTP 502 when the CLI fails.
+  `launched[]` = workers this server started and that are still running (`name, family, model, effort, cwd`).
+- `POST /api/send` `{to, body, fyi}` → runs `reason network send <to> <body> [--fyi]`.
+  Returns `{ok, rc, out, err}`; HTTP 502 when the CLI fails.
+- `GET /api/catalog[?refresh=1]` → `{families[], folders[]}`. Each family: `id` (`claude`/`codex`/`antigravity`),
+  `installed`, `models[]` (`id, label, efforts[], defaultEffort`), `defaultModel`, `defaultEffort`, `note`, and
+  `modes.worker` / `modes.window` (`ok, why, models, modelsWhy`). Cached 10 minutes.
+- `POST /api/launch` `{folder, agent, mode, model, effort, name}` → `mode` is `worker` or `window`; empty
+  `model`/`effort` mean the agent's own default; `name` is for workers (`[a-z0-9-]`, ≤ 48, not taken).
+  Every value is checked against the catalog; the folder must be an existing absolute local directory.
+  Returns `{ok, mode, name}`; 4xx with `{error}` otherwise.
+- `POST /api/stop` `{name}` → stops a worker this server started: Ctrl+C first (so the network shows it as stopped),
+  then a kill after 10 s.
 
 ## Data source
 
@@ -91,10 +109,25 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
 - **`reason network serve codex` on Windows** can fail with "contains a cmd.exe special character" when a `codex.cmd` shim comes first on PATH. Put the folder of the real `codex.exe` first on PATH for that process.
 - **Replies to `<person>/terminal`** stay unread in the database because nothing else reads that inbox. The page hides the read mark for them.
 - **Sending is acting for the user.** Send only what the user asked for, or the one-line test they approved.
+- **Starting sessions is too.** A worker takes work on the network as the user and keeps running after the page
+  closes. Start one only when the user asks, and stop test workers afterwards.
+- **A killed worker looks alive.** `serve` reports "stopped" only when it exits on Ctrl+C. After `taskkill /F`
+  (or a crash) the network keeps showing it idle, and its name stays taken. `/api/stop` sends Ctrl+C to the
+  worker's own hidden console; to clear a stale entry, start a worker with the same name and stop it there.
+- **Agent-session variables.** A server started from inside an agent (the Claude desktop preview) inherits
+  `CLAUDECODE`, `CLAUDE_CODE_*`, `CODEX_*` and `ANTHROPIC_BASE_URL`; `launcher.base_env()` removes them for children
+  unless the user set them in the stored environment, or a new Claude would think it is nested.
+- **Codex workers and models.** `serve` runs `codex exec` with no model flag. For a chosen model or effort the
+  worker's PATH starts with `codex-shim/`, whose `codex` adds `-c model=… -c model_reasoning_effort=…` and runs the
+  real CLI. On Windows the shim is an `.exe` built from pip's script launcher (Bun refuses message text for `.cmd`);
+  without pip, Codex workers fall back to the user's default model and the page says so.
+- **Terminal windows** (Windows only) open with `CREATE_NEW_CONSOLE`. They join the network when the agent's
+  session starts; Codex starts it with the first prompt.
 
 ## Changing the code
 
-- No dependencies, no build step. Keep it that way.
+- No dependencies, no build step. Keep it that way. Run `python -m unittest discover tests` before a PR.
+- Model and effort lists come from each agent's own catalog (`launcher.py`). Do not add a hard-coded model list.
 - UI strings live in the `T` table in `index.html`; add every key to `ko`, `en` and `zh`.
 - Figures: edit `TEXT` in `docs/tools/make_figures.py`, run `python docs/tools/make_figures.py`, commit the SVGs.
 - Docs for people come in three languages: English `X.md`, Korean `X.ko.md`, Chinese `X.zh-CN.md`, each starting with

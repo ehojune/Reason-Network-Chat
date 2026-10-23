@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="460" viewBox="0 0 560 460" role="img" aria-labelledby="t d" xml:lang="zh">
+  <title id="t">启动新会话</title>
+  <desc id="d">启动新会话: 文件夹 → 智能体 → 运行方式 → 模型 → 推理强度</desc>
+  <style>
+    text { font-family: "Noto Sans KR", "Noto Sans SC", "Apple SD Gothic Neo", "PingFang SC", "Segoe UI", "Malgun Gothic", "Microsoft YaHei", sans-serif; fill: #1F2328; }
+    .h { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
+    .l { font-size: 15px; fill: #57606A; }
+    .n { font-size: 14px; font-weight: 700; fill: #FFFFFF; }
+    .m { font-family: "Consolas", "Menlo", monospace; font-size: 11px; font-weight: 700; fill: #57606A; }
+    .w { font-size: 11px; font-weight: 700; fill: #FFFFFF; }
+    .s { font-size: 12px; fill: #57606A; }
+    .b { font-size: 13px; }
+    .t { font-size: 14px; font-weight: 700; }
+  </style>
+  <defs>
+    <marker id="a-claude" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#C96442"/></marker>
+    <marker id="a-codex" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#2563EB"/></marker>
+    <marker id="a-agent" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#7C3AED"/></marker>
+    <marker id="a-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#1A7F37"/></marker>
+  </defs>
+  <rect x=".5" y=".5" width="559" height="459" rx="16" fill="#FFFFFF" stroke="#D0D7DE"/>
+  <text class="t" x="24" y="40" style="font-size:16px">启动新会话</text>
+  <text class="s" x="24" y="72">文件夹</text>
+  <rect x="24" y="80" width="512" height="32" rx="8" fill="#F7F7F5" stroke="#E4E3DF"/><text class="m" x="34" y="101" style="font-size:13px;font-weight:400;fill:#1F2328">C:\work\billing-api</text>
+  <text class="s" x="24" y="136">智能体</text>
+  <rect x="24" y="144" width="106" height="26" rx="13" fill="#F7F7F5" stroke="#E4E3DF"/><text class="b" x="37" y="162" style="">Claude Code</text>
+  <rect x="138" y="144" width="62" height="26" rx="13" fill="#F0E6DC" stroke="#C96442"/><text class="b" x="151" y="162" style="font-weight:700">Codex</text>
+  <rect x="208" y="144" width="106" height="26" rx="13" fill="#F7F7F5" stroke="#E4E3DF"/><text class="b" x="221" y="162" style="">Antigravity</text>
+  <text class="s" x="24" y="196">运行方式</text>
+  <rect x="24" y="204" width="103" height="26" rx="13" fill="#F0E6DC" stroke="#C96442"/><text class="b" x="37" y="222" style="font-weight:700">网络 worker</text>
+  <rect x="135" y="204" width="78" height="26" rx="13" fill="#F7F7F5" stroke="#E4E3DF"/><text class="b" x="148" y="222" style="">终端窗口</text>
+  <text class="s" x="24" y="256">模型</text>
+  <rect x="24" y="264" width="250" height="32" rx="8" fill="#F7F7F5" stroke="#E4E3DF"/><text class="b" x="34" y="285" style="">GPT-6.1-Sol</text>
+  <path d="M254 277l5 5 5-5" fill="none" stroke="#57606A" stroke-width="1.6"/>
+  <text class="s" x="286" y="256">推理强度</text>
+  <rect x="286" y="264" width="250" height="32" rx="8" fill="#F7F7F5" stroke="#E4E3DF"/><text class="b" x="296" y="285" style="">high</text>
+  <path d="M516 277l5 5 5-5" fill="none" stroke="#57606A" stroke-width="1.6"/>
+  <text class="s" x="24" y="320">会话名称</text>
+  <rect x="24" y="328" width="512" height="32" rx="8" fill="#F7F7F5" stroke="#E4E3DF"/><text class="m" x="34" y="349" style="font-size:13px;font-weight:400;fill:#1F2328">billing-api-codex</text>
+  <text class="s" x="24" y="388">用 reason network serve 启动的无界面智能体，收到消息立即回复。</text><rect x="384" y="408" width="70" height="32" rx="8" fill="#F7F7F5" stroke="#E4E3DF"/><text class="b" x="419" y="429" text-anchor="middle">取消</text><rect x="462" y="408" width="74" height="32" rx="8" fill="#C96442"/><text class="w" x="499" y="429" text-anchor="middle" style="font-size:13px">启动</text>
+</svg>

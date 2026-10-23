@@ -221,6 +221,15 @@ worker started elsewhere** if you want this page to handle it. On Windows the pa
 (Ctrl+C could reach other programs in its console), so the network may show it idle afterwards; after one settings
 change it runs as this page's own worker.
 
+### After a reboot
+
+The page keeps the last settings of every worker it started (`worker-records.json`), also after the process is
+gone. A stopped worker keeps its codex / claude-code badge and shows *worker · offline*. Right-click it → **Start
+again**, right-click a room → **Start its stopped workers again**, or use **Start N stopped workers again** under the
+list. The page lists each worker with its model, effort and full access, and starts nothing until you confirm.
+A worker's own agent sessions (`claude-worker1-claude`, `-2`, …: its warm `claude -p` processes registering
+themselves) are folded away from the list.
+
 ## Rooms
 
 **+ Room** saves a set of sessions under a name. Select the room to see only the messages those sessions

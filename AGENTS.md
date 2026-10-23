@@ -62,7 +62,7 @@ then stop the worker.
 | `REASON_CHAT_DB` | `~/.reason/network/network.db` | Daemon database path. |
 | `REASON_BIN` | `%LOCALAPPDATA%\Reason\bin\reason.exe` on Windows, else `reason` on PATH | The Reason CLI. |
 | `NODE_EXTRA_CA_CERTS` | unset | Root CA file for TLS-inspecting corporate networks. The CLI (Bun) needs it there. On Windows, children get it from the stored user environment even if the server started before it was set. |
-| `REASON_CHAT_HOME` | `~/.reason-network-chat` | Rooms (`rooms.json`), relayed-message records (`relay.json`), settings (`prefs.json`), running wakes (`wakes.json`), auto-wake limits (`autowake.json`), worker registry (`workers.json`), worker logs (`logs/`), the model shims (`codex-shim/`, `claude-shim/`) and each worker's shim arguments (`worker-settings/<name>.json`). |
+| `REASON_CHAT_HOME` | `~/.reason-network-chat` | Rooms (`rooms.json`), relayed-message records (`relay.json`), settings (`prefs.json`), running wakes (`wakes.json`), auto-wake limits (`autowake.json`), worker registry (`workers.json`), last settings of every worker started here (`worker-records.json`, kept after the process dies), start proofs (`spawned.jsonl`), worker logs (`logs/`), the model shims (`codex-shim/`, `claude-shim/`) and each worker's shim arguments (`worker-settings/<name>.json`). |
 | `REASON_CHAT_CLAUDE`, `REASON_CHAT_CODEX`, `REASON_CHAT_AGY` | found automatically | Full path to an agent CLI. On Windows it must be an `.exe`. |
 | `REASON_CHAT_MAX_HOPS`, `REASON_CHAT_BUDGET`, `REASON_CHAT_BUDGET_WINDOW` | `100`, `300`, `600` | Default group-room limits: hops in one hand-off chain, hand-offs per window (seconds). A room's own setting wins. |
 
@@ -90,7 +90,11 @@ get the new token, and a newer server also triggers a reload.
   `launched[]` = workers this server started and that are still running
   (`name, family, model, effort, cwd, fullAccess, liveSettings, adopted`; `liveSettings`: a model or effort change
   applies without a restart; `adopted`: taken back from a running process, model/effort may be `null` = unknown).
-  `foreignWorkers[]` = `serve` workers running on this computer that this page did not start (no log in `logs/`).
+  `foreignWorkers[]` = `serve` workers running on this computer that this page did not start (no start proof).
+  `workerRecords[]` = `{name, family, cwd, model, effort, fullAccess, started}` of every worker started here, also
+  dead ones. A session of a recorded worker keeps `agent` = codex / claude-code (the database stores serve workers as
+  `cli`) and gets `worker: true`; `inner` names the worker when the session is that worker's own agent session
+  (`<worker>-claude[-N]`, its warm `claude -p` registering itself), which the page folds away.
   `rooms[]` = `{id, name, members[], group, created, limits, defaultTo}`; `members` are session addresses; `limits` =
   `{hops?, budget?}` (a number, or `null` for no limit; a missing key means the default); `defaultTo` = the member
   an unmentioned message goes to, or `null`.
@@ -120,6 +124,9 @@ get the new token, and a newer server also triggers a reload.
   toward `MAX_WORKERS`, and configure or stop on it answers 409.
 - `POST /api/workers/adopt` `{name}` → manage a worker from `foreignWorkers[]` here (the user confirms it in the
   page). Returns `{ok}`; 404 when no such worker runs.
+- `POST /api/workers/restart` `{names[]}` → starts recorded workers again with their last settings (checked against
+  the catalog like a launch). The server asks `who` first; one still running or back on the network is refused (409),
+  so nothing gets a second process. Returns `{ok, results[{name, ok, error?, code?}]}`.
 - `POST /api/rooms/save` `{id?, name, members[], group, limits?, defaultTo?}` → creates a room (no `id`) or replaces
   its name, members, group flag, limits and default recipient. Members: 1–12 known session addresses, not the page's
   own. `limits`: `{hops?, budget?}`, each 1–100000 or `null` (no limit). `defaultTo`: one of the members, or `null`.

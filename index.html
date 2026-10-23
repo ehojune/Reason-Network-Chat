@@ -128,6 +128,9 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #offToggle { font: inherit; font-size: 11.5px; color: var(--muted); background: none; border: none; padding: 8px 8px 4px;
   cursor: pointer; text-align: left; }
 #offToggle:hover { color: var(--text); text-decoration: underline; }
+#restartAll { font: inherit; font-size: 11.5px; color: var(--accent); background: none; border: none; padding: 4px 8px;
+  cursor: pointer; text-align: left; }
+#restartAll:hover { text-decoration: underline; }
 .ses:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .star { color: var(--accent); margin-right: 4px; }
 #ctx { position: fixed; z-index: 10; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
@@ -203,7 +206,7 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
     </div>
   </form>
 </main>
-<div id="ctx" role="menu" hidden><button type="button" role="menuitem" id="ctxFav"></button><button type="button" role="menuitem" id="ctxAuto" hidden></button><button type="button" role="menuitem" id="ctxConf" hidden></button><button type="button" role="menuitem" id="ctxAdopt" hidden></button></div>
+<div id="ctx" role="menu" hidden><button type="button" role="menuitem" id="ctxFav"></button><button type="button" role="menuitem" id="ctxAuto" hidden></button><button type="button" role="menuitem" id="ctxConf" hidden></button><button type="button" role="menuitem" id="ctxAdopt" hidden></button><button type="button" role="menuitem" id="ctxRestart" hidden></button></div>
 <dialog id="dlg">
   <form id="lf">
     <h2 id="lfTitle" data-t="newSessionTitle"></h2>
@@ -268,6 +271,9 @@ const T = {
     fullAsk: "전체 권한으로 실행할까요?\n· 이 에이전트는 묻지 않고 어떤 명령이든 실행합니다. 파일 삭제, 설치, 네트워크 접근도 포함됩니다.\n· 워커는 Reason 네트워크로 온 메시지대로 움직입니다. 단체 대화방에서 다른 에이전트가 넘겨준 메시지도 포함됩니다.\n계속할까요?",
     confTitle: "워커 설정 변경: {name}", apply: "적용", ctxConf: "⚙ 설정 변경", unchanged: "바뀐 것이 없습니다.",
     modelUnknown: "모델 모름", ctxAdopt: "⚙ 외부에서 시작된 워커 관리하기", adopted: "관리 시작: ",
+    ctxRestart: "↻ 다시 시작", ctxRestartRoom: "↻ 꺼진 워커 모두 다시 시작", restartAll: "↻ 꺼진 워커 {n}개 다시 시작",
+    relaunchAsk: "다음 워커를 마지막 설정으로 다시 시작할까요?\n{list}", restartDone: "다시 시작: {ok}개", restartBad: " · 실패: ",
+    defModel: "기본 모델",
     adoptAsk: "{name}은(는) 이 페이지가 띄우지 않은 워커입니다. 이 페이지에서 설정을 바꾸고 멈출 수 있게 할까요? 설정을 바꾸면 이 페이지가 같은 이름으로 다시 시작합니다.",
     confHintCodex: "Codex 워커: 모델·추론 강도는 다시 시작하지 않고 다음 메시지부터 적용됩니다. 권한을 바꾸면 다시 시작합니다.",
     confHintClaude: "Claude 워커: 바꾸면 같은 이름으로 다시 시작합니다. 보낸 사람별로 이어 오던 대화 맥락이 사라집니다.",
@@ -334,6 +340,9 @@ const T = {
     fullAsk: "Run with full access?\n· This agent runs any command without asking, including deleting files, installing software and network access.\n· A worker acts on messages from the Reason network, including messages other agents pass on in group rooms.\nContinue?",
     confTitle: "Worker settings: {name}", apply: "Apply", ctxConf: "⚙ Change settings", unchanged: "Nothing changed.",
     modelUnknown: "model unknown", ctxAdopt: "⚙ Manage this worker started elsewhere", adopted: "Now managed here: ",
+    ctxRestart: "↻ Start again", ctxRestartRoom: "↻ Start its stopped workers again", restartAll: "↻ Start {n} stopped workers again",
+    relaunchAsk: "Start these workers again with their last settings?\n{list}", restartDone: "Started again: {ok}", restartBad: " · failed: ",
+    defModel: "default model",
     adoptAsk: "{name} is a worker this page did not start. Manage it here, so you can change its settings and stop it? Changing a setting restarts it from this page under the same name.",
     confHintCodex: "Codex worker: a new model or effort applies from its next message, without a restart. Changing permissions restarts it.",
     confHintClaude: "Claude worker: a change restarts it under the same name, and the conversations it kept per sender are lost.",
@@ -402,6 +411,9 @@ const T = {
     fullAsk: "以完全权限运行吗？\n· 该智能体会不经询问执行任何命令，包括删除文件、安装软件和访问网络。\n· worker 按 Reason 网络发来的消息行事，包括群聊中其他智能体转来的消息。\n继续吗？",
     confTitle: "worker 设置：{name}", apply: "应用", ctxConf: "⚙ 更改设置", unchanged: "没有改动。",
     modelUnknown: "模型未知", ctxAdopt: "⚙ 管理在别处启动的 worker", adopted: "已开始管理：",
+    ctxRestart: "↻ 重新启动", ctxRestartRoom: "↻ 重新启动已停止的 worker", restartAll: "↻ 重新启动 {n} 个已停止的 worker",
+    relaunchAsk: "用上次的设置重新启动以下 worker 吗？\n{list}", restartDone: "已重新启动：{ok} 个", restartBad: " · 失败：",
+    defModel: "默认模型",
     adoptAsk: "{name} 不是本页面启动的 worker。要在这里管理它（更改设置、停止）吗？更改设置时，本页面会以同一名称重启它。",
     confHintCodex: "Codex worker：新的模型或推理强度从下一条消息起生效，无需重启。更改权限会重启它。",
     confHintClaude: "Claude worker：任何更改都会以同一名称重启，并丢失它按发送者保留的对话上下文。",
@@ -460,7 +472,7 @@ let lang = new URLSearchParams(location.search).get("lang") || store.get("reason
 if (!T[lang]) lang = "en";
 const t = k => T[lang][k];
 const TOKEN = document.querySelector('meta[name="reason-chat-token"]').content;
-const API = 10;  // must match API in server.py
+const API = 11;  // must match API in server.py
 const BOOT = document.querySelector('meta[name="reason-chat-boot"]').content;  // which server start served this page
 // Reload to pick up a restarted or newer server, at most once a minute so a broken setup cannot loop.
 function reloadOnce() {
@@ -589,7 +601,9 @@ function renderSide() {
     || (count(b.address) - count(a.address)) || a.name.localeCompare(b.name));
   const fav = favs();
   const away = all.filter(s => group(s) >= 2 && s.address !== sel && !fav.includes(s.address));  // selected and favorites always show
-  const ss = (hide ? all.filter(s => !away.includes(s)) : all).filter(s => !fav.includes(s.address));
+  // A worker's own agent sessions (<worker>-claude, …) are folded away unless selected or a favorite.
+  const ss = (hide ? all.filter(s => !away.includes(s)) : all)
+    .filter(s => !fav.includes(s.address) && !(s.inner && s.address !== sel));
   const star = key => fav.includes(key) ? `<span class="star">★</span>` : "";
   const roomRow = r => {
     const key = `room:${r.id}`, c = S.messages.filter(m => inRoom(m, r)).length;
@@ -624,6 +638,8 @@ function renderSide() {
   }
   const focused = document.activeElement && document.activeElement.closest && document.activeElement.closest("#list .ses");
   if (away.length) h += `<button type="button" id="offToggle">${esc(t(hide ? "hideOff" : "showOff").replace("{n}", away.length))}</button>`;
+  const stopped = stoppedWorkers();
+  if (stopped.length) h += `<button type="button" id="restartAll">${esc(t("restartAll").replace("{n}", stopped.length))}</button>`;
   $("#list").innerHTML = h;
   if (focused) [...$("#list").querySelectorAll(".ses")].find(r => r.dataset.a === focused.dataset.a)?.focus();  // keep keyboard place
   $("#team").textContent = `${S.team || t("noTeam")}${S.me ? ` · ${t("as")} ${S.me}` : ""}`;
@@ -925,7 +941,7 @@ async function poll() {
     if ((j.boot && j.boot !== BOOT) || j.api > API) { if (reloadOnce()) return; }
     if (j.api !== API) return say(t(j.api > API ? "reloadPage" : "restart").replace("{p}", API).replace("{s}", j.api ?? 1), true);
     if (j.boot !== BOOT) return say(t("reloadPage"), true);
-    S = {sessions: [], messages: [], launched: [], foreignWorkers: [], rooms: [], relays: {}, queued: {}, notices: {}, prefs: {}, wakes: {},
+    S = {sessions: [], messages: [], launched: [], foreignWorkers: [], workerRecords: [], rooms: [], relays: {}, queued: {}, notices: {}, prefs: {}, wakes: {},
       relayDefaults: {hops: 100, budget: 300, window: 600}, ...j};
     render();
     say(j.whoError ? t("whoErr") + j.whoError : `${t("updated")} ${fmtT(j.now)}`, !!j.whoError);
@@ -936,8 +952,31 @@ async function poll() {
 }
 
 function pick(a) { sel = a || null; $("#tl").dataset.first = "1"; render(true); }
+
+// Workers this page started that are not running now (a reboot, a crash): their last settings are kept.
+function stoppedWorkers(among) {
+  const running = new Set(S.launched.map(w => w.name));
+  const up = new Set(S.sessions.filter(s => s.live && s.status !== "offline" && s.address.split("/")[0] === person())
+    .map(s => s.name));
+  return (S.workerRecords || []).filter(r => !running.has(r.name) && !up.has(r.name)
+    && (!among || among.includes(`${person()}/${r.name}`)));
+}
+async function restartWorkers(recs) {
+  if (!recs.length) return;
+  const list = recs.map(r => `• ${r.name}: ${[r.model || t("defModel"), r.effort].filter(Boolean).join(" · ")}`
+    + (r.fullAccess ? ` (${t("permFull")})` : "")).join("\n");
+  if (!confirm(t("relaunchAsk").replace("{list}", list))) return;
+  try {
+    const j = await post("/api/workers/restart", {names: recs.map(r => r.name)});
+    const bad = j.results.filter(r => !r.ok);
+    say(t("restartDone").replace("{ok}", j.results.length - bad.length)
+      + (bad.length ? t("restartBad") + bad.map(r => `${r.name}: ${r.error}`).join("; ") : ""), !!bad.length);
+    poll();
+  } catch (err) { say(t("failed") + err.message, true); }
+}
 $("#list").addEventListener("click", e => {
   if (e.target.closest("#offToggle")) return setPref("hideOffline", !(pref("hideOffline") !== false));
+  if (e.target.closest("#restartAll")) return restartWorkers(stoppedWorkers());
   const x = e.target.closest(".ses"); if (x) pick(x.dataset.a);
 });
 $("#tl").addEventListener("click", e => {
@@ -965,6 +1004,10 @@ function openCtx(row, pointer) {
   $("#ctxConf").textContent = t("ctxConf");
   $("#ctxAdopt").hidden = !S.foreignWorkers.some(w => `${person()}/${w.name}` === ctxKey);  // started elsewhere
   $("#ctxAdopt").textContent = t("ctxAdopt");
+  const rroom = roomOf(ctxKey);  // a stopped worker, or a room with stopped workers among its members
+  ctxStopped = rroom ? stoppedWorkers(rroom.members) : stoppedWorkers([ctxKey]);
+  $("#ctxRestart").hidden = !ctxStopped.length;
+  $("#ctxRestart").textContent = t(rroom ? "ctxRestartRoom" : "ctxRestart");
   const m = $("#ctx"), r = row.getBoundingClientRect();
   m.hidden = false;
   const x = pointer ? pointer.clientX : r.left + 24, y = pointer ? pointer.clientY : r.bottom;  // keyboard: below the row
@@ -999,6 +1042,8 @@ $("#ctxAuto").addEventListener("click", async () => {
   await setPref("autoWake", on ? a.filter(k => k !== key) : [...a, key]);
   [...$("#list").querySelectorAll(".ses")].find(r => r.dataset.a === key)?.focus();
 });
+let ctxStopped = [];
+$("#ctxRestart").addEventListener("click", () => { const recs = ctxStopped; closeCtx(); restartWorkers(recs); });
 $("#ctxAdopt").addEventListener("click", async () => {
   const key = ctxKey;
   closeCtx();

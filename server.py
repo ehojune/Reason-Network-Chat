@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from launcher import STATE, Catalog, Launcher, LaunchError, allow_ctrl_c, base_env
+from launcher import BADGE, STATE, Catalog, Launcher, LaunchError, allow_ctrl_c, base_env, inner_of
 from prefs import PrefError, Prefs
 import relay as relay_mod
 from relay import Relay, RelayError
@@ -42,7 +42,7 @@ ORIGINS = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 TOKEN = secrets.token_urlsafe(32)
 # Shape of /api/state and the POSTs. Bump together with API in index.html: a page that meets a server of another
 # version (the server kept running across an update) asks for a restart instead of breaking.
-API = 10
+API = 11
 BOOT = secrets.token_hex(8)  # new each start: an open page that sees another one reloads to get the new token
 NOWIN = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
 
@@ -156,13 +156,23 @@ def state():
                          "doing": k.get("doing"), "cwd": k.get("cwd"), "tier": k.get("tier"),
                          "live": False, "resumable": can_wake(name, addr.split("/", 1)[0], None)})
         seen.add(addr)
+    records = {r["name"]: r for r in LAUNCHER.list_records()}
+    workers = set(records) | {w["name"] for w in LAUNCHER.list()}
     for s in sessions:
         s["unread"] = unread.get(s["address"], 0)
+        # A worker of this page keeps its badge when offline: the database stores serve workers as agent "cli".
+        rec = records.get(s["name"]) if s["address"].split("/", 1)[0] == person else None
+        if rec:
+            s["worker"] = True
+            if s.get("agent") not in ("claude-code", "codex"):
+                s["agent"] = BADGE[rec["family"]]
+        # A worker's own agent sessions (<worker>-claude, -2, …) register themselves; the page folds them away.
+        s["inner"] = inner_of(s["name"], workers)
         # The Codex app keeps the conversations it opened locked: then nothing outside the app can wake them.
         s["appOpen"] = bool(s["resumable"]) and WAKER.is_held(Waker.resumable(known[s["name"]]["key"]), s["address"])
     relays, queued, notices = RELAY.view({m["id"] for m in msgs})
     return {"api": API, "boot": BOOT, "team": who.get("team"), "me": me, "sessions": sessions, "messages": msgs,
-            "launched": LAUNCHER.list(), "foreignWorkers": LAUNCHER.list_foreign(), "rooms": ROOMS.list(), "relays": relays, "queued": queued, "notices": notices,
+            "launched": LAUNCHER.list(), "foreignWorkers": LAUNCHER.list_foreign(), "workerRecords": list(records.values()), "rooms": ROOMS.list(), "relays": relays, "queued": queued, "notices": notices,
             "relayDefaults": {"hops": relay_mod.MAX_HOPS, "budget": relay_mod.BUDGET, "window": relay_mod.BUDGET_WINDOW},
             "prefs": PREFS.get(), "wakes": WAKER.view(),
             "whoError": who_err, "now": int(time.time() * 1000)}
@@ -305,7 +315,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         if path not in ("/api/send", "/api/launch", "/api/stop", "/api/rooms/save", "/api/rooms/delete",
-                        "/api/rooms/send", "/api/rooms/flush", "/api/prefs", "/api/wake", "/api/workers/configure", "/api/workers/adopt"):
+                        "/api/rooms/send", "/api/rooms/flush", "/api/prefs", "/api/wake", "/api/workers/configure", "/api/workers/adopt",
+                        "/api/workers/restart"):
             return self.send_error(404)
         req = self.read_json()
         if req is None:
@@ -335,6 +346,14 @@ class Handler(BaseHTTPRequestHandler):
                 if not who:
                     return self.send_json({"error": "Reason Network is not answering; try again."}, 503)
                 self.send_json(WAKER.wake(req.get("address"), who))
+            elif path == "/api/workers/restart":
+                # Fresh: a worker that came back on its own must not get a second process.
+                who = fresh_who()
+                if not who:
+                    return self.send_json({"error": "Reason Network is not answering; try again."}, 503)
+                online = {s["name"] for s in who.get("sessions") or [] if s.get("status") != "offline"
+                          and s.get("machine") == who.get("machine")}
+                self.send_json(LAUNCHER.restart(req.get("names"), online))
             elif path == "/api/workers/adopt":
                 name = req.get("name")
                 if not isinstance(name, str):

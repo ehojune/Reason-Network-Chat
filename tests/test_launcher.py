@@ -431,5 +431,69 @@ class DiscoverTest(unittest.TestCase):
         self.assertEqual(names, ["mine", "theirs"])
 
 
+class RecordsTest(unittest.TestCase):
+    """Settings kept for workers that died (a reboot), and starting them again."""
+    def setUp(self):
+        self.saved = launcher.started_at, launcher.Launcher.__dict__["alive"]
+        launcher.started_at = lambda pid: f"t{pid}"
+        launcher.Launcher.alive = staticmethod(lambda w: w["pid"] < 1000)  # pids from 1000 on are dead
+        launcher.STATE.mkdir(parents=True, exist_ok=True)
+        for f in ("workers.json", "worker-records.json", "spawned.jsonl"):
+            (launcher.STATE / f).write_text("[]" if f == "workers.json" else "", encoding="utf-8")
+        (launcher.STATE / "workers.json").write_text(json.dumps([
+            {"name": "lead-codex", "pid": 5, "started": "t5", "family": "codex", "model": "gpt-6.1-sol",
+             "effort": "high", "cwd": FOLDER, "fullAccess": True}]), encoding="utf-8")
+        self.l = launcher.Launcher("reason", FakeCatalog())
+        self.started = []
+
+        def start(fam, cwd, model, effort, name, full):
+            self.started.append((name, fam["id"], cwd, model, effort, full))
+            return {"name": name, "pid": 7, "started": "t7", "family": fam["id"], "model": model or None,
+                    "effort": effort or None, "cwd": cwd, "log": "", "fullAccess": full, "settings": None}
+        self.l.start_worker = start
+        self.l.settle = lambda w: None
+
+    def tearDown(self):
+        launcher.started_at, launcher.Launcher.alive = self.saved
+
+    def test_seeded_from_the_running_registry(self):
+        r = self.l.records["lead-codex"]
+        self.assertEqual((r["family"], r["model"], r["effort"], r["fullAccess"]), ("codex", "gpt-6.1-sol", "high", True))
+        self.assertIn((5, "t5"), launcher.spawned_here())  # and its start proof
+        self.assertIn("lead-codex", json.loads((launcher.STATE / "worker-records.json").read_text(encoding="utf-8")))
+
+    def test_record_outlives_the_process_and_starts_it_again(self):
+        self.l.workers["lead-codex"]["pid"] = 1001  # the reboot
+        with self.l.lock:
+            self.l.save()  # on disk too, as after a real reboot
+        self.l.list()  # prunes the registry
+        self.assertNotIn("lead-codex", self.l.workers)
+        self.assertIn("lead-codex", [r["name"] for r in self.l.list_records()])
+        out = self.l.restart(["lead-codex"], online=set())
+        self.assertEqual(out["results"], [{"name": "lead-codex", "ok": True}])
+        self.assertEqual(self.started, [("lead-codex", "codex", FOLDER, "gpt-6.1-sol", "high", True)])
+
+    def test_restart_refuses(self):
+        res = lambda names, online=set(): self.l.restart(names, online)["results"]
+        self.assertEqual(res(["lead-codex"])[0]["code"], 409)  # still running
+        self.l.workers["lead-codex"]["pid"] = 1001
+        self.assertEqual(res(["lead-codex"], {"lead-codex"})[0]["code"], 409)  # back on the network on its own
+        self.assertEqual(res(["nobody"])[0]["code"], 404)
+        self.l.records["moved"] = dict(self.l.records["lead-codex"], name="moved", cwd=str(Path(FOLDER) / "gone"))
+        self.assertIn("folder", res(["moved"])[0]["error"])
+        self.l.records["odd"] = dict(self.l.records["lead-codex"], name="odd", model="no-such-model")
+        self.assertIn("catalog", res(["odd"])[0]["error"])
+        with self.assertRaises(launcher.LaunchError):
+            self.l.restart("lead-codex", set())
+        self.assertEqual(self.started, [])
+
+    def test_inner_sessions(self):
+        workers = {"claude-worker1", "lead-codex"}
+        self.assertEqual(launcher.inner_of("claude-worker1-claude", workers), "claude-worker1")
+        self.assertEqual(launcher.inner_of("claude-worker1-claude-3", workers), "claude-worker1")
+        self.assertIsNone(launcher.inner_of("claude-worker1", workers))
+        self.assertIsNone(launcher.inner_of("someone-else-claude", workers))
+
+
 if __name__ == "__main__":
     unittest.main()

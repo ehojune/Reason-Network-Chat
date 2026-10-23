@@ -698,6 +698,17 @@ def spawned_here():
     return out
 
 
+BADGE = {"claude": "claude-code", "codex": "codex"}  # worker family -> the agent name sessions show
+INNER_RE = re.compile(r"^(?P<worker>[a-z0-9][a-z0-9-]*)-(claude|codex)(-\d+)?$")
+
+
+def inner_of(name, workers):
+    """The worker a session belongs to when it is that worker's own agent session registering itself
+    (`<worker>-claude`, `<worker>-claude-2`, … from the warm `claude -p` children), else None."""
+    m = INNER_RE.match(name or "")
+    return m.group("worker") if m and m.group("worker") in workers else None
+
+
 class LaunchError(Exception):
     def __init__(self, msg, code=400):
         super().__init__(msg)
@@ -716,7 +727,12 @@ class Launcher:
         self.restarting = set()  # names of workers being restarted by configure(): still taken
         self.stopped = set()  # names stopped here: a merge must not bring their old record back
         self.foreign = {}  # name -> serve worker running on this computer that this page did not start
+        # name -> {name, family, cwd, model, effort, fullAccess, started}: every worker this page started, kept when
+        # the process dies (a reboot), so it can be started again with the same settings
+        self.records_path = STATE / "worker-records.json"
+        self.records = {}
         self.load()
+        self.load_records()
 
     # Registry on disk, so a restarted server can still stop the workers it started.
     def load(self):
@@ -769,6 +785,89 @@ class Launcher:
             return
         subprocess.run(["taskkill", "/PID", str(w["pid"]), "/T", "/F"], capture_output=True, creationflags=NOWIN)
 
+    # ---------- records of workers this page started, kept across reboots ----------
+    def load_records(self):
+        try:
+            data = json.loads(self.records_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        self.records = {k: v for k, v in data.items() if isinstance(v, dict) and NAME_RE.match(k)
+                        and v.get("family") in BADGE} if isinstance(data, dict) else {}
+        # Seed from the running registry: workers started before records existed, and their start proof.
+        ours = spawned_here()
+        with self.lock:
+            for w in self.workers.values():
+                if w["name"] not in self.records and not w.get("external"):
+                    self.remember(w, save=False)
+                if (w["pid"], w["started"]) not in ours and not w.get("external"):
+                    record_spawn(w["name"], w["pid"], w["started"])
+            self.save_records()
+
+    def remember(self, w, save=True):
+        """Keep a worker's settings for a later restart (call with self.lock held)."""
+        self.records[w["name"]] = {"name": w["name"], "family": w["family"], "cwd": w.get("cwd"),
+                                   "model": w.get("model"), "effort": w.get("effort"),
+                                   "fullAccess": bool(w.get("fullAccess")), "started": int(time.time() * 1000)}
+        if save:
+            self.save_records()
+
+    def save_records(self):
+        try:
+            disk = json.loads(self.records_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            disk = {}
+        merged = {k: v for k, v in disk.items() if isinstance(v, dict)} if isinstance(disk, dict) else {}
+        merged.update(self.records)  # ours win; another writer's records are kept
+        self.records = merged
+        try:
+            STATE.mkdir(parents=True, exist_ok=True)
+            tmp = self.records_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(merged, ensure_ascii=False, indent=1), encoding="utf-8")
+            os.replace(tmp, self.records_path)
+        except OSError:
+            pass
+
+    def list_records(self):
+        with self.lock:
+            return [dict(r) for r in self.records.values()]
+
+    def restart(self, names, online):
+        """Start recorded workers again with their last settings. `online`: names live on the network now.
+        Returns one result per name; nothing already running is touched."""
+        if not isinstance(names, list) or not names or len(names) > 50 or not all(isinstance(n, str) for n in names):
+            raise LaunchError("names must be a list of worker names.")
+        results = []
+        for name in dict.fromkeys(names):
+            try:
+                with self.lock:
+                    rec = self.records.get(name)
+                    if not rec:
+                        raise LaunchError("No record of this worker.", 404)
+                    w = self.workers.get(name)
+                    if (w and self.alive(w)) or name in online or name in self.restarting:
+                        raise LaunchError("It is running already.", 409)
+                    fam = self.catalog.family(rec["family"])
+                    if not fam:
+                        raise LaunchError("Unknown agent.")
+                    m = fam["modes"]["worker"]
+                    if not m["ok"]:
+                        raise LaunchError(m["why"] or "Not available.")
+                    entry, model, effort = self.check_model(fam, m, rec.get("model") or "", rec.get("effort") or "")
+                    if not rec.get("cwd") or not Path(rec["cwd"]).is_dir():
+                        raise LaunchError("Its folder no longer exists.")
+                    if len({n for n, x in self.workers.items() if self.alive(x)} | self.restarting) >= MAX_WORKERS:
+                        raise LaunchError(f"Already {MAX_WORKERS} workers started here; stop one first.", 429)
+                    nw = self.start_worker(fam, rec["cwd"], model, effort, name, bool(rec.get("fullAccess")))
+                    self.workers[name] = nw
+                    self.stopped.discard(name)
+                    self.save()
+                    self.remember(nw)
+                self.settle(nw)
+                results.append({"name": name, "ok": True})
+            except LaunchError as e:
+                results.append({"name": name, "ok": False, "error": str(e), "code": e.code})
+        return {"ok": any(r["ok"] for r in results), "results": results}
+
     def discover(self, procs=None):
         """Take back `serve` workers this page started (recorded in spawned.jsonl) that workers.json lost; note the others.
 
@@ -796,6 +895,8 @@ class Launcher:
                     self.workers[f["name"]] = w
                     self.stopped.discard(f["name"])
                     self.save()
+                    if f["name"] not in self.records or f["model"]:  # do not overwrite known settings with unknowns
+                        self.remember(w)
                 elif f["name"] not in self.workers:
                     foreign[f["name"]] = w
             self.foreign = foreign
@@ -812,6 +913,7 @@ class Launcher:
             self.foreign.pop(name, None)
             self.stopped.discard(name)
             self.save()
+            self.remember(w)
         return {"ok": True}
 
     def list_foreign(self):
@@ -936,6 +1038,7 @@ class Launcher:
             w = self.start_worker(fam, cwd, model, effort, name, full)
             self.workers[name] = w
             self.save()
+            self.remember(w)
         self.settle(w)
         return {"ok": True, "mode": "worker", "name": name}
 
@@ -1002,6 +1105,7 @@ class Launcher:
                 nw = self.start_worker(fam, w["cwd"], model, effort, name, full)
                 self.workers[name] = nw
                 self.save()
+                self.remember(nw)
         finally:
             self.restarting.discard(name)
         self.settle(nw)

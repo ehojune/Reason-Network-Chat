@@ -493,15 +493,16 @@ class DiscoverTest(unittest.TestCase):
         self.l.discover(self.procs)
         self.l.adopt("their-codex")
         calls = []
-        saved = launcher.interrupt, launcher.subprocess.run
+        saved = launcher.interrupt, launcher.subprocess.run, launcher.list_processes
         launcher.interrupt = lambda pid: calls.append(("ctrl-c", pid))
         launcher.subprocess.run = lambda args, **kw: calls.append(tuple(args[:2]))
+        launcher.list_processes = lambda: self.procs
         alive = iter([True, False])
         launcher.Launcher.alive = staticmethod(lambda w: next(alive, False))
         try:
             self.l.stop("their-codex")
         finally:
-            launcher.interrupt, launcher.subprocess.run = saved
+            launcher.interrupt, launcher.subprocess.run, launcher.list_processes = saved
         self.assertNotIn(("ctrl-c", 200), calls)
         if launcher.WIN:
             self.assertIn(("taskkill", "/PID"), calls)

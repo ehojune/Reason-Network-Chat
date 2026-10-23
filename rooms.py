@@ -16,12 +16,28 @@ ID_RE = re.compile(r"^r-[0-9a-f]{8}$")
 MAX_MEMBERS = 12
 MAX_ROOMS = 100
 MAX_NAME = 60
+LIMIT_KEYS = ("hops", "budget")
+LIMIT_MAX = 100000
 
 
 class RoomError(Exception):
     def __init__(self, msg, code=400):
         super().__init__(msg)
         self.code = code
+
+
+def clean_limits(limits):
+    """{hops?, budget?}: each a positive int up to LIMIT_MAX, or None for no limit; a missing key means the default."""
+    if limits is None:
+        return {}
+    if not isinstance(limits, dict) or set(limits) - set(LIMIT_KEYS):
+        raise RoomError("limits must be an object with hops and/or budget.")
+    out = {}
+    for k, v in limits.items():
+        if v is not None and (not isinstance(v, int) or isinstance(v, bool) or not 0 < v <= LIMIT_MAX):
+            raise RoomError(f"{k}: a number from 1 to {LIMIT_MAX}, or null for no limit.")
+        out[k] = v
+    return out
 
 
 def clean_name(name):
@@ -52,6 +68,11 @@ class Rooms:
                         "members": [m for m in r["members"] if isinstance(m, str) and ADDR_RE.match(m)][:MAX_MEMBERS]}
             except (KeyError, TypeError, ValueError, RoomError):
                 continue
+            try:
+                room["limits"] = clean_limits(r.get("limits"))
+            except RoomError:
+                room["limits"] = {}
+            room["defaultTo"] = r.get("defaultTo") if r.get("defaultTo") in room["members"] else None
             if ID_RE.match(str(room["id"])) and room["members"]:
                 self.rooms.append(room)
 
@@ -76,7 +97,7 @@ class Rooms:
             return dict(r, members=list(r["members"])) if r else None
 
     def upsert(self, req, known, me):
-        """Create a room (no id) or rename / change the members of one."""
+        """Create a room (no id) or change one: name, members, group flag, limits, default recipient."""
         name = clean_name(req.get("name"))
         members = req.get("members")
         if not isinstance(members, list) or not all(isinstance(m, str) for m in members):
@@ -87,6 +108,10 @@ class Rooms:
         group = req.get("group", False)
         if not isinstance(group, bool):
             raise RoomError("group must be a boolean.")
+        limits = clean_limits(req.get("limits"))
+        default_to = req.get("defaultTo")
+        if default_to is not None and default_to not in members:
+            raise RoomError("The default recipient must be a member of the room.")
         rid = req.get("id")
         old = next((r for r in self.rooms if r["id"] == rid), None) if rid is not None else None
         kept = set(old["members"]) if old else set()  # a saved member may have left and never sent anything
@@ -98,13 +123,13 @@ class Rooms:
                 if len(self.rooms) >= MAX_ROOMS:
                     raise RoomError(f"At most {MAX_ROOMS} rooms.", 429)
                 room = {"id": f"r-{secrets.token_hex(4)}", "name": name, "members": members, "group": group,
-                        "created": int(time.time() * 1000)}
+                        "created": int(time.time() * 1000), "limits": limits, "defaultTo": default_to}
                 rooms = self.rooms + [room]
             else:
                 old = next((r for r in self.rooms if r["id"] == rid), None)
                 if not old:
                     raise RoomError("No such room.", 404)
-                room = dict(old, name=name, members=members, group=group)
+                room = dict(old, name=name, members=members, group=group, limits=limits, defaultTo=default_to)
                 rooms = [room if r is old else r for r in self.rooms]
             self.commit(rooms)
             return dict(room, members=list(room["members"]))

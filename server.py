@@ -22,7 +22,8 @@ from urllib.parse import parse_qs, urlsplit
 
 from launcher import STATE, Catalog, Launcher, LaunchError, allow_ctrl_c, base_env
 from prefs import PrefError, Prefs
-from relay import Relay
+import relay as relay_mod
+from relay import Relay, RelayError
 from rooms import RoomError, Rooms
 from wake import WakeError, Waker
 
@@ -40,7 +41,7 @@ ORIGINS = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 TOKEN = secrets.token_urlsafe(32)
 # Shape of /api/state and the POSTs. Bump together with API in index.html: a page that meets a server of another
 # version (the server kept running across an update) asks for a restart instead of breaking.
-API = 8
+API = 9
 BOOT = secrets.token_hex(8)  # new each start: an open page that sees another one reloads to get the new token
 NOWIN = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
 
@@ -148,9 +149,10 @@ def state():
         s["unread"] = unread.get(s["address"], 0)
         # The Codex app keeps the conversations it opened locked: then nothing outside the app can wake them.
         s["appOpen"] = bool(s["resumable"]) and WAKER.is_held(Waker.resumable(known[s["name"]]["key"]), s["address"])
-    relays, paused, notices = RELAY.view({m["id"] for m in msgs})
+    relays, queued, notices = RELAY.view({m["id"] for m in msgs})
     return {"api": API, "boot": BOOT, "team": who.get("team"), "me": me, "sessions": sessions, "messages": msgs,
-            "launched": LAUNCHER.list(), "rooms": ROOMS.list(), "relays": relays, "paused": paused, "notices": notices,
+            "launched": LAUNCHER.list(), "rooms": ROOMS.list(), "relays": relays, "queued": queued, "notices": notices,
+            "relayDefaults": {"hops": relay_mod.MAX_HOPS, "budget": relay_mod.BUDGET, "window": relay_mod.BUDGET_WINDOW},
             "prefs": PREFS.get(), "wakes": WAKER.view(),
             "whoError": who_err, "now": int(time.time() * 1000)}
 
@@ -292,7 +294,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         if path not in ("/api/send", "/api/launch", "/api/stop", "/api/rooms/save", "/api/rooms/delete",
-                        "/api/rooms/send", "/api/prefs", "/api/wake", "/api/workers/configure"):
+                        "/api/rooms/send", "/api/rooms/flush", "/api/prefs", "/api/wake", "/api/workers/configure"):
             return self.send_error(404)
         req = self.read_json()
         if req is None:
@@ -310,6 +312,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True})
             elif path == "/api/rooms/send":
                 self.send_room(req)
+            elif path == "/api/rooms/flush":
+                if not ROOMS.get(req.get("id")):
+                    return self.send_json({"error": "No such room."}, 404)
+                self.send_json({"ok": True, "released": RELAY.flush(req["id"])})
             elif path == "/api/prefs":
                 self.send_json({"ok": True, "prefs": PREFS.set(req.get("key"), req.get("value"))})
             elif path == "/api/wake":
@@ -332,7 +338,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json({"error": "name must be a string"}, 400)
                 LAUNCHER.stop(name)
                 self.send_json({"ok": True})
-        except (LaunchError, RoomError, PrefError, WakeError) as e:
+        except (LaunchError, RoomError, PrefError, WakeError, RelayError) as e:
             self.send_json({"error": str(e)}, e.code)
         except Exception as e:
             self.send_json({"error": str(e)}, 500)

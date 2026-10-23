@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="880" height="360" viewBox="0 0 880 360" role="img" aria-labelledby="t d" xml:lang="en">
   <title id="t">Group chat</title>
-  <desc id="d">① your message. ② + lines each one missed. ③ reply names @b-codex. ④ passed on (hop 1 of 3). only you and @name wake anyone; a chain stops after 3 hops; at most 20 hand-offs per 10 min</desc>
+  <desc id="d">① to the @mentioned only. ② + lines each one missed. ③ reply names @b-codex. ④ passed on to b-codex. only @mentioned members receive; over a limit: queued, not dropped; limits are set per room</desc>
   <style>
     text { font-family: "Noto Sans KR", "Noto Sans SC", "Apple SD Gothic Neo", "PingFang SC", "Segoe UI", "Malgun Gothic", "Microsoft YaHei", sans-serif; fill: #1F2328; }
     .h { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
@@ -24,9 +24,9 @@
   <rect x="300" y="36" width="230" height="248" rx="14" fill="#F0FAF3" stroke="#6CC08B"/>
   <text class="t" x="415" y="64" text-anchor="middle">Reason Network Chat</text>
   <text class="s" x="415" y="100" text-anchor="middle" style="font-style:italic">“@b-codex can you check retry.ts?”</text>
-  <rect x="316" y="196" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="210" text-anchor="middle" style="font-size:11px">only you and @name wake anyone</text>
-  <rect x="316" y="222" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="236" text-anchor="middle" style="font-size:11px">a chain stops after 3 hops</text>
-  <rect x="316" y="248" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="262" text-anchor="middle" style="font-size:11px">at most 20 hand-offs per 10 min</text>
+  <rect x="316" y="196" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="210" text-anchor="middle" style="font-size:11px">only @mentioned members receive</text>
+  <rect x="316" y="222" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="236" text-anchor="middle" style="font-size:11px">over a limit: queued, not dropped</text>
+  <rect x="316" y="248" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="262" text-anchor="middle" style="font-size:11px">limits are set per room</text>
   <rect x="700" y="56" width="156" height="48" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/><rect x="700" y="56" width="8" height="48" rx="4" fill="#C96442"/><text class="m" x="722" y="85" style="font-size:13px;fill:#1F2328">a-claude</text>
   <path d="M534 176C610 176 620 86 694 86" fill="none" stroke="#1A7F37" stroke-width="2" marker-end="url(#a-green)"/>
   <rect x="700" y="136" width="156" height="48" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/><rect x="700" y="136" width="8" height="48" rx="4" fill="#2563EB"/><text class="m" x="722" y="165" style="font-size:13px;fill:#1F2328">b-codex</text>
@@ -39,11 +39,11 @@
   <circle cx="620" cy="76" r="10" fill="#C96442"/><text class="w" x="620" y="80" text-anchor="middle">3</text>
   <circle cx="600" cy="128" r="10" fill="#7C3AED"/><text class="w" x="600" y="132" text-anchor="middle">4</text>
   <circle cx="60" cy="312" r="10" fill="#C96442"/><text class="w" x="60" y="316" text-anchor="middle">1</text>
-  <text class="b" x="78" y="317">your message</text>
+  <text class="b" x="78" y="317">to the @mentioned only</text>
   <circle cx="460" cy="312" r="10" fill="#1A7F37"/><text class="w" x="460" y="316" text-anchor="middle">2</text>
   <text class="b" x="478" y="317">+ lines each one missed</text>
   <circle cx="60" cy="338" r="10" fill="#C96442"/><text class="w" x="60" y="342" text-anchor="middle">3</text>
   <text class="b" x="78" y="343">reply names @b-codex</text>
   <circle cx="460" cy="338" r="10" fill="#7C3AED"/><text class="w" x="460" y="342" text-anchor="middle">4</text>
-  <text class="b" x="478" y="343">passed on (hop 1 of 3)</text>
+  <text class="b" x="478" y="343">passed on to b-codex</text>
 </svg>

@@ -1,9 +1,11 @@
 """Group-room relay with a fake database and sender: python -m unittest discover tests"""
 import itertools
+import json
 import subprocess
 import sqlite3
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -26,10 +28,16 @@ class RelayTest(unittest.TestCase):
         self.db = sqlite3.connect(":memory:", check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.execute("create table messages (id text, sender text, recipient text, reply_to text, body text, sent_at int)")
-        self.ids, self.clock = itertools.count(1), itertools.count(10**12, 1000)
+        # message times near now: a restarted relay resumes only replies from the last RESUME_MS
+        self.ids, self.clock = itertools.count(1), itertools.count(int(time.time() * 1000), 1000)
         self.room = {"id": "r-00000001", "name": "team", "members": [A, B, C], "group": True}
-        self.r = relay.Relay(tempfile.mkdtemp(), FakeRooms(self.room), self.rows, self.send)
+        self.home = tempfile.mkdtemp()
+        self.r = self.new_relay()
         self.r.since = 0
+
+    def new_relay(self):
+        """A relay over the same folder: what a restarted server sees."""
+        return relay.Relay(self.home, FakeRooms(self.room), self.rows, self.send)
 
     def rows(self, sql, params=()):
         return [dict(r) for r in self.db.execute(sql, params)]
@@ -46,39 +54,57 @@ class RelayTest(unittest.TestCase):
     def sent_to(self, member):
         return [r["body"] for r in self.rows("select body from messages where sender = ? and recipient = ? order by sent_at", (ME, member))]
 
+    def counts(self):
+        return [len(self.sent_to(m)) for m in (A, B, C)]
+
     def last_id_to(self, member):
         return self.rows("select id from messages where sender = ? and recipient = ? order by sent_at desc limit 1", (ME, member))[0]["id"]
 
-    def test_post_reaches_everyone_or_only_mentions(self):
-        self.r.post(self.room, ME, "hello all")
-        self.assertEqual([len(self.sent_to(m)) for m in (A, B, C)], [1, 1, 1])
-        self.assertTrue(self.sent_to(A)[0].endswith("---\npat: hello all"))
-        self.r.post(self.room, ME, "@b-claude only you")
-        self.assertEqual([len(self.sent_to(m)) for m in (A, B, C)], [1, 2, 1])
+    def queued(self):
+        return self.r.view(set())[1].get(self.room["id"])
 
+    # ---------- who your message goes to ----------
+    def test_your_message_goes_only_to_mentions_or_the_default(self):
+        with self.assertRaises(relay.RelayError):
+            self.r.post(self.room, ME, "hello, nobody named")  # never silently to everyone
+        self.assertEqual(self.counts(), [0, 0, 0])
+        self.r.post(self.room, ME, "@b-claude only you")
+        self.assertEqual(self.counts(), [0, 1, 0])
+        self.r.post(self.room, ME, "@all hello")
+        self.assertEqual(self.counts(), [1, 2, 1])
+        self.r.post(self.room, ME, "@모두 안녕")
+        self.assertEqual(self.counts(), [2, 3, 2])
+        self.room["defaultTo"] = C
+        self.r.post(self.room, ME, "no mention: the default recipient")
+        self.assertEqual(self.counts(), [2, 3, 3])
+        self.assertTrue(self.sent_to(C)[-1].endswith("---\npat: no mention: the default recipient"))
+
+    def test_mention_followed_by_korean_particle(self):
+        self.r.post(self.room, ME, "@b-claude에게 부탁")
+        self.assertEqual(self.counts(), [0, 1, 0])
+
+    def test_envelope_says_only_mentions_receive(self):
+        self.r.post(self.room, ME, "@a-codex hi")
+        head = self.sent_to(A)[-1].split("---")[0]
+        self.assertIn("Only the members you @mention receive your reply; pat sees the whole room.", head)
+        self.assertNotIn("Everyone in the room reads", head)
+
+    def test_members_cannot_mention_everyone(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@all look at this", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 0, 0])
+
+    # ---------- context ----------
     def test_missed_lines_are_included_once(self):
-        self.r.post(self.room, ME, "q1")
+        self.r.post(self.room, ME, "@all q1")
         self.insert(A, ME, "a answers q1", reply_to=self.last_id_to(A))
         self.r.post(self.room, ME, "@b-claude what do you think?")
         body = self.sent_to(B)[-1]
         self.assertIn("a-codex: a answers q1", body)
-        self.assertNotIn("pat: q1", body)  # b got q1 itself
+        self.assertNotIn("pat: @all q1", body)  # b got q1 itself
         self.r.post(self.room, ME, "@b-claude and now?")
         self.assertNotIn("a answers q1", self.sent_to(B)[-1])  # already given
-
-    def test_mention_is_passed_on_with_hop_limit(self):
-        self.r.post(self.room, ME, "@a-codex start")
-        prev = self.last_id_to(A)
-        for hop, (who, nxt) in enumerate([(A, B), (B, A), (A, B), (B, A)], start=1):
-            self.insert(who, ME, f"@{relay.short(nxt)} your turn", reply_to=prev)
-            self.r.scan(ME)
-            if hop <= relay.MAX_HOPS:
-                prev = self.last_id_to(nxt)
-                self.assertEqual(self.r.sent[prev]["hop"], hop)
-        self.assertEqual(len(self.sent_to(A)) + len(self.sent_to(B)), 1 + relay.MAX_HOPS)
-        self.assertEqual(self.r.paused.get(self.room["id"]), "hops")
-        self.r.post(self.room, ME, "@c-codex reset")
-        self.assertNotIn(self.room["id"], self.r.paused)
 
     def test_handed_off_reply_appears_once(self):
         self.r.post(self.room, ME, "@a-codex start")
@@ -89,43 +115,27 @@ class RelayTest(unittest.TestCase):
         self.assertTrue(body.endswith("---\na-codex: @b-claude please check retry.ts"))
 
     def test_broadcast_is_not_repeated_as_context(self):
-        self.r.post(self.room, ME, "hello all")
+        self.r.post(self.room, ME, "@all hello all")
         for m in (A, B, C):
             self.assertEqual(self.sent_to(m)[-1].count("hello all"), 1, m)
 
     def test_same_session_name_needs_the_full_address(self):
         twin = "kim/a-codex"
         self.room["members"] = [A, twin, B]
-        self.r.post(self.room, ME, "@a-codex who am I?")  # ambiguous: wakes nobody in particular, so everyone
-        self.assertEqual(len(self.sent_to(twin)), 1)
+        with self.assertRaises(relay.RelayError):
+            self.r.post(self.room, ME, "@a-codex who am I?")  # ambiguous: names nobody
         self.r.post(self.room, ME, "@kim/a-codex only you")
-        self.assertEqual((len(self.sent_to(A)), len(self.sent_to(twin)), len(self.sent_to(B))), (1, 2, 1))
+        self.assertEqual((len(self.sent_to(A)), len(self.sent_to(twin)), len(self.sent_to(B))), (0, 1, 0))
         self.assertIn("Members: pat (person), pat/a-codex, kim/a-codex, b-claude.", self.sent_to(twin)[-1])
 
     def test_no_mention_no_wake_and_self_mention_ignored(self):
         self.r.post(self.room, ME, "@a-codex hi")
         self.insert(A, ME, "done, nothing for @a-codex or @pat", reply_to=self.last_id_to(A))
         self.r.scan(ME)
-        self.assertEqual([len(self.sent_to(m)) for m in (A, B, C)], [1, 0, 0])
-
-    def test_budget_pauses_until_you_write(self):
-        old = relay.BUDGET
-        relay.BUDGET = 1
-        try:
-            self.r.post(self.room, ME, "@a-codex go")
-            self.insert(A, ME, "@b-claude @c-codex look", reply_to=self.last_id_to(A))
-            self.r.scan(ME)
-            self.assertEqual(len(self.sent_to(B)) + len(self.sent_to(C)), 1)
-            self.assertEqual(self.r.paused.get(self.room["id"]), "budget")
-            self.r.post(self.room, ME, "@a-codex again")  # your message clears the pause and the budget
-            self.insert(A, ME, "@b-claude look", reply_to=self.last_id_to(A))
-            self.r.scan(ME)
-            self.assertEqual(len(self.sent_to(B)) + len(self.sent_to(C)), 2)
-        finally:
-            relay.BUDGET = old
+        self.assertEqual(self.counts(), [1, 0, 0])
 
     def test_reply_landing_during_a_send_is_not_lost(self):
-        self.r.post(self.room, ME, "q1")
+        self.r.post(self.room, ME, "@all q1")
         real = self.send
 
         def send_and_reply(to, body, fyi):  # c answers while b's copy is being sent
@@ -139,6 +149,159 @@ class RelayTest(unittest.TestCase):
         self.r.post(self.room, ME, "@b-claude q3")
         self.assertIn("c-codex: c answers q1", self.sent_to(B)[-1])
 
+    def test_long_missed_reply_is_clipped_not_dropped(self):
+        self.r.post(self.room, ME, "@all q1")
+        self.insert(A, ME, "x" * 5000, reply_to=self.last_id_to(A))
+        self.r.post(self.room, ME, "@b-claude your view?")
+        self.assertIn("a-codex: " + "x" * (relay.LINE_CHARS - 1) + "…", self.sent_to(B)[-1])
+
+    def test_handed_off_reply_is_not_repeated_later(self):
+        self.r.post(self.room, ME, "@a-codex start")
+        self.insert(A, ME, "@b-claude please check", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        self.r.post(self.room, ME, "@b-claude anything else?")
+        self.assertNotIn("please check", self.sent_to(B)[-1].split("---")[0])
+
+    def test_other_traffic_does_not_crowd_out_room_lines(self):
+        self.r.post(self.room, ME, "@all q1")
+        self.insert(A, ME, "a answers q1", reply_to=self.last_id_to(A))
+        for i in range(450):
+            self.insert("pat/elsewhere", "kim/other", f"unrelated {i}")
+        self.r.post(self.room, ME, "@b-claude your view?")
+        self.assertIn("a-codex: a answers q1", self.sent_to(B)[-1])
+
+    def test_plain_rooms_are_not_relayed(self):
+        self.room["group"] = False
+        self.r.post(self.room, ME, "@a-codex hi")
+        self.insert(A, ME, "@b-claude look", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        self.assertEqual(self.sent_to(B), [])
+
+    # ---------- limits: nothing is dropped ----------
+    def test_hop_limit_holds_until_you_continue(self):
+        self.room["limits"] = {"hops": 3}
+        self.r.post(self.room, ME, "@a-codex start")
+        prev = self.last_id_to(A)
+        for hop, (who, nxt) in enumerate([(A, B), (B, A), (A, B), (B, A)], start=1):
+            self.insert(who, ME, f"@{relay.short(nxt)} your turn", reply_to=prev)
+            self.r.scan(ME)
+            if hop <= 3:
+                prev = self.last_id_to(nxt)
+                self.assertEqual(self.r.sent[prev]["hop"], hop)
+        self.assertEqual(len(self.sent_to(A)) + len(self.sent_to(B)), 1 + 3)
+        self.assertEqual(self.queued(), {"waiting": 0, "held": 1})  # held, not dropped
+        self.assertEqual(self.r.flush(self.room["id"]), 1)
+        self.r.scan(ME)
+        self.assertEqual(len(self.sent_to(A)) + len(self.sent_to(B)), 1 + 4)
+        self.assertIsNone(self.queued())
+
+    def test_budget_queues_and_sends_when_the_window_frees(self):
+        self.room["limits"] = {"budget": 1}
+        old = relay.BUDGET_WINDOW
+        relay.BUDGET_WINDOW = 0.2
+        try:
+            self.r.post(self.room, ME, "@a-codex go")
+            self.insert(A, ME, "@b-claude @c-codex look", reply_to=self.last_id_to(A))
+            self.r.scan(ME)
+            self.assertEqual(len(self.sent_to(B)) + len(self.sent_to(C)), 1)
+            self.assertEqual(self.queued(), {"waiting": 1, "held": 0})
+            time.sleep(0.3)
+            self.r.scan(ME)
+            self.assertEqual(len(self.sent_to(B)) + len(self.sent_to(C)), 2)
+            self.assertIsNone(self.queued())
+        finally:
+            relay.BUDGET_WINDOW = old
+
+    def test_send_all_now_and_your_message_free_the_queue(self):
+        self.room["limits"] = {"budget": 1}
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude @c-codex look", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        self.assertEqual(self.queued(), {"waiting": 1, "held": 0})
+        self.r.flush(self.room["id"])  # "send all now": past the budget
+        self.r.scan(ME)
+        self.assertEqual(len(self.sent_to(B)) + len(self.sent_to(C)), 2)
+        self.insert(B, ME, "@c-codex next", reply_to=self.last_id_to(B))
+        self.r.scan(ME)
+        self.assertEqual(self.queued(), {"waiting": 1, "held": 0})
+        self.r.post(self.room, ME, "@a-codex continue")  # your message: a fresh budget
+        self.r.scan(ME)
+        self.assertIsNone(self.queued())
+
+    def test_queued_hand_off_to_a_member_who_left_is_dropped(self):
+        self.room["limits"] = {"budget": 1}
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude @c-codex look", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        queued_for = self.r.queue[self.room["id"]][0]["to"]
+        self.room["members"] = [m for m in self.room["members"] if m != queued_for]  # edited while it waits
+        self.r.post(self.room, ME, "@a-codex fresh budget")
+        self.r.scan(ME)
+        self.assertEqual(self.sent_to(queued_for), [])
+        self.assertIsNone(self.queued())
+
+    def test_member_removed_during_a_send_gets_nothing_after_it(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude @c-codex look", reply_to=self.last_id_to(A))
+        real = self.r.send_one
+
+        def send_then_edit(to, body, fyi):  # the room is edited while the first hand-off is being sent
+            out = real(to, body, fyi)
+            if self.room["members"] == [A, B, C]:
+                self.room = dict(self.room, members=[A, B])
+                self.r.rooms.room = self.room
+            return out
+
+        self.r.send_one = send_then_edit
+        self.r.scan(ME)
+        self.assertEqual((len(self.sent_to(B)), len(self.sent_to(C))), (1, 0))
+        self.assertIsNone(self.queued())
+
+    def test_a_lowered_hop_limit_holds_queued_hand_offs(self):
+        self.room["limits"] = {"budget": 1}
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude @c-codex look", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        self.room["limits"] = {"budget": 5, "hops": 0}  # hop 1 is now past the limit
+        self.r.scan(ME)
+        self.assertEqual(self.queued(), {"waiting": 0, "held": 1})
+        self.room["limits"] = {"budget": 5}  # raised again: it goes
+        self.r.scan(ME)
+        self.assertIsNone(self.queued())
+
+    def test_a_sent_hand_off_leaves_the_queue_in_the_same_save(self):
+        self.room["limits"] = {"budget": 1}
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude @c-codex look", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        self.r.flush(self.room["id"])
+        self.r.scan(ME)
+        saved = json.loads((Path(self.home) / "relay.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["queue"], {})
+        self.new_relay().scan(ME)  # a restart sends nothing again
+        self.assertEqual(len(self.sent_to(B)) + len(self.sent_to(C)), 2)
+
+    def test_mention_right_after_other_text(self):
+        self.r.post(self.room, ME, "안녕@b-claude 봐 줘")
+        self.assertEqual(self.counts(), [0, 1, 0])
+        with self.assertRaises(relay.RelayError):
+            self.r.post(self.room, ME, "mail pat@b-claude is not a mention")
+
+    def test_no_limit_room(self):
+        self.room["limits"] = {"hops": None, "budget": None}
+        old = relay.MAX_HOPS, relay.BUDGET
+        relay.MAX_HOPS, relay.BUDGET = 2, 1
+        try:
+            self.r.post(self.room, ME, "@a-codex start")
+            prev = self.last_id_to(A)
+            for who, nxt in [(A, B), (B, A), (A, B), (B, A)]:
+                self.insert(who, ME, f"@{relay.short(nxt)} your turn", reply_to=prev)
+                self.r.scan(ME)
+                prev = self.last_id_to(nxt)
+            self.assertEqual(len(self.sent_to(A)) + len(self.sent_to(B)), 5)
+        finally:
+            relay.MAX_HOPS, relay.BUDGET = old
+
     def test_failed_hand_off_is_retried_then_reported(self):
         self.r.post(self.room, ME, "@a-codex go")
         self.insert(A, ME, "@b-claude please check", reply_to=self.last_id_to(A))
@@ -149,44 +312,7 @@ class RelayTest(unittest.TestCase):
         self.assertEqual(calls, [B] * relay.RETRIES)
         _, _, notice = self.r.view(set())
         self.assertIn("network down", notice[self.room["id"]])
-
-    def test_long_missed_reply_is_clipped_not_dropped(self):
-        self.r.post(self.room, ME, "q1")
-        self.insert(A, ME, "x" * 5000, reply_to=self.last_id_to(A))
-        self.r.post(self.room, ME, "@b-claude your view?")
-        self.assertIn("a-codex: " + "x" * (relay.LINE_CHARS - 1) + "…", self.sent_to(B)[-1])
-
-    def test_scan_cursor_moves_and_waits_for_retries(self):
-        self.r.post(self.room, ME, "@a-codex go")
-        quiet = self.insert(A, ME, "done, no mention", reply_to=self.last_id_to(A))
-        self.r.scan(ME)
-        at = self.rows("select sent_at from messages where id = ?", (quiet,))[0]["sent_at"]
-        self.assertEqual(self.r.since, at)
-        self.r.post(self.room, ME, "@a-codex again")
-        self.insert(A, ME, "@b-claude look", reply_to=self.last_id_to(A))
-        real = self.r.send_one
-        self.r.send_one = lambda to, body, fyi: (1, "", "down")
-        self.r.scan(ME)
-        self.assertEqual(self.r.since, at)  # a pending retry holds the cursor
-        self.r.send_one = real
-        self.r.scan(ME)
-        self.assertGreater(self.r.since, at)
-        self.assertEqual(self.r.done and min(self.r.done.values()) >= self.r.since, True)
-
-    def test_handed_off_reply_is_not_repeated_later(self):
-        self.r.post(self.room, ME, "@a-codex start")
-        self.insert(A, ME, "@b-claude please check", reply_to=self.last_id_to(A))
-        self.r.scan(ME)
-        self.r.post(self.room, ME, "@b-claude anything else?")
-        self.assertNotIn("please check", self.sent_to(B)[-1].split("---")[0])
-
-    def test_other_traffic_does_not_crowd_out_room_lines(self):
-        self.r.post(self.room, ME, "q1")
-        self.insert(A, ME, "a answers q1", reply_to=self.last_id_to(A))
-        for i in range(450):
-            self.insert("pat/elsewhere", "kim/other", f"unrelated {i}")
-        self.r.post(self.room, ME, "@b-claude your view?")
-        self.assertIn("a-codex: a answers q1", self.sent_to(B)[-1])
+        self.assertIsNone(self.queued())
 
     def test_send_that_raises_counts_as_a_failed_attempt(self):
         self.r.post(self.room, ME, "@a-codex go")
@@ -204,12 +330,54 @@ class RelayTest(unittest.TestCase):
         self.assertIn("TimeoutExpired", self.r.view(set())[2][self.room["id"]])
         self.assertEqual(len(self.r.passes[self.room["id"]]), 0)  # failed attempts do not use the budget
 
-    def test_plain_rooms_are_not_relayed(self):
-        self.room["group"] = False
-        self.r.post(self.room, ME, "@a-codex hi")
-        self.insert(A, ME, "@b-claude look", reply_to=self.last_id_to(A))
+    # ---------- restarts ----------
+    def test_cursor_moves_past_queued_hand_offs(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        quiet = self.insert(A, ME, "done, no mention", reply_to=self.last_id_to(A))
         self.r.scan(ME)
-        self.assertEqual(self.sent_to(B), [])
+        at = self.rows("select sent_at from messages where id = ?", (quiet,))[0]["sent_at"]
+        self.assertEqual(self.r.since, at)
+        self.r.post(self.room, ME, "@a-codex again")
+        self.insert(A, ME, "@b-claude look", reply_to=self.last_id_to(A))
+        real = self.r.send_one
+        self.r.send_one = lambda to, body, fyi: (1, "", "down")
+        self.r.scan(ME)
+        self.assertGreater(self.r.since, at)  # the failed hand-off waits in the queue, not behind the cursor
+        self.assertEqual(self.queued(), {"waiting": 1, "held": 0})
+        self.r.send_one = real
+        self.r.scan(ME)
+        self.assertEqual(len(self.sent_to(B)), 1)
+
+    def test_replies_while_the_server_was_down_are_passed_on_once(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.r.scan(ME)  # the cursor is saved
+        self.insert(A, ME, "@b-claude written while the server was stopped", reply_to=self.last_id_to(A))
+        again = self.new_relay()  # restarted: resumes from the saved cursor, not from "now"
+        again.scan(ME)
+        self.assertEqual(len(self.sent_to(B)), 1)
+        self.new_relay().scan(ME)  # and a further restart does not send it twice
+        self.assertEqual(len(self.sent_to(B)), 1)
+
+    def test_queue_survives_a_restart(self):
+        self.room["limits"] = {"budget": 1}
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude @c-codex look", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        self.assertEqual(self.queued(), {"waiting": 1, "held": 0})
+        again = self.new_relay()  # a fresh window after the restart
+        again.scan(ME)
+        self.assertEqual(len(self.sent_to(B)) + len(self.sent_to(C)), 2)
+
+    def test_save_keeps_records_written_by_another_server(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        path = Path(self.home) / "relay.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["sent"]["other-id"] = {"room": "r-x", "hop": 0, "core": "theirs", "speaker": ME, "to": B, "at": 1}
+        path.write_text(json.dumps(data), encoding="utf-8")
+        self.r.post(self.room, ME, "@b-claude more")
+        merged = json.loads(path.read_text(encoding="utf-8"))["sent"]
+        self.assertIn("other-id", merged)
+        self.assertEqual(len(merged), 3)
 
 
 if __name__ == "__main__":

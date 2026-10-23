@@ -9,6 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 |---|---|---|
+| 23:44 | [#18](https://github.com/ehojune/Reason-Network-Chat/pull/18) | A second server can no longer start on a port that is already in use: on Windows the port is bound exclusively, and the new one exits with "Port 8765 is in use" instead of silently sharing it with a stale server. |
 | 23:31 | [#17](https://github.com/ehojune/Reason-Network-Chat/pull/17) | Pick **permissions** when starting a session (default, or full access with a confirmation), and **change a running worker's model, effort and permissions** from its right-click menu. A Codex model change applies from the next message; other changes restart the worker under the same name. Claude worker effort now actually applies. |
 | 22:07 | [#16](https://github.com/ehojune/Reason-Network-Chat/pull/16) | An unread message sent with **Don't wake** (`--fyi`) now says *sent without waking · read on its next turn* instead of the session's usual "gets it right away", which it never did for such messages. |
 | 21:41 | [#15](https://github.com/ehojune/Reason-Network-Chat/pull/15) | The agent badge (codex, claude-code, …) now also shows in front of each recipient, after the arrow. |

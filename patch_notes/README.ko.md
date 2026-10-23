@@ -9,6 +9,7 @@ Reason Network Chat에서 바뀐 것을 최신순으로 적는다. 시간은 한
 
 | 시간 | 변경 | 주요 변경사항 |
 |---|---|---|
+| 23:44 | [#18](https://github.com/ehojune/Reason-Network-Chat/pull/18) | 이미 쓰는 포트에서는 두 번째 서버가 뜨지 않는다. Windows에서 포트를 독점으로 잡아, 새 서버는 옛 서버와 몰래 포트를 나눠 쓰는 대신 "Port 8765 is in use"로 끝난다. |
 | 23:31 | [#17](https://github.com/ehojune/Reason-Network-Chat/pull/17) | 세션을 시작할 때 **권한**(기본, 또는 확인을 거친 전체 권한)을 고르고, 돌고 있는 워커의 **모델·추론 강도·권한을 우클릭 메뉴에서 바꾼다**. Codex 모델 변경은 다음 메시지부터 적용되고, 나머지는 같은 이름으로 다시 시작한다. Claude 워커의 추론 강도가 이제 실제로 적용된다. |
 | 22:07 | [#16](https://github.com/ehojune/Reason-Network-Chat/pull/16) | **깨우지 않기**(`--fyi`)로 보낸 안 읽은 메시지에 "바로 받음" 대신 *깨우지 않고 보냄 · 다음 차례에 읽음*이 나온다. 이런 메시지는 원래 바로 전달되지 않는다. |
 | 21:41 | [#15](https://github.com/ehojune/Reason-Network-Chat/pull/15) | 화살표 뒤 받는 세션 앞에도 에이전트 표시(codex, claude-code 등)가 붙는다. |

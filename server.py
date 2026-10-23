@@ -10,6 +10,7 @@ import json
 import os
 import secrets
 import shutil
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -369,6 +370,28 @@ class Handler(BaseHTTPRequestHandler):
                         **({} if sent else {"error": "; ".join(r["err"] for r in results)})}, 200 if sent else 502)
 
 
+class ChatServer(ThreadingHTTPServer):
+    """One server per port. On Windows SO_REUSEADDR (which HTTPServer sets) lets a second server bind a port that
+    is in use, and then one of them silently gets every request: a stale server answers the page. Bind exclusively
+    there, so the second one fails. Elsewhere SO_REUSEADDR does not allow two listeners."""
+    if sys.platform == "win32":
+        allow_reuse_address = False
+
+        def server_bind(self):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            super().server_bind()
+
+
+def bind(host, port):
+    try:
+        return ChatServer((host, port), Handler)
+    except OSError as e:
+        if e.errno in (98, 48, 10048, 10013) or getattr(e, "winerror", None) in (10048, 10013):  # address in use
+            sys.exit(f"Port {port} is in use: another Reason Network Chat (or another program) is already running "
+                     f"there. Stop it first, or set REASON_CHAT_PORT.")
+        raise
+
+
 def main():
     if not DB.exists():
         sys.exit(f"Reason Network database not found: {DB}\nInstall and start Reason Network first.")
@@ -377,7 +400,7 @@ def main():
     threading.Thread(target=CATALOG.get, daemon=True).start()  # `agy models` takes a few seconds
     threading.Thread(target=RELAY.run, args=(my_address,), daemon=True).start()
     threading.Thread(target=auto_loop, daemon=True).start()
-    srv = ThreadingHTTPServer((HOST, PORT), Handler)
+    srv = bind(HOST, PORT)
     print(f"Reason Network Chat on http://{HOST}:{PORT}", flush=True)
     srv.serve_forever()
 

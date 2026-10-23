@@ -83,10 +83,12 @@ class Rooms:
         members = list(dict.fromkeys(m.strip() for m in members))
         if not 0 < len(members) <= MAX_MEMBERS:
             raise RoomError(f"Pick 1 to {MAX_MEMBERS} sessions.")
-        for m in members:
-            if not ADDR_RE.match(m) or m == me or m not in known:
-                raise RoomError(f"Unknown session: {m}")
         rid = req.get("id")
+        old = next((r for r in self.rooms if r["id"] == rid), None) if rid is not None else None
+        kept = set(old["members"]) if old else set()  # a saved member may have left and never sent anything
+        for m in members:
+            if not ADDR_RE.match(m) or m == me or (m not in known and m not in kept):
+                raise RoomError(f"Unknown session: {m}")
         with self.lock:
             if rid is None:
                 if len(self.rooms) >= MAX_ROOMS:

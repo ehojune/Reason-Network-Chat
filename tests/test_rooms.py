@@ -33,6 +33,14 @@ class RoomsTest(unittest.TestCase):
         with self.assertRaises(rooms.RoomError):
             self.r.delete(room["id"])
 
+    def test_saved_member_that_left_without_traffic_survives_a_rename(self):
+        room = self.r.upsert({"name": "t", "members": ["pat/api-claude", "pat/web-codex"]}, KNOWN, ME)
+        now_known = KNOWN - {"pat/web-codex"}  # left `who`, never sent or received anything
+        again = self.r.upsert({"id": room["id"], "name": "renamed", "members": room["members"]}, now_known, ME)
+        self.assertEqual(again["members"], ["pat/api-claude", "pat/web-codex"])
+        with self.assertRaises(rooms.RoomError):  # but not for a new room
+            self.r.upsert({"name": "new", "members": ["pat/web-codex"]}, now_known, ME)
+
     def test_validation(self):
         self.bad(name="", members=["pat/api-claude"])
         self.bad(name="x" * 61, members=["pat/api-claude"])

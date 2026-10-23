@@ -341,12 +341,13 @@ function renderTl() {
   const byId = Object.fromEntries(S.messages.map(m => [m.id, m]));
   // A room send is one row per member; show it once, with every recipient.
   const ms = [];
+  // Same sender, text, quote and wake within 15 s: one send to several sessions, even with replies in between.
+  const same = (g, m) => g.sender === m.sender && g.body === m.body && g.reply_to === m.reply_to && g.wake === m.wake
+    && m.sent_at - g.sent_at < 15000 && !g.to.includes(m.recipient);
   for (const m of S.messages.filter(shown)) {
-    const prev = ms[ms.length - 1];
-    // Same sender, text, quote and wake within 15 s: one send to several sessions, not separate replies.
-    if (prev && prev.sender === m.sender && prev.body === m.body && m.sent_at - prev.sent_at < 15000
-        && prev.reply_to === m.reply_to && prev.wake === m.wake
-        && !prev.to.includes(m.recipient)) { prev.to.push(m.recipient); prev.all.push(m); continue; }
+    let g = null;
+    for (let i = ms.length - 1; i >= 0 && m.sent_at - ms[i].sent_at < 15000; i--) if (same(ms[i], m)) { g = ms[i]; break; }
+    if (g) { g.to.push(m.recipient); g.all.push(m); continue; }
     ms.push({...m, to: [m.recipient], all: [m]});
   }
   if (!ms.length) { tl.innerHTML = `<div class="empty">${t("empty")}</div>`; return; }

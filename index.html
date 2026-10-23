@@ -96,6 +96,28 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .bub { background: var(--bubble); border: 1px solid var(--line); border-radius: 14px; padding: 8px 12px;
   max-width: min(720px, 85%); white-space: pre-wrap; word-break: break-word; }
 .msg.me .bub { background: var(--me); }
+/* Markdown bubbles: rendered blocks, not pre-wrapped text (the raw view keeps pre-wrap) */
+.bub.md { white-space: normal; min-width: 0; }
+.bub.md p { margin: 0 0 6px; } .bub.md > :last-child { margin-bottom: 0; }
+.bub.md .mh { font-weight: 700; margin: 8px 0 4px; } .bub.md .mh:first-child { margin-top: 0; }
+.bub.md .mh1 { font-size: 1.15em; } .bub.md .mh2 { font-size: 1.08em; }
+.bub.md ul, .bub.md ol { margin: 2px 0 6px; padding-left: 1.4em; }
+.bub.md blockquote { border-left: 3px solid var(--line); margin: 4px 0 6px; padding-left: 8px; color: var(--muted); }
+.bub.md hr { border: none; border-top: 1px solid var(--line); margin: 8px 0; }
+.bub.md a { color: var(--accent); }
+.bub code { font-family: ui-monospace, Consolas, "D2Coding", monospace; font-size: 12.5px; background: var(--hover);
+  padding: 0 4px; border-radius: 4px; }
+.bub.md pre { background: var(--hover); padding: 8px 10px; border-radius: 8px; overflow-x: auto; margin: 4px 0 6px;
+  white-space: pre; }
+.bub.md pre code { background: none; padding: 0; }
+.bub.md .tbl { overflow-x: auto; max-width: 100%; margin: 4px 0 6px; }
+.bub.md table { border-collapse: collapse; font-size: 13px; }
+.bub.md th, .bub.md td { border: 1px solid var(--line); padding: 3px 8px; text-align: left; vertical-align: top;
+  min-width: 3em; max-width: 32em; }
+.bub.md th { background: var(--hover); font-weight: 600; }
+.bub.md .al-c { text-align: center; } .bub.md .al-r { text-align: right; }
+.rawBtn { font: inherit; font-size: 11px; color: var(--muted); background: none; border: none; padding: 0; margin-left: 6px;
+  cursor: pointer; text-decoration: underline dotted; }
 .tag.me { background: var(--accent); }
 .quote { border-left: 3px solid var(--line); color: var(--muted); font-size: 12px; padding: 0 0 0 8px; margin-bottom: 6px;
   max-height: 3em; overflow: hidden; }
@@ -229,7 +251,7 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
 <script>
 const T = {
   ko: { all: "전체 대화", connecting: "연결 중…", loading: "불러오는 중…", empty: "메시지가 없습니다",
-    to: "받는 세션", fyi: "깨우지 않기", fyiTip: "--fyi: 상대를 깨우지 않고 받은편지함에만 넣음",
+    raw: "원문", formatted: "서식", to: "받는 세션", fyi: "깨우지 않기", fyiTip: "--fyi: 상대를 깨우지 않고 받은편지함에만 넣음",
     ph: "메시지 (Enter 보내기, Shift+Enter 줄바꿈)", send: "보내기", sending: "보내는 중…", sent: "보냄 →",
     failed: "실패: ", offline: "오프라인", history: "기록에만 남은 세션",
     busy: "작업 중", idle: "대기", gone: "종료됨", read: "읽음", unread: "안 읽음", held: "보류됨",
@@ -295,7 +317,7 @@ const T = {
     noLimit: "제한 없음",
     noLimitAsk: "제한을 없애면 에이전트끼리 끝없이 주고받으며 차례(비용)를 계속 쓸 수 있습니다. 계속할까요?" },
   en: { all: "All messages", connecting: "Connecting…", loading: "Loading…", empty: "No messages",
-    to: "To", fyi: "Don't wake", fyiTip: "--fyi: drop it in the inbox without waking the session",
+    raw: "Source", formatted: "Formatted", to: "To", fyi: "Don't wake", fyiTip: "--fyi: drop it in the inbox without waking the session",
     ph: "Message (Enter to send, Shift+Enter for a new line)", send: "Send", sending: "Sending…", sent: "Sent →",
     failed: "Failed: ", offline: "Offline", history: "History only",
     busy: "busy", idle: "idle", gone: "gone", read: "read", unread: "unread", held: "held",
@@ -363,7 +385,7 @@ const T = {
     noLimit: "No limit",
     noLimitAsk: "Without a limit, agents can keep answering each other and keep spending turns (cost). Continue?" },
   zh: { all: "全部消息", connecting: "连接中…", loading: "加载中…", empty: "暂无消息",
-    to: "发送给", fyi: "不唤醒", fyiTip: "--fyi：只放进收件箱，不唤醒对方会话",
+    raw: "原文", formatted: "格式", to: "发送给", fyi: "不唤醒", fyiTip: "--fyi：只放进收件箱，不唤醒对方会话",
     ph: "输入消息（Enter 发送，Shift+Enter 换行）", send: "发送", sending: "发送中…", sent: "已发送 →",
     failed: "失败：", offline: "离线", history: "仅在记录中",
     busy: "工作中", idle: "空闲", gone: "已结束", read: "已读", unread: "未读", held: "已暂扣",
@@ -682,6 +704,97 @@ $("#body").addEventListener("keydown", e => {
   acPick($("#ac button").dataset.n);
 }, true);
 
+// ---- Markdown in bubbles. Everything is HTML-escaped first; only then do known patterns become tags, so raw HTML in
+// a message is never interpreted. Links: http(s) only, in a new tab without the opener. Tables scroll in the bubble.
+function mdInline(s) {  // s is already escaped
+  const keep = [], stash = html => `\u0000${keep.push(html) - 1}\u0000`;
+  const link = (url, text) => stash(`<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>`);
+  s = s.replace(/`([^`\n]+)`/g, (_, c) => stash(`<code>${c}</code>`));
+  // A URL ends at a quote (escaped as &quot; / &#39;), so nothing past one can ride along in the link.
+  s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/(?:(?!&quot;|&#39;)[^\s)])+)\)/g, (_, text, url) => link(url, text));
+  s = s.replace(/(^|[\s(])(https?:\/\/(?:(?!&quot;|&#39;)[^\s<])*(?:(?!&quot;|&#39;)[^\s<.,;:!?)\]]))/g,
+    (_, pre, url) => pre + link(url, url));
+  s = s.replace(/\*\*(?=\S)([^*\n]*?\S)\*\*/g, "<strong>$1</strong>").replace(/__(?=\S)([^_\n]*?\S)__/g, "<strong>$1</strong>");
+  s = s.replace(/(^|[^*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![*\w])/g, "$1<em>$2</em>");
+  s = s.replace(/(^|[^_\w])_(?=[^\s_])([^_\n]*?[^\s_])_(?![_\w])/g, "$1<em>$2</em>");
+  s = s.replace(/~~(?=\S)([^~\n]*?\S)~~/g, "<del>$1</del>");
+  // Stashed pieces can hold other stashed pieces (code inside a link label): restore until none is left.
+  for (let n = 0; n < 4 && s.includes("\u0000"); n++) s = s.replace(/\u0000(\d+)\u0000/g, (_, i) => keep[+i]);
+  return s;
+}
+const LIST_RE = /^(\s*)([-*+]|(\d{1,3})[.)])\s+(.*)$/;
+const TABLE_ROW = /^\s*\|.*\|\s*$/, TABLE_SEP = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+const cells = row => row.trim().replace(/^\||\|$/g, "").split(/(?<!\\)\|/).map(c => c.trim().replace(/\\\|/g, "|"));
+function mdBlocks(lines, depth = 0) {  // lines are already escaped; depth: quotes nested so far
+  let out = "", i = 0;
+  const para = [];
+  const flush = () => { if (para.length) out += `<p>${para.map(mdInline).join("<br>")}</p>`; para.length = 0; };
+  while (i < lines.length) {
+    const line = lines[i];
+    let m;
+    if ((m = line.match(/^\s*(```|~~~)/))) {  // fenced code: kept as written
+      flush();
+      const body = [];
+      for (i++; i < lines.length && !lines[i].trim().startsWith(m[1]); i++) body.push(lines[i]);
+      i++;
+      out += `<pre><code>${body.join("\n")}</code></pre>`;
+    } else if (TABLE_ROW.test(line) && i + 1 < lines.length && TABLE_SEP.test(lines[i + 1])) {
+      flush();
+      const al = cells(lines[i + 1]).map(c => c.startsWith(":") && c.endsWith(":") ? "al-c" : c.endsWith(":") ? "al-r" : "");
+      const row = (r, tag) => `<tr>${cells(r).map((c, k) => `<${tag}${al[k] ? ` class="${al[k]}"` : ""}>${mdInline(c)}</${tag}>`).join("")}</tr>`;
+      let body = "";
+      for (i += 2; i < lines.length && TABLE_ROW.test(lines[i]); i++) body += row(lines[i], "td");
+      out += `<div class="tbl"><table><thead>${row(line, "th")}</thead><tbody>${body}</tbody></table></div>`;
+    } else if ((m = line.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/))) {
+      flush(); out += `<div class="mh mh${m[1].length}">${mdInline(m[2])}</div>`; i++;
+    } else if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+      flush(); out += "<hr>"; i++;
+    } else if (/^\s*&gt;/.test(line)) {
+      flush();
+      const q = [];
+      for (; i < lines.length && /^\s*&gt;/.test(lines[i]); i++) q.push(lines[i].replace(/^\s*&gt;\s?/, ""));
+      // Nested quotes stop at 8 levels (deeper is shown as text): untrusted input cannot exhaust the stack.
+      out += `<blockquote>${depth < 8 ? mdBlocks(q, depth + 1) : `<p>${q.join("<br>")}</p>`}</blockquote>`;
+    } else if (LIST_RE.test(line)) {
+      flush();
+      const items = [];
+      for (; i < lines.length; i++) {
+        const lm = lines[i].match(LIST_RE);
+        if (lm) items.push({indent: lm[1].replace(/\t/g, "  ").length, ordered: !!lm[3], start: +lm[3] || 1, text: lm[4]});
+        else if (lines[i].trim() && /^\s+/.test(lines[i]) && items.length) items[items.length - 1].text += "\n" + lines[i].trim();
+        else break;
+      }
+      out += mdList(items);
+    } else if (!line.trim()) {
+      flush(); i++;
+    } else {
+      para.push(line); i++;
+    }
+  }
+  flush();
+  return out;
+}
+function mdList(items) {
+  let html = "";
+  const stack = [];  // open lists: {indent, tag}
+  for (const it of items) {
+    const tag = it.ordered ? "ol" : "ul";
+    while (stack.length && it.indent < stack[stack.length - 1].indent) html += `</li></${stack.pop().tag}>`;
+    let top = stack[stack.length - 1];
+    if (top && top.indent === it.indent && top.tag !== tag) { html += `</li></${stack.pop().tag}>`; top = stack[stack.length - 1]; }
+    if (!top || it.indent > top.indent) {
+      html += `<${tag}${it.ordered && it.start !== 1 ? ` start="${it.start}"` : ""}>`;
+      stack.push({indent: it.indent, tag});
+    } else html += "</li>";
+    const text = it.text.replace(/^\[( |x|X)\]\s+/, (_, c) => c === " " ? "☐ " : "☑ ");
+    html += `<li>${text.split("\n").map(mdInline).join("<br>")}`;
+  }
+  while (stack.length) html += `</li></${stack.pop().tag}>`;
+  return html;
+}
+const md = text => mdBlocks(esc(String(text ?? "").replace(/\u0000/g, "")).split("\n"));
+const rawIds = new Set();  // messages shown as written (the per-bubble toggle)
+
 function renderTl() {
   const tl = $("#tl");
   const atBottom = tl.scrollHeight - tl.scrollTop - tl.clientHeight < 80;
@@ -716,11 +829,14 @@ function renderTl() {
       : m.read_at ? `${t("read")} ${fmtT(m.read_at)}`
       : `${t("unread")} · ${unreadHow(m)}`,
       m.all.some(x => x.held) ? t("held") : "", m.wake || fyiLabelled(m) ? "" : "fyi"].filter(Boolean).join(" · ");
+    // Markdown unless the reader asked for the source; the toggle only where formatting changed something.
+    // Plain messages (no formatting found) stay exactly as written, spaces and all: logs, aligned columns, diagrams.
+    const html = md(m.body), rich = /<(?!\/?(p|br)>)/.test(html), raw = !rich || rawIds.has(m.id);
     h += `<div class="msg ${me ? "me" : ""}">
       <div class="meta">${agentTag(m.sender, m.sender_agent)}<span class="who" data-a="${esc(m.sender)}">${esc(short(m.sender))}</span>
         → ${m.to.map(a => `${agentTag(a, null, true)}<span class="who" data-a="${esc(a)}">${esc(short(a))}</span>`).join(", ")} · ${fmtT(m.sent_at)}</div>
-      <div class="bub">${q ? `<div class="quote">↪ ${esc(short(qr ? qr.speaker : q.sender))}: ${esc((qr ? qr.core : q.body).slice(0, 160))}</div>` : ""}${esc(m.body)}</div>
-      <div class="foot">${esc(flags)}</div></div>`;
+      <div class="bub ${raw ? "raw" : "md"}">${q ? `<div class="quote">↪ ${esc(short(qr ? qr.speaker : q.sender))}: ${esc((qr ? qr.core : q.body).slice(0, 160))}</div>` : ""}${raw ? esc(m.body) : html}</div>
+      <div class="foot">${esc(flags)}${rich ? `<button type="button" class="rawBtn" data-id="${esc(m.id)}">${t(raw ? "formatted" : "raw")}</button>` : ""}</div></div>`;
   }
   tl.innerHTML = h;
   if (atBottom || tl.dataset.first !== "0") { tl.scrollTop = tl.scrollHeight; tl.dataset.first = "0"; }
@@ -824,7 +940,11 @@ $("#list").addEventListener("click", e => {
   if (e.target.closest("#offToggle")) return setPref("hideOffline", !(pref("hideOffline") !== false));
   const x = e.target.closest(".ses"); if (x) pick(x.dataset.a);
 });
-$("#tl").addEventListener("click", e => { const x = e.target.closest(".who"); if (x) pick(x.dataset.a); });
+$("#tl").addEventListener("click", e => {
+  const r = e.target.closest(".rawBtn");
+  if (r) { rawIds.has(r.dataset.id) ? rawIds.delete(r.dataset.id) : rawIds.add(r.dataset.id); render(true); return; }
+  const x = e.target.closest(".who"); if (x) pick(x.dataset.a);
+});
 $("#list").addEventListener("keydown", e => {
   const x = e.target.closest(".ses"); if (!x) return;
   if (e.key === "Enter") pick(x.dataset.a);

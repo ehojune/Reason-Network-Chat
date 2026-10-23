@@ -12,6 +12,7 @@ and starts new agent sessions.
 |---|---|
 | `server.py` | Python standard library HTTP server on `127.0.0.1:8765`. No dependencies. |
 | `launcher.py` | New sessions: model catalogs, `reason network serve` workers, terminal windows, the Codex model shim. |
+| `prefs.py` | Viewer settings in `REASON_CHAT_HOME/prefs.json` (whitelisted keys), so they survive a lost localStorage. |
 | `rooms.py` | Rooms: named sets of session addresses in `REASON_CHAT_HOME/rooms.json`. |
 | `relay.py` | Group rooms: sends your message with each member's missed lines, passes on `@name` replies, guards loops. |
 | `index.html` | The whole UI (one file, no build). Polls `/api/state` every 3 s. Strings in ko/en/zh. |
@@ -76,7 +77,7 @@ written into the page) tells an open page that the server restarted: it reloads 
 get the new token, and a newer server also triggers a reload.
 
 - `GET /api/state` →
-  `{team, me, sessions[], messages[], launched[], rooms[], relays{}, paused{}, notices{}, whoError, now}`.
+  `{api, team, me, sessions[], messages[], launched[], rooms[], relays{}, paused{}, notices{}, prefs{}, whoError, now}`.
   `me` is the address the page sends as (`<person>/terminal`).
   `sessions[]` = live entries from `who --all --json` (`address, name, agent, status, doing, cwd, tier, live: true`)
   plus addresses seen only in history (`status: "gone"`, `live: false`).
@@ -101,6 +102,7 @@ get the new token, and a newer server also triggers a reload.
 - `POST /api/rooms/send` `{id, body, fyi}` → one `reason network send` per member (a group room: per member it targets,
   each with the room envelope; `fyi` is ignored). Returns
   `{ok, sent, results[{to, ok, err}]}`; `ok` when at least one member got it.
+- `POST /api/prefs` `{key, value}` → saves one whitelisted setting (`hideOffline`: bool). Returns `{ok, prefs}`.
 - `POST /api/stop` `{name}` → stops a worker this server started: Ctrl+C first (so the network shows it as stopped),
   then a kill after 10 s.
 
@@ -114,6 +116,9 @@ Read-only SQLite (`mode=ro` URI). Checked against Reason Network 0.12.10.
 | `sessions` | `name, agent, cwd, doing, tier` (only for sessions no longer in `who`) |
 
 Live status (`busy`/`idle`/`offline`) is not in the database; it comes from `who --all --json`.
+The page turns `tier` + status into plain words (`reach()` in `index.html`). Measured here: idle Claude Code
+sessions (`push`) read at once; Codex app sessions do not wake on a message (`push` idle: next turn; `pull`: only
+when they check); `serve` workers (`worker: true`) answer at once. Re-measure before changing those labels.
 If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQLite error; adjust the two queries in `state()`.
 
 ## Pitfalls

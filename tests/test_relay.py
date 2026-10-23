@@ -79,6 +79,14 @@ class RelayTest(unittest.TestCase):
         self.r.post(self.room, ME, "@c-codex reset")
         self.assertNotIn(self.room["id"], self.r.paused)
 
+    def test_handed_off_reply_appears_once(self):
+        self.r.post(self.room, ME, "@a-codex start")
+        self.insert(A, ME, "@b-claude please check retry.ts", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        body = self.sent_to(B)[-1]
+        self.assertEqual(body.count("please check retry.ts"), 1, body)
+        self.assertTrue(body.endswith("---\na-codex: @b-claude please check retry.ts"))
+
     def test_no_mention_no_wake_and_self_mention_ignored(self):
         self.r.post(self.room, ME, "@a-codex hi")
         self.insert(A, ME, "done, nothing for @a-codex or @pat", reply_to=self.last_id_to(A))

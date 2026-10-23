@@ -84,8 +84,9 @@ class Relay:
             return rel, dict(self.paused), dict(self.notice)
 
     # ---------- composing ----------
-    def lines_for(self, room, member, me):
-        """Room lines the member has not seen yet, oldest first: (sent_at, label, text)."""
+    def lines_for(self, room, member, me, skip=None):
+        """Room lines the member has not seen yet, oldest first: (sent_at, label, text). `skip`: the reply being
+        handed off, which follows as the message itself."""
         everyone = set(room["members"]) | {me}
         since = self.seen.get(f'{room["id"]}|{member}', 0)
         rows = self.db_rows("select id, sender, recipient, body, sent_at from messages where sent_at > ?"
@@ -94,6 +95,8 @@ class Relay:
         got = {(v["speaker"], v["core"]) for v in self.sent.values() if v.get("room") == room["id"] and v.get("to") == member}
         out, keys = [], set()
         for r in rows:
+            if r["id"] == skip:
+                continue
             if r["sender"] not in everyone or r["recipient"] not in everyone or member in (r["sender"], r["recipient"]):
                 continue  # not room traffic, or traffic the member took part in
             rec = self.sent.get(r["id"])
@@ -116,22 +119,22 @@ class Relay:
             out.pop(0)
         return out
 
-    def compose(self, room, member, me, speaker, core):
+    def compose(self, room, member, me, speaker, core, skip=None):
         """The message for one member, and the timestamp of the newest room line it includes (0 if none)."""
         names = ", ".join([f"{label(me, me)} (person)"] + [short(m) for m in room["members"]])
         head = (f'[Group room "{room["name"]}", relayed by Reason Network Chat]\n'
                 f"Members: {names}. Everyone in the room reads your reply.\n"
                 "Answer here only. To ask a member, write @name in your reply and the room passes it on; "
                 "do not message members with Reason Network tools. Mention nobody when no answer is needed.")
-        lines = self.lines_for(room, member, me)
+        lines = self.lines_for(room, member, me, skip)
         earlier = ("\nEarlier in the room:\n" + "\n".join(f"{who}: {clip(t, LINE_CHARS)}" for _, who, t in lines)) \
             if lines else ""
         return f"{head}{earlier}\n---\n{label(speaker, me)}: {core}", (lines[-1][0] if lines else 0)
 
-    def deliver(self, room, member, me, speaker, core, hop):
+    def deliver(self, room, member, me, speaker, core, hop, skip=None):
         """Compose and send one relayed message. The CLI runs without self.lock, so polling never waits on it."""
         with self.lock:
-            body, newest = self.compose(room, member, me, speaker, core)
+            body, newest = self.compose(room, member, me, speaker, core, skip)
         rc, out, err = self.send_one(member, body, False)
         if rc != 0:
             return False, err or out or f"rc={rc}"
@@ -206,7 +209,7 @@ class Relay:
                         self.done.add(key)  # dropped, not queued: your next message starts afresh
                         continue
                     q.append(now)
-                ok, err = self.deliver(room, m, me, r["sender"], r["body"], rec["hop"] + 1)
+                ok, err = self.deliver(room, m, me, r["sender"], r["body"], rec["hop"] + 1, skip=r["id"])
                 with self.lock:
                     if ok:
                         self.done.add(key)

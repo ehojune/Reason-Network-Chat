@@ -561,7 +561,9 @@ def split_cmdline(cmd):
 def list_processes():
     """[(pid, parent pid, program name, argv)] for every process on this computer, or [] when they cannot be read."""
     if WIN:
-        ps = "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json -Compress"
+        # UTF-8 out, or a Korean/Chinese console code page garbles non-ASCII folders in the JSON.
+        ps = ("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+              "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json -Compress")
         try:
             out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps], capture_output=True,
                                  timeout=60, stdin=subprocess.DEVNULL, creationflags=NOWIN).stdout
@@ -571,18 +573,16 @@ def list_processes():
         items = [items] if isinstance(items, dict) else items if isinstance(items, list) else []
         return [(p.get("ProcessId"), p.get("ParentProcessId"), str(p.get("Name") or ""),
                  split_cmdline(p.get("CommandLine") or "")) for p in items if isinstance(p, dict)]
-    try:
-        out = subprocess.run(["ps", "-eo", "pid=,ppid=,args="], capture_output=True, timeout=30).stdout
-    except (OSError, subprocess.TimeoutExpired):
-        return []
+    # Elsewhere only /proc keeps argv boundaries (`ps` joins arguments with spaces, so a folder with a space would be
+    # cut); without /proc (macOS) nothing is found.
     rows = []
-    for line in out.decode("utf-8", "replace").splitlines():
-        parts = line.split(None, 2)
+    for d in Path("/proc").glob("[0-9]*"):
         try:
-            argv = shlex.split(parts[2]) if len(parts) == 3 else []
-            rows.append((int(parts[0]), int(parts[1]), Path(argv[0]).name if argv else "", argv))
-        except (ValueError, IndexError):
+            argv = [a.decode("utf-8", "replace") for a in (d / "cmdline").read_bytes().split(b"\0") if a]
+            ppid = int((d / "stat").read_text().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
             continue
+        rows.append((int(d.name), ppid, Path(argv[0]).name if argv else "", argv))
     return rows
 
 
@@ -658,6 +658,46 @@ def found_workers(procs):
     return out
 
 
+def ledger_path():
+    return STATE / "spawned.jsonl"
+
+
+def record_spawn(name, pid, started):
+    """Append (name, pid, creation time) of a worker this page started. Lines are only appended (pruned when long),
+    so the proof survives a workers.json that lost the worker."""
+    try:
+        STATE.mkdir(parents=True, exist_ok=True)
+        with open(ledger_path(), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"name": name, "pid": pid, "started": started}) + "\n")
+    except OSError:
+        pass
+
+
+def spawned_here():
+    """{(pid, creation time)} of processes this page started, dropping dead ones when the ledger grows long."""
+    try:
+        lines = ledger_path().read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return set()
+    out, keep = set(), []
+    for line in lines:
+        try:
+            e = json.loads(line)
+            out.add((int(e["pid"]), str(e["started"])))
+            keep.append(e)
+        except (ValueError, KeyError, TypeError):
+            continue
+    if len(keep) > 500:  # prune: only live processes need the proof
+        live = [e for e in keep if started_at(int(e["pid"])) == str(e["started"])]
+        try:
+            tmp = ledger_path().with_suffix(".tmp")
+            tmp.write_text("".join(json.dumps(e) + "\n" for e in live), encoding="utf-8")
+            os.replace(tmp, ledger_path())
+        except OSError:
+            pass
+    return out
+
+
 class LaunchError(Exception):
     def __init__(self, msg, code=400):
         super().__init__(msg)
@@ -709,13 +749,34 @@ class Launcher:
         except OSError:
             pass
 
+    def halt_external(self, w):
+        """Stop a worker this page did not start. It may share a console or process group with other programs (the
+        user's shell), so no console-wide Ctrl+C and no group kill: SIGINT to the process itself on POSIX; on Windows,
+        where Ctrl+C can only go to a whole console, a forced kill of its tree (the network may then show it idle)."""
+        if not WIN:
+            try:
+                os.kill(w["pid"], signal.SIGINT)
+            except OSError:
+                return
+            for _ in range(100):
+                if not self.alive(w):
+                    return
+                time.sleep(0.1)
+            try:
+                os.kill(w["pid"], signal.SIGKILL)
+            except OSError:
+                pass
+            return
+        subprocess.run(["taskkill", "/PID", str(w["pid"]), "/T", "/F"], capture_output=True, creationflags=NOWIN)
+
     def discover(self, procs=None):
-        """Take back `serve` workers this page started (their log is in logs/) that workers.json lost; note the others.
+        """Take back `serve` workers this page started (recorded in spawned.jsonl) that workers.json lost; note the others.
 
         Model and effort come from the agent processes under the worker when one is running, else they are unknown;
         such a worker has no settings file, so changing it restarts it.
         """
         found = found_workers(list_processes() if procs is None else procs)
+        ours = spawned_here()
         with self.lock:
             known = {w["pid"] for w in self.workers.values()}
             foreign = {}
@@ -729,7 +790,9 @@ class Launcher:
                 w = {"name": f["name"], "pid": f["pid"], "started": started, "family": f["family"],
                      "model": f["model"], "effort": f["effort"], "cwd": f["cwd"], "log": str(log),
                      "fullAccess": f["fullAccess"], "settings": None, "adopted": True}
-                if log.is_file() and f["name"] not in self.workers:
+                # This page's own only on proof that it started this very process (pid + creation time): a log
+                # file outlives its worker, and an outside worker may reuse the name.
+                if (f["pid"], started) in ours and f["name"] not in self.workers:
                     self.workers[f["name"]] = w
                     self.stopped.discard(f["name"])
                     self.save()
@@ -792,6 +855,8 @@ class Launcher:
         """Stop a worker's process: Ctrl+C so the network shows it stopped, a kill after 10 s."""
         if not self.alive(w):
             return
+        if w.get("external"):
+            return self.halt_external(w)
         try:
             interrupt(w["pid"])
         except (OSError, subprocess.TimeoutExpired):
@@ -912,6 +977,8 @@ class Launcher:
             if full and not m.get("fullAccess"):
                 raise LaunchError("This agent cannot run with full access here.")
             entry, model, effort = self.check_model(fam, m, model, effort)
+            if not w.get("cwd") or not Path(w["cwd"]).is_dir():
+                raise LaunchError("Its folder is unknown, so it cannot be restarted from here. Restart it yourself.", 409)
             same_perm = bool(w.get("fullAccess")) == full
             if same_perm and (w.get("model") or "") == model and (w.get("effort") or "") == effort:
                 return {"ok": True, "restarted": False, "unchanged": True}
@@ -964,7 +1031,9 @@ class Launcher:
         logs.mkdir(parents=True, exist_ok=True)
         log_path = logs / f"{name}.log"
         pid = spawn(serve_args(self.reason, fid, name, cwd, full), cwd, env, NOWIN, str(log_path))
-        return {"name": name, "pid": pid, "started": started_at(pid) or "", "family": fid,
+        started = started_at(pid) or ""
+        record_spawn(name, pid, started)
+        return {"name": name, "pid": pid, "started": started, "family": fid,
                 "model": model or None, "effort": effort or None, "cwd": cwd, "log": str(log_path),
                 "fullAccess": full, "settings": str(settings) if settings else None}
 

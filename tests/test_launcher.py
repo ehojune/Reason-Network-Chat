@@ -337,7 +337,9 @@ class DiscoverTest(unittest.TestCase):
         self.l = launcher.Launcher("reason", FakeCatalog())
         logs = launcher.STATE / "logs"
         logs.mkdir(parents=True, exist_ok=True)
-        (logs / "lost-claude.log").write_text("x", encoding="utf-8")  # started by this page
+        launcher.ledger_path().write_text("", encoding="utf-8")
+        launcher.record_spawn("lost-claude", 100, "t100")  # this page started process 100
+        (logs / "their-codex.log").write_text("x", encoding="utf-8")  # a leftover log proves nothing
         self.procs = [
             (100, 1, "reason.exe", [REASON, "network", "serve", "claude", "--name", "lost-claude", "--cwd", FOLDER,
                                     "--full-access"]),
@@ -383,6 +385,38 @@ class DiscoverTest(unittest.TestCase):
         self.assertIn("their-codex", self.l.workers)
         with self.assertRaises(launcher.LaunchError):
             self.l.adopt("their-codex")
+
+    def test_same_name_new_process_is_not_ours(self):
+        launcher.ledger_path().write_text("", encoding="utf-8")
+        launcher.record_spawn("lost-claude", 999, "t999")  # an earlier process of that name, long gone
+        self.l.discover(self.procs)
+        self.assertNotIn("lost-claude", self.l.workers)
+        self.assertIn("lost-claude", [f["name"] for f in self.l.list_foreign()])
+
+    def test_adopted_outside_worker_is_not_stopped_through_its_console(self):
+        self.l.discover(self.procs)
+        self.l.adopt("their-codex")
+        calls = []
+        saved = launcher.interrupt, launcher.subprocess.run
+        launcher.interrupt = lambda pid: calls.append(("ctrl-c", pid))
+        launcher.subprocess.run = lambda args, **kw: calls.append(tuple(args[:2]))
+        alive = iter([True, False])
+        launcher.Launcher.alive = staticmethod(lambda w: next(alive, False))
+        try:
+            self.l.stop("their-codex")
+        finally:
+            launcher.interrupt, launcher.subprocess.run = saved
+        self.assertNotIn(("ctrl-c", 200), calls)
+        if launcher.WIN:
+            self.assertIn(("taskkill", "/PID"), calls)
+
+    def test_unknown_folder_is_not_restarted(self):
+        procs = [(500, 1, "reason.exe", [REASON, "network", "serve", "codex", "--name", "no-cwd"])]
+        launcher.record_spawn("no-cwd", 500, "t500")
+        self.l.discover(procs)
+        with self.assertRaises(launcher.LaunchError) as e:
+            self.l.configure({"name": "no-cwd", "fullAccess": True}, False)
+        self.assertEqual(e.exception.code, 409)
 
     def test_save_keeps_live_workers_another_writer_recorded(self):
         self.l.workers = {"mine": {"name": "mine", "pid": 1, "started": "t1", "family": "codex"}}

@@ -216,8 +216,9 @@ Every 30 seconds the server looks for running `reason network serve` workers. On
 is in `~/.reason-network-chat/logs/`) but no longer lists is taken back: it shows on its row again and **Change
 settings** and **Stop worker** work. Its model and effort are read from the agent process when one is running,
 else the row says *model unknown*. A worker started some other way is left alone; right-click it → **Manage this
-worker started elsewhere** if you want this page to handle it. Such a worker may ignore the page's Ctrl+C, and is
-then stopped by force and can show as idle on the network afterwards.
+worker started elsewhere** if you want this page to handle it. On Windows the page stops such a worker by force
+(Ctrl+C could reach other programs in its console), so the network may show it idle afterwards; after one settings
+change it runs as this page's own worker.
 
 ## Rooms
 

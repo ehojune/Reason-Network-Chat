@@ -228,10 +228,14 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
   relay) asks, without approval. The page confirms it each time it is chosen; keep that confirmation.
 - **Lost workers are taken back.** `workers.json` can lose entries (two servers writing it from memory did). Every
   30 s `launcher.discover()` lists processes (PowerShell `Win32_Process` on Windows, `ps` elsewhere), parses
-  `reason network serve [claude|codex] --name N --cwd D [--full-access]`, and re-registers a worker whose
-  `logs/N.log` exists: this page started it. Model and effort come from the agent processes under it when one runs.
-  Others are only listed (`foreignWorkers`) until the user adopts one. Saves read `workers.json` and keep live
-  records another writer added, except names stopped here.
+  `reason network serve [claude|codex] --name N --cwd D [--full-access]`, and re-registers a worker whose pid and
+  creation time are in `spawned.jsonl` (appended at every start, so it survives a `workers.json` that lost the
+  worker; a log file is not proof, it outlives its worker). Model and effort come from the agent processes under it
+  when one runs. Others are only listed (`foreignWorkers`) until the user adopts one. An adopted outside worker is
+  never stopped with the console-wide Ctrl+C (it may share the user's console): POSIX gets SIGINT to its pid, Windows
+  a forced tree kill. A worker with no known folder is not restarted. Linux argv comes from `/proc` (`ps` loses
+  argument boundaries); macOS has no discovery. PowerShell output is forced to UTF-8. Saves read `workers.json` and
+  keep live records another writer added, except names stopped here.
 - **Workers and windows outlive the server.** The Claude desktop app stops a preview by killing its process tree,
   so `launcher.spawn()` starts them through a short-lived spawner and they are never the server's descendants.
   `workers.json` keeps pid + creation time, so a restarted server still recognises and stops its workers.

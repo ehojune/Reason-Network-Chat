@@ -1,8 +1,11 @@
-"""Two servers cannot share a port: python -m unittest discover tests"""
+"""Two servers cannot share a port, and a stopped one frees it at once: python -m unittest discover tests"""
 import os
 import sys
 import tempfile
+import threading
 import unittest
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 os.environ["REASON_CHAT_HOME"] = tempfile.mkdtemp()
@@ -21,7 +24,22 @@ class BindTest(unittest.TestCase):
             self.assertIn(f"Port {port} is in use", str(e.exception))
         finally:
             first.server_close()
-        again = server.bind("127.0.0.1", port)  # free again once the first one is closed
+
+    def test_port_is_free_right_after_serving(self):
+        # Exclusive binding must not keep the port after the server answered requests and stopped (each answer
+        # closes its connection: the handler speaks HTTP/1.0).
+        first = server.bind("127.0.0.1", 0)
+        port = first.server_address[1]
+        try:
+            for _ in range(3):
+                t = threading.Thread(target=first.handle_request)
+                t.start()
+                with self.assertRaises(urllib.error.HTTPError):  # an unknown path: a 404 is still a full answer
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/nothing-here", timeout=10)
+                t.join(10)
+        finally:
+            first.server_close()
+        again = server.bind("127.0.0.1", port)
         again.server_close()
 
 

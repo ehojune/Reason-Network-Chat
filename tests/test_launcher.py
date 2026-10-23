@@ -418,6 +418,26 @@ class DiscoverTest(unittest.TestCase):
             self.l.configure({"name": "no-cwd", "fullAccess": True}, False)
         self.assertEqual(e.exception.code, 409)
 
+    def test_a_log_written_since_the_process_started_proves_it_is_ours(self):
+        import os as _os
+        launcher.ledger_path().write_text("", encoding="utf-8")
+        log = launcher.STATE / "logs" / "their-codex.log"
+        saved = launcher.started_at
+        if launcher.WIN:
+            ft = int(1700000000 * 1e7) + 116444736000000000  # process started at epoch 1_700_000_000
+            launcher.started_at = lambda pid: str(ft)
+        else:
+            launcher.started_at = lambda pid: "Tue Nov 14 22:13:20 2023"
+        try:
+            _os.utime(log, (1600000000, 1600000000))  # written long before: an older worker's log
+            self.l.discover(self.procs)
+            self.assertNotIn("their-codex", self.l.workers)
+            _os.utime(log, None)  # written now, after the process started
+            self.l.discover(self.procs)
+            self.assertIn("their-codex", self.l.workers)
+        finally:
+            launcher.started_at = saved
+
     def test_save_keeps_live_workers_another_writer_recorded(self):
         self.l.workers = {"mine": {"name": "mine", "pid": 1, "started": "t1", "family": "codex"}}
         launcher.STATE.mkdir(parents=True, exist_ok=True)
@@ -469,7 +489,7 @@ class RecordsTest(unittest.TestCase):
         self.l.list()  # prunes the registry
         self.assertNotIn("lead-codex", self.l.workers)
         self.assertIn("lead-codex", [r["name"] for r in self.l.list_records()])
-        out = self.l.restart(["lead-codex"], online=set())
+        out = self.l.restart(["lead-codex"], blocked=set())
         self.assertEqual(out["results"], [{"name": "lead-codex", "ok": True}])
         self.assertEqual(self.started, [("lead-codex", "codex", FOLDER, "gpt-6.1-sol", "high", True)])
 
@@ -477,7 +497,7 @@ class RecordsTest(unittest.TestCase):
         res = lambda names, online=set(): self.l.restart(names, online)["results"]
         self.assertEqual(res(["lead-codex"])[0]["code"], 409)  # still running
         self.l.workers["lead-codex"]["pid"] = 1001
-        self.assertEqual(res(["lead-codex"], {"lead-codex"})[0]["code"], 409)  # back on the network on its own
+        self.assertEqual(res(["lead-codex"], {"lead-codex"})[0]["code"], 409)  # running here, or online elsewhere
         self.assertEqual(res(["nobody"])[0]["code"], 404)
         self.l.records["moved"] = dict(self.l.records["lead-codex"], name="moved", cwd=str(Path(FOLDER) / "gone"))
         self.assertIn("folder", res(["moved"])[0]["error"])
@@ -487,6 +507,17 @@ class RecordsTest(unittest.TestCase):
             self.l.restart("lead-codex", set())
         self.assertEqual(self.started, [])
         self.assertTrue(self.l.restart(["nobody"], set())["ok"])  # handled; the failure is in results
+
+    def test_stale_name(self):
+        who = {"person": "pat", "machine": "box", "sessions": [
+            {"address": "pat/lead-codex", "status": "idle", "machine": "box"}]}
+        self.assertTrue(self.l.stale("lead-codex", who, procs=[]))  # shown idle, but no serve process here
+        running = [(9, 1, "reason.exe", ["reason", "network", "serve", "codex", "--name", "lead-codex", "--cwd", FOLDER])]
+        self.assertFalse(self.l.stale("lead-codex", who, procs=running))
+        elsewhere = {"person": "pat", "machine": "box", "sessions": [
+            {"address": "pat/lead-codex", "status": "idle", "machine": "laptop"}]}
+        self.assertFalse(self.l.stale("lead-codex", elsewhere, procs=[]))
+        self.assertFalse(self.l.stale("not-ours", who, procs=[]))  # neither a record nor a log here
 
     def test_inner_sessions(self):
         workers = {"claude-worker1", "lead-codex"}

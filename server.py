@@ -325,7 +325,13 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/send":
                 self.send_message(req)
             elif path == "/api/launch":
-                self.send_json(LAUNCHER.launch(req, live_names()))
+                names = live_names()
+                name = req.get("name")
+                if isinstance(name, str) and name in names:  # maybe only a killed worker of ours holding the name
+                    who = fresh_who()
+                    if who and LAUNCHER.stale(name, who):
+                        names.discard(name)
+                self.send_json(LAUNCHER.launch(req, names))
             elif path == "/api/rooms/save":
                 me, known = me_and_known()
                 self.send_json({"ok": True, "room": ROOMS.upsert(req, known, me)})
@@ -351,9 +357,12 @@ class Handler(BaseHTTPRequestHandler):
                 who = fresh_who()
                 if not who:
                     return self.send_json({"error": "Reason Network is not answering; try again."}, 503)
-                online = {s["name"] for s in who.get("sessions") or [] if s.get("status") != "offline"
-                          and s.get("machine") == who.get("machine")}
-                self.send_json(LAUNCHER.restart(req.get("names"), online))
+                # Blocked: a serve with that name runs here, or the name is online on another computer of this
+                # person. A name shown online here only because its process was killed is free (Reason accepts it).
+                me_ = who.get("person")
+                elsewhere = {s["name"] for s in who.get("sessions") or [] if s.get("status") != "offline"
+                             and s.get("person") == me_ and s.get("machine") != who.get("machine")}
+                self.send_json(LAUNCHER.restart(req.get("names"), elsewhere | LAUNCHER.running_serve_names()))
             elif path == "/api/workers/adopt":
                 name = req.get("name")
                 if not isinstance(name, str):

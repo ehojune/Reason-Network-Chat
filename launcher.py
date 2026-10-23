@@ -658,6 +658,26 @@ def found_workers(procs):
     return out
 
 
+def started_epoch(started):
+    """A process creation time from started_at() as epoch seconds, or None."""
+    try:
+        if WIN:  # FILETIME: 100 ns since 1601
+            return (int(started) - 116444736000000000) / 1e7
+        return time.mktime(time.strptime(" ".join(str(started).split()), "%a %b %d %H:%M:%S %Y"))
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def wrote_our_log(name, started):
+    """This process has written logs/<name>.log since it started: a worker started for this page (also by a script
+    using the page's recipe). A log last written before the process started is an older worker's and proves nothing."""
+    t0 = started_epoch(started)
+    try:
+        return t0 is not None and (STATE / "logs" / f"{name}.log").stat().st_mtime >= t0 - 2
+    except OSError:
+        return False
+
+
 def ledger_path():
     return STATE / "spawned.jsonl"
 
@@ -833,9 +853,14 @@ class Launcher:
         with self.lock:
             return [dict(r) for r in self.records.values()]
 
-    def restart(self, names, online):
-        """Start recorded workers again with their last settings. `online`: names live on the network now.
-        Returns one result per name; nothing already running is touched."""
+    def running_serve_names(self, procs=None):
+        """Names of `serve` processes running on this computer now."""
+        return {f["name"] for f in found_workers(list_processes() if procs is None else procs)}
+
+    def restart(self, names, blocked):
+        """Start recorded workers again with their last settings. `blocked`: names whose serve runs on this computer or
+        that are online on another one. A name the network still shows only because its process was killed is free:
+        Reason accepts a new serve under it. Returns one result per name; nothing already running is touched."""
         if not isinstance(names, list) or not names or len(names) > 50 or not all(isinstance(n, str) for n in names):
             raise LaunchError("names must be a list of worker names.")
         results = []
@@ -846,7 +871,7 @@ class Launcher:
                     if not rec:
                         raise LaunchError("No record of this worker.", 404)
                     w = self.workers.get(name)
-                    if (w and self.alive(w)) or name in online or name in self.restarting:
+                    if (w and self.alive(w)) or name in blocked or name in self.restarting:
                         raise LaunchError("It is running already.", 409)
                     fam = self.catalog.family(rec["family"])
                     if not fam:
@@ -892,9 +917,9 @@ class Launcher:
                 w = {"name": f["name"], "pid": f["pid"], "started": started, "family": f["family"],
                      "model": f["model"], "effort": f["effort"], "cwd": f["cwd"], "log": str(log),
                      "fullAccess": f["fullAccess"], "settings": None, "adopted": True}
-                # This page's own only on proof that it started this very process (pid + creation time): a log
-                # file outlives its worker, and an outside worker may reuse the name.
-                if (f["pid"], started) in ours and f["name"] not in self.workers:
+                # This page's own only on proof about this very process: its pid and creation time were recorded
+                # at start, or it has written its log here since it started. A log alone outlives its worker.
+                if ((f["pid"], started) in ours or wrote_our_log(f["name"], started)) and f["name"] not in self.workers:
                     self.workers[f["name"]] = w
                     self.stopped.discard(f["name"])
                     self.save()
@@ -1056,6 +1081,17 @@ class Launcher:
                 tail = Path(w["log"]).read_bytes()[-600:].decode("utf-8", "replace").strip()
                 raise LaunchError(f"The worker exited: {tail}", 502)
             time.sleep(0.1)
+
+    def stale(self, name, who, procs=None):
+        """The network shows `name` online only because its process here was killed: it is ours (a record or a log),
+        no serve with that name runs on this computer, and no other computer has it online."""
+        if not (name in self.records or (STATE / "logs" / f"{name}.log").is_file()):
+            return False
+        addr = f"{who.get('person')}/{name}"
+        for s in who.get("sessions") or []:
+            if s.get("address") == addr and s.get("status") != "offline" and s.get("machine") != who.get("machine"):
+                return False
+        return name not in self.running_serve_names(procs)
 
     def configure(self, req, busy):
         """Change a running worker's model, effort or permission. `busy`: the worker is in a turn right now.

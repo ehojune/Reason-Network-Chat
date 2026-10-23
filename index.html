@@ -298,6 +298,8 @@ async function post(url, obj) {
   const r = await fetch(url, {method: "POST", body: JSON.stringify(obj),
     headers: {"Content-Type": "application/json", "X-Reason-Chat-Token": TOKEN}});
   const j = await r.json().catch(() => ({error: `HTTP ${r.status}`}));
+  // The server restarted (new token) whatever its version: a fresh page from it carries the right token.
+  if (r.status === 403 && /token/.test(j.error || "")) reloadOnce();
   if (!r.ok || j.error || j.ok === false) throw new Error(j.error || j.err || j.out || `HTTP ${r.status}`);
   return j;
 }
@@ -448,7 +450,7 @@ function renderNoWake() {
 
 function say(msg, err) { $("#status").className = err ? "err" : ""; $("#status").textContent = msg; }
 
-let polling = false;
+let polling = false, lost = false;
 async function poll() {
   if (polling) return;  // a slow response must not land after a newer one
   polling = true;
@@ -456,6 +458,8 @@ async function poll() {
     const r = await fetch("/api/state", {cache: "no-store"});
     const j = await r.json();
     if (j.error) throw new Error(j.error);
+    // Back after the server was unreachable: it restarted, so its token (and maybe its code) changed. Reload.
+    if (lost) { lost = false; if (reloadOnce()) return; }
     // Any other server start (it has a boot id: restarted, upgraded or rolled back) means a new token, and maybe
     // other code: a fresh page from it fits. Only a server too old to have a boot id needs a restart instead.
     if ((j.boot && j.boot !== BOOT) || j.api > API) { if (reloadOnce()) return; }
@@ -464,6 +468,7 @@ async function poll() {
     S = {sessions: [], messages: [], launched: [], rooms: [], relays: {}, paused: {}, notices: {}, ...j}; render();
     say(j.whoError ? t("whoErr") + j.whoError : `${t("updated")} ${fmtT(j.now)}`, !!j.whoError);
   } catch (e) {
+    if (e instanceof TypeError) lost = true;  // fetch itself failed: the server is down or restarting
     say(t("connErr") + e.message, true);
   } finally { polling = false; }
 }

@@ -9,6 +9,7 @@ Reason Network Chat에서 바뀐 것을 최신순으로 적는다. 시간은 한
 
 | 시간 | 변경 | 주요 변경사항 |
 |---|---|---|
+| 06:08 | [#43](https://github.com/ehojune/Reason-Network-Chat/pull/43) | 왼쪽 구역을 회색 접기·펼치기로 따로 숨기고 상태를 기억합니다. 긴 토끼 귀가 달린 육각형 탭 아이콘을 넣고, 즐겨찾기 worker 메뉴에 자동 수신 설명을 표시합니다. |
 | 05:44 | [#41](https://github.com/ehojune/Reason-Network-Chat/pull/41) | 방에서는 원문 아래에 전달 기록을 묶어 표시합니다. 코드·인용 속 멘션은 멤버를 깨우지 않고, 같은 전달 봉투의 사본으로 온 답도 원래 방에 연결합니다. |
 | 03:58 | [#39](https://github.com/ehojune/Reason-Network-Chat/pull/39) | 서버가 전송 직후 꺼져도 기록을 대조해 중복 전달을 막습니다. 결과가 불명확하면 자동 재전송 대신 확인을 기다립니다. worker 기록의 동시 저장·종료·모델 감지와 방 신원·목록 갱신 검증도 보완했습니다. |
 | 03:18 | [#36](https://github.com/ehojune/Reason-Network-Chat/pull/36) | **멤버가 방에 먼저 보내기**: `rnc.py room send`로 예약 보고도 먼저 올립니다. 사람이 깨우는 메시지를 보낼 필요가 없습니다. Windows·Linux·macOS 발신 확인과 재시작 뒤 방별 허용 설정을 지원합니다. |

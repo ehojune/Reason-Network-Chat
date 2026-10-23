@@ -9,6 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 |---|---|---|
+| 06:08 | [#43](https://github.com/ehojune/Reason-Network-Chat/pull/43) | Sidebar sections collapse independently with gray text and remember their state. A long-eared hexagon favicon marks the tab; favorite worker menus explain automatic delivery. |
 | 05:44 | [#41](https://github.com/ehojune/Reason-Network-Chat/pull/41) | Room statements show once with delivery records underneath; quoted/code mentions no longer wake members, and replies to proven envelope copies retain their room. |
 | 03:58 | [#39](https://github.com/ehojune/Reason-Network-Chat/pull/39) | Queued hand-offs recover after a crash without silently sending twice; uncertain delivery waits for inspection. Multiple servers preserve worker registries, model detection ignores tools, adopted workers clean up their verified children, and room identity/catalog refresh are guarded. |
 | 03:18 | [#36](https://github.com/ehojune/Reason-Network-Chat/pull/36) | Members can **post first** with `rnc.py room send`: scheduled reports no longer need a person to send a room message first. Sender proof works on Windows, Linux and macOS; explicit room permissions survive a restart. |

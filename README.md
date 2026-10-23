@@ -99,7 +99,9 @@ Each session says how a message reaches it: on its row, in **To**, and under an 
 | answers right away | a worker started with `reason network serve` |
 | gets it right away | a Claude Code session; Reason pushes the message in |
 | busy, reads after this turn | it is working; it reads the message when the turn ends |
-| reads on its next turn | a Codex app or CLI session: a message does not wake it |
+| woken automatically on a message | a Codex session with auto-wake on ([below](#auto-wake)) |
+| reads when someone talks to it | a Codex app or CLI session: a message does not wake it |
+| open in the Codex app · reads when you talk to it there | the Codex app has this conversation open; nothing outside the app can start a turn in it |
 | reads only when it checks | it reads only when it checks its own inbox |
 | offline | its app or process is gone; it reads nothing until it comes back |
 
@@ -115,11 +117,28 @@ session's folder, so the same conversation reads its unread messages with `check
 
 - Only your Codex sessions on this computer that have unread messages and are not busy. The thread comes from
   Reason's database and the prompt is fixed; nothing from the page is run.
-- The turn is added to the same conversation (its `~/.codex/sessions/…/rollout-…-<thread>.jsonl`). If the Codex app
-  has that conversation open, both write to it; the page asks first. Reopen the conversation in the app to see the
-  turn (not checked inside the app).
+- **Not while the Codex app has the conversation open.** The app keeps every conversation it has opened locked
+  until the app is closed, and Codex refuses a second writer ("already has an active writer"). The page checks that
+  lock first and labels the session *open in the Codex app*: talk to it in the app instead. (Checked on a throwaway
+  conversation with `codex app-server`, which the app runs: refused while it was loaded, accepted after it exited.)
+- The turn is added to the same conversation (its `~/.codex/sessions/…/rollout-…-<thread>.jsonl`), so the app shows
+  it when it next loads the conversation (not checked inside the app).
 - A wake takes about half a minute. One per session at a time, cut off after 10 minutes.
 - Claude Code sessions do not need it (they get messages right away while open). Other agents cannot be woken here.
+
+### Auto-wake
+
+Right-click a Codex session → **Turn on auto-wake**. This server then wakes it whenever it has unread messages, so
+two agents can work back and forth without you passing messages on. Watching for messages reads the database and
+costs no tokens; only a wake runs a turn.
+
+- At most 12 wakes per session per hour, and one a minute: messages that arrive close together share a turn. At the
+  limit the session rests until the hour frees up, and the message box says until when. A failed wake is retried
+  after 10 minutes.
+- Works only while this server runs and while no Codex app or terminal window has the conversation open. For an
+  agent that should answer on its own, use a conversation you do not keep open, for example one started with
+  `codex exec "<task>"` in the project folder.
+- The list is saved by the server (`prefs.json`, `autoWake`).
 
 ## Start a new session
 
@@ -194,7 +213,9 @@ page's server runs.
 
 ## Good to know
 
-- An idle Codex **app** session reads a message only on its next turn: Reason cannot start a turn in the Codex app.
+- An idle Codex **app** session reads a message only on its next turn: Reason cannot start a turn in the Codex app,
+  and nothing else can while the app has the conversation open. For an agent that should answer on its own, use
+  [auto-wake](#auto-wake) on a conversation the app does not have open.
   The composer says so and offers **Start a worker in its folder**; workers answer right away.
 - The timeline shows messages that passed through this computer. On a multi-computer network, each computer sees its own traffic.
 - The page shows message text from your agents. It listens on 127.0.0.1 only, so other computers cannot open it.

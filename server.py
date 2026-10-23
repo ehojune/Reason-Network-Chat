@@ -31,6 +31,7 @@ HOME = Path.home()
 DB = Path(os.environ.get("REASON_CHAT_DB", HOME / ".reason" / "network" / "network.db"))
 STATIC = Path(__file__).with_name("index.html")
 POLL_WHO = 3  # seconds between `who` refreshes
+POLL_AUTO = 10  # seconds between auto-wake passes
 MAX_MESSAGES = 2000  # newest rows sent to the page per poll
 MAX_BODY = 64 * 1024  # bytes accepted by a POST
 ORIGINS = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
@@ -38,7 +39,7 @@ ORIGINS = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 TOKEN = secrets.token_urlsafe(32)
 # Shape of /api/state and the POSTs. Bump together with API in index.html: a page that meets a server of another
 # version (the server kept running across an update) asks for a restart instead of breaking.
-API = 6
+API = 7
 BOOT = secrets.token_hex(8)  # new each start: an open page that sees another one reloads to get the new token
 NOWIN = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
 
@@ -90,6 +91,20 @@ def who_loop():
         time.sleep(POLL_WHO)
 
 
+def auto_loop():
+    """Wake the sessions in the autoWake setting when they have unread messages (wake.py keeps the limits)."""
+    while True:
+        time.sleep(POLL_AUTO)
+        try:
+            addresses = PREFS.get().get("autoWake") or []
+            with _lock:
+                who = _who["data"]
+            if addresses and who:
+                WAKER.auto(addresses, who)
+        except Exception as e:  # a bad pass must not end the loop
+            print(f"auto-wake: {e}", file=sys.stderr, flush=True)
+
+
 def db_rows(sql, params=()):
     con = sqlite3.connect(f"{DB.resolve().as_uri()}?mode=ro", uri=True, timeout=2)
     con.row_factory = sqlite3.Row
@@ -130,6 +145,8 @@ def state():
         seen.add(addr)
     for s in sessions:
         s["unread"] = unread.get(s["address"], 0)
+        # The Codex app keeps the conversations it opened locked: then nothing outside the app can wake them.
+        s["appOpen"] = bool(s["resumable"]) and WAKER.is_held(Waker.resumable(known[s["name"]]["key"]), s["address"])
     relays, paused, notices = RELAY.view({m["id"] for m in msgs})
     return {"api": API, "boot": BOOT, "team": who.get("team"), "me": me, "sessions": sessions, "messages": msgs,
             "launched": LAUNCHER.list(), "rooms": ROOMS.list(), "relays": relays, "paused": paused, "notices": notices,
@@ -346,6 +363,7 @@ def main():
     threading.Thread(target=who_loop, daemon=True).start()
     threading.Thread(target=CATALOG.get, daemon=True).start()  # `agy models` takes a few seconds
     threading.Thread(target=RELAY.run, args=(my_address,), daemon=True).start()
+    threading.Thread(target=auto_loop, daemon=True).start()
     srv = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"Reason Network Chat on http://{HOST}:{PORT}", flush=True)
     srv.serve_forever()

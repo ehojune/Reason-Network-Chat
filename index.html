@@ -105,6 +105,7 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #ctx button { display: block; width: 100%; text-align: left; font: inherit; font-size: 13px; color: var(--text);
   background: none; border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
 #ctx button:hover, #ctx button:focus-visible { background: var(--hover); outline: none; }
+#ctx button[hidden] { display: none; }
 #nowake #wakeNote { font-style: italic; }
 #nowake button { font: inherit; color: var(--accent); background: none; border: none; padding: 0; cursor: pointer;
   text-decoration: underline; }
@@ -168,7 +169,7 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
     </div>
   </form>
 </main>
-<div id="ctx" role="menu" hidden><button type="button" role="menuitem" id="ctxFav"></button></div>
+<div id="ctx" role="menu" hidden><button type="button" role="menuitem" id="ctxFav"></button><button type="button" role="menuitem" id="ctxAuto" hidden></button></div>
 <dialog id="dlg">
   <form id="lf">
     <h2 data-t="newSessionTitle"></h2>
@@ -222,9 +223,14 @@ const T = {
     fav: "★ 즐겨찾기", unfav: "☆ 즐겨찾기 해제", favs: "즐겨찾기", favFull: "즐겨찾기는 100개까지입니다.", split: "목록 너비 (←/→, 두 번 누르면 원래대로)",
     wake: "깨우기", waking: "깨우는 중…", wakeAfter: "보낸 뒤 깨우기", woke: "깨움: ", wakeFailed: "깨우기 실패: ",
     wakeNo: "이 에이전트는 깨우기 미지원", wakeNoUnread: "안 읽은 메시지가 없어 깨울 일이 없습니다.",
-    wakeAsk: "{name}의 Codex 대화에서 한 차례를 돌려 안 읽은 메시지를 읽고 답하게 합니다. Codex 앱에 이 대화가 열려 있으면 같은 대화에 둘이 함께 쓰게 됩니다. 계속할까요?",
+    wakeAsk: "{name}의 Codex 대화에서 한 차례를 돌려 안 읽은 메시지를 읽고 답하게 합니다. 그 차례는 대화 기록에 남습니다. 계속할까요?",
+    autoOn: "⏰ 자동 깨우기 켜기", autoOff: "⏰ 자동 깨우기 끄기", autoFull: "자동 깨우기는 50개까지입니다.",
+    autoAsk: "{name}에게 메시지가 오면 이 페이지가 그 Codex 대화를 자동으로 깨워 읽고 답하게 합니다.\n· 깨울 때마다 그 대화에 한 차례가 붙고 그만큼 토큰을 씁니다. 메시지가 왔는지 보는 데는 쓰지 않습니다.\n· 시간당 최대 12번, 같은 세션은 1분에 한 번까지.\n· Codex 앱에서 이 대화를 열면 앱을 끌 때까지 깨우지 못합니다.\n· 이 서버가 켜져 있을 때만 동작합니다.\n켤까요?",
+    autoLimit: "자동 깨우기 한도(시간당 12번)에 걸려 {time}까지 쉽니다.", nwAuto: "자동 깨우기가 켜져 있습니다.",
+    rAppOpen: "Codex 앱에서 열려 있음 · 앱에서 말을 걸어야 읽음", rAuto: "메시지 오면 자동으로 깨움",
+    nwAppOpen: "Codex 앱이 이 대화를 열고 있어 여기서는 깨울 수 없습니다. 앱에서 말을 걸면 읽습니다. 앱은 한 번 연 대화를 앱이 꺼질 때까지 붙잡습니다.",
     rNow: "바로 답함", rWorkerBusy: "작업 중, 끝나면 답함", rPushed: "바로 받음", rAfterTurn: "작업 중, 이번 차례 뒤에 읽음",
-    rPull: "직접 확인할 때만 읽음", rNextTurn: "다음 차례에 읽음", rOffline: "오프라인", rGone: "종료됨", rCli: "일회성 질문",
+    rPull: "직접 확인할 때만 읽음", rNextTurn: "말을 걸어야 읽음", rOffline: "오프라인", rGone: "종료됨", rCli: "일회성 질문",
     gNow: "바로 받는 세션", gLater: "나중에 읽는 세션", hideOff: "오프라인·기록 {n}개 숨김 · 보이기",
     showOff: "오프라인·기록 {n}개 보이는 중 · 숨기기",
     nwOffline: "이 세션은 오프라인이라 다시 켜질 때까지 메시지를 읽지 않습니다.",
@@ -233,7 +239,7 @@ const T = {
     roomOffline: "오프라인인 참여 세션: {names}. 다시 켜질 때까지 읽지 않습니다. 그래도 보낼까요?",
     prefLocal: "설정을 서버에 저장하지 못해 이 브라우저에만 저장했습니다: ",
     noAgent: "설치된 에이전트가 없습니다",
-    nowake: "이 세션은 다음 차례가 와야 메시지를 읽습니다. 쉬고 있는 Codex 앱 세션은 메시지로 깨어나지 않습니다.",
+    nowake: "이 세션은 누가 말을 걸어 다음 차례가 시작돼야 메시지를 읽습니다. 쉬고 있는 Codex 세션은 메시지로 깨어나지 않습니다.",
     toWorker: "같은 폴더에 워커 열기",
     newRoom: "+ 대화방", newRoomTitle: "새 대화방", editRoom: "대화방 편집", roomName: "대화방 이름", roomMembers: "참여 세션",
     deleteRoom: "대화방 삭제", save: "저장", rooms: "대화방", everyone: "대화방 전체", sentTo: "보냄", of: "/",
@@ -263,9 +269,14 @@ const T = {
     fav: "★ Favorite", unfav: "☆ Remove from favorites", favs: "Favorites", favFull: "Up to 100 favorites.", split: "List width (←/→, double-click to reset)",
     wake: "Wake", waking: "Waking…", wakeAfter: "Wake after sending", woke: "Woke: ", wakeFailed: "Wake failed: ",
     wakeNo: "this agent cannot be woken", wakeNoUnread: "It has no unread messages, so there is nothing to wake it for.",
-    wakeAsk: "Run one turn in {name}'s Codex conversation so it reads its unread messages and replies. If the Codex app has this conversation open, both will write to the same conversation. Continue?",
+    wakeAsk: "Run one turn in {name}'s Codex conversation so it reads its unread messages and replies. The turn stays in that conversation's history. Continue?",
+    autoOn: "⏰ Turn on auto-wake", autoOff: "⏰ Turn off auto-wake", autoFull: "Up to 50 sessions can be auto-woken.",
+    autoAsk: "When {name} gets a message, this page wakes its Codex conversation so it reads and replies.\n· Each wake adds one turn to that conversation and uses tokens for it; watching for messages uses none.\n· At most 12 wakes an hour, and one a minute per session.\n· If you open this conversation in the Codex app, it cannot be woken until the app is closed.\n· Works only while this server is running.\nTurn it on?",
+    autoLimit: "Auto-wake limit reached (12 an hour); resting until {time}.", nwAuto: "Auto-wake is on.",
+    rAppOpen: "open in the Codex app · reads when you talk to it there", rAuto: "woken automatically on a message",
+    nwAppOpen: "The Codex app has this conversation open, so it cannot be woken from here. Talk to it in the app. The app keeps a conversation it opened until the app is closed.",
     rNow: "answers right away", rWorkerBusy: "busy, answers when done", rPushed: "gets it right away",
-    rAfterTurn: "busy, reads after this turn", rPull: "reads only when it checks", rNextTurn: "reads on its next turn",
+    rAfterTurn: "busy, reads after this turn", rPull: "reads only when it checks", rNextTurn: "reads when someone talks to it",
     rOffline: "offline", rGone: "gone", rCli: "one-off ask",
     gNow: "Get messages now", gLater: "Read later", hideOff: "Hiding {n} offline and past · Show",
     showOff: "Showing {n} offline and past · Hide",
@@ -275,7 +286,7 @@ const T = {
     roomOffline: "Offline members: {names}. They read nothing until they come back. Send anyway?",
     prefLocal: "Could not save the setting on the server; saved in this browser only: ",
     noAgent: "No agent is installed",
-    nowake: "This session reads messages only when it takes its next turn; an idle Codex app session does not wake on one.",
+    nowake: "This session reads messages only when someone talks to it and it takes its next turn; an idle Codex session does not wake on a message.",
     toWorker: "Start a worker in its folder",
     newRoom: "+ Room", newRoomTitle: "New room", editRoom: "Edit room", roomName: "Room name", roomMembers: "Sessions in this room",
     deleteRoom: "Delete room", save: "Save", rooms: "Rooms", everyone: "Everyone in this room", sentTo: "Sent to", of: "/",
@@ -305,9 +316,14 @@ const T = {
     fav: "★ 收藏", unfav: "☆ 取消收藏", favs: "收藏", favFull: "最多收藏 100 个。", split: "列表宽度（←/→，双击恢复）",
     wake: "唤醒", waking: "唤醒中…", wakeAfter: "发送后唤醒", woke: "已唤醒：", wakeFailed: "唤醒失败：",
     wakeNo: "此智能体不支持唤醒", wakeNoUnread: "没有未读消息，无需唤醒。",
-    wakeAsk: "将在 {name} 的 Codex 对话中运行一轮，让它读取未读消息并回复。如果 Codex 应用正打开这个对话，两边会写入同一个对话。继续吗？",
+    wakeAsk: "将在 {name} 的 Codex 对话中运行一轮，让它读取未读消息并回复。这一轮会保留在该对话记录中。继续吗？",
+    autoOn: "⏰ 开启自动唤醒", autoOff: "⏰ 关闭自动唤醒", autoFull: "最多 50 个会话可自动唤醒。",
+    autoAsk: "{name} 收到消息时，本页面会自动唤醒它的 Codex 对话，让它读取并回复。\n· 每次唤醒会在该对话中增加一轮，并消耗相应的 token；检查是否有消息不消耗。\n· 每小时最多 12 次，同一会话每分钟最多一次。\n· 如果在 Codex 应用中打开这个对话，在应用关闭前都无法唤醒。\n· 仅在本服务器运行时有效。\n要开启吗？",
+    autoLimit: "已达到自动唤醒上限（每小时 12 次），{time} 后恢复。", nwAuto: "自动唤醒已开启。",
+    rAppOpen: "在 Codex 应用中打开 · 在应用里跟它说话才读", rAuto: "收到消息时自动唤醒",
+    nwAppOpen: "Codex 应用正打开这个对话，无法在这里唤醒。请在应用里跟它说话。应用会一直占用打开过的对话，直到应用关闭。",
     rNow: "立即回复", rWorkerBusy: "工作中，完成后回复", rPushed: "立即收到", rAfterTurn: "工作中，本轮结束后读取",
-    rPull: "只在自己查看时读取", rNextTurn: "下一轮才读", rOffline: "离线", rGone: "已结束", rCli: "一次性提问",
+    rPull: "只在自己查看时读取", rNextTurn: "有人跟它说话才读", rOffline: "离线", rGone: "已结束", rCli: "一次性提问",
     gNow: "立即收到的会话", gLater: "稍后读取的会话", hideOff: "已隐藏 {n} 个离线和过往会话 · 显示",
     showOff: "正在显示 {n} 个离线和过往会话 · 隐藏",
     nwOffline: "该会话离线，重新上线前不会读取消息。",
@@ -316,7 +332,7 @@ const T = {
     roomOffline: "离线成员：{names}。重新上线前不会读取。仍要发送吗？",
     prefLocal: "无法在服务器保存设置，仅保存在此浏览器：",
     noAgent: "没有已安装的智能体",
-    nowake: "该会话只在自己下一轮运行时读取消息；空闲的 Codex 应用会话不会被消息唤醒。",
+    nowake: "该会话只有在有人跟它说话、开始下一轮时才读取消息；空闲的 Codex 会话不会被消息唤醒。",
     toWorker: "在同一文件夹启动 worker",
     newRoom: "+ 聊天室", newRoomTitle: "新建聊天室", editRoom: "编辑聊天室", roomName: "聊天室名称", roomMembers: "成员会话",
     deleteRoom: "删除聊天室", save: "保存", rooms: "聊天室", everyone: "聊天室全体", sentTo: "已发送", of: "/",
@@ -338,7 +354,7 @@ let lang = new URLSearchParams(location.search).get("lang") || store.get("reason
 if (!T[lang]) lang = "en";
 const t = k => T[lang][k];
 const TOKEN = document.querySelector('meta[name="reason-chat-token"]').content;
-const API = 6;  // must match API in server.py
+const API = 7;  // must match API in server.py
 const BOOT = document.querySelector('meta[name="reason-chat-boot"]').content;  // which server start served this page
 // Reload to pick up a restarted or newer server, at most once a minute so a broken setup cannot loop.
 function reloadOnce() {
@@ -401,20 +417,31 @@ const launchedHere = addr => S.launched.some(w => `${person()}/${w.name}` === ad
 // How a message reaches a session, from Reason's tier and the live status. Measured on this network: idle Claude
 // Code sessions (push) read at once; Codex app sessions do not wake on a message (push idle: next turn; pull: only
 // when they check their inbox); serve workers answer at once; "cli" rows are one-off `reason network` asks.
+// A Codex conversation the Codex app has open (appOpen) cannot be woken from here; one on the autoWake list is woken
+// by this server when a message arrives.
 function reach(s) {
   if (!s) return null;
+  // Before offline: a Codex conversation shows offline once the app is closed, which is when it can be woken.
+  if (s.resumable && !s.appOpen && s.status !== "busy" && autoOn(s.address)) return "auto";
   if (!s.live) return "gone";
   if (s.status === "offline") return "offline";
   if (s.worker) return s.status === "busy" ? "workerBusy" : "now";
   if (s.agent === "cli") return "cli";
   if (s.status === "busy") return "afterTurn";
+  if (s.appOpen) return "appOpen";
   if (s.tier === "pull") return "pull";
   return s.tier === "push" && s.agent === "claude-code" ? "pushed" : "nextTurn";
 }
 const reachLabel = s => t("r" + reach(s)[0].toUpperCase() + reach(s).slice(1));
-const NOW = ["now", "workerBusy", "pushed", "afterTurn"], LATER = ["pull", "nextTurn", "cli"];
+const NOW = ["now", "workerBusy", "pushed", "afterTurn", "auto"], LATER = ["appOpen", "pull", "nextTurn", "cli"];
 // Sessions that will not read soon: the composer says so and offers a worker in the same folder.
-const sleepy = s => !!s && ["offline", "pull", "nextTurn", "gone"].includes(reach(s));
+const sleepy = s => !!s && ["offline", "appOpen", "pull", "nextTurn", "gone"].includes(reach(s));
+const autoList = () => { const a = pref("autoWake"); return Array.isArray(a) ? a : []; };
+const autoOn = a => autoList().includes(a);
+// An auto-woken session whose last wake failed or that hit the hourly limit: the composer says why.
+const autoLimited = a => ((S.wakes[a] || {}).limitUntil || 0) > Date.now();
+const autoTrouble = s => !!s && s.resumable && autoOn(s.address) && !s.appOpen
+  && (autoLimited(s.address) || (S.wakes[s.address] || {}).status === "failed");
 const favs = () => { const f = pref("favorites"); return Array.isArray(f) ? f : []; };
 
 // Preferences live on the server (the Browser pane can lose localStorage); localStorage only when saving fails.
@@ -429,7 +456,8 @@ async function setPref(key, value) {
     store.del("rnc-pref-" + key);
   } catch (err) {
     // A rejected value (4xx) is not kept anywhere; only a failed save falls back to this browser.
-    if (err.status >= 400 && err.status < 500) say(t("failed") + err.message, true);
+    // autoWake does nothing in a browser: only the server wakes sessions.
+    if ((err.status >= 400 && err.status < 500) || key === "autoWake") say(t("failed") + err.message, true);
     else { store.set("rnc-pref-" + key, JSON.stringify(value)); say(t("prefLocal") + err.message, true); }
   }
   render(true);
@@ -553,7 +581,7 @@ function render(force) {
   }
   $("#stop").hidden = !(sel && launchedHere(sel));
   const ss = sel && S.sessions.find(x => x.address === sel);
-  $("#wakeHead").hidden = !(ss && ss.resumable && sleepy(ss) && unreadTo(sel));
+  $("#wakeHead").hidden = !(ss && ss.resumable && !ss.appOpen && sleepy(ss) && unreadTo(sel));
   $("#wakeHead").disabled = !!(ss && waking(sel));
   $("#wakeHead").textContent = t(ss && waking(sel) ? "waking" : "wake");
   const sig = JSON.stringify([S.sessions, S.launched, S.rooms, S.paused, S.notices, S.prefs, S.wakes, Object.keys(S.relays).length,
@@ -567,16 +595,22 @@ const unreadTo = a => (S.sessions.find(x => x.address === a) || {}).unread > 0; 
 const waking = a => (S.wakes[a] || {}).status === "running";
 function renderNoWake() {
   const s = S.sessions.find(x => x.address === $("#to").value);
-  $("#nowake").hidden = !sleepy(s);
-  $("#wakeAfterLabel").hidden = !(sleepy(s) && s.resumable);
-  if (!sleepy(s)) return;
-  $("#nowakeText").textContent = t({offline: "nwOffline", gone: "nwOffline", pull: "nwPull", nextTurn: "nowake"}[reach(s)]);
-  $("#wakeBtn").hidden = !s.resumable;
+  const show = sleepy(s) || autoTrouble(s);
+  $("#nowake").hidden = !show;
+  $("#wakeAfterLabel").hidden = !(sleepy(s) && s.resumable && !s.appOpen);
+  if (!show) return;
+  $("#nowakeText").textContent = t({offline: "nwOffline", gone: "nwOffline", appOpen: "nwAppOpen", pull: "nwPull",
+    nextTurn: "nowake", auto: "nwAuto"}[reach(s)] || "nowake");
+  $("#wakeBtn").hidden = !s.resumable || !!s.appOpen;  // the app holds the conversation: a wake would be refused
   $("#wakeBtn").disabled = waking(s.address) || !unreadTo(s.address);
   $("#wakeBtn").title = unreadTo(s.address) ? "" : t("wakeNoUnread");
   $("#wakeBtn").textContent = t(waking(s.address) ? "waking" : "wake");
   const w = S.wakes[s.address];
-  $("#wakeNote").textContent = !s.resumable ? `(${t("wakeNo")})` : w && w.status === "failed" ? t("wakeFailed") + w.error : "";
+  const until = w && w.limitUntil > Date.now()
+    ? new Date(w.limitUntil).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}) : null;
+  $("#wakeNote").textContent = !s.resumable ? `(${t("wakeNo")})` : s.appOpen ? ""
+    : until && autoOn(s.address) ? t("autoLimit").replace("{time}", until)
+    : w && w.status === "failed" ? t("wakeFailed") + w.error : "";
   $("#toWorker").hidden = !(s && s.cwd && ["codex", "claude-code"].includes(s.agent));
 }
 
@@ -637,6 +671,9 @@ function openCtx(row, pointer) {
   if (!row.dataset.a) return;  // "All messages" has no menu
   ctxKey = row.dataset.a;
   $("#ctxFav").textContent = t(favs().includes(ctxKey) ? "unfav" : "fav");
+  const ses = S.sessions.find(x => x.address === ctxKey);
+  $("#ctxAuto").hidden = !(ses && ses.resumable);  // only Codex sessions of yours on this computer
+  $("#ctxAuto").textContent = t(autoOn(ctxKey) ? "autoOff" : "autoOn");
   const m = $("#ctx"), r = row.getBoundingClientRect();
   m.hidden = false;
   const x = pointer ? pointer.clientX : r.left + 24, y = pointer ? pointer.clientY : r.bottom;  // keyboard: below the row
@@ -658,6 +695,18 @@ $("#ctxFav").addEventListener("click", async () => {
   if (!f.includes(key) && f.length >= 100) return say(t("favFull"), true);  // the server keeps at most 100
   await setPref("favorites", f.includes(key) ? f.filter(k => k !== key) : [...f, key]);
   [...$("#list").querySelectorAll(".ses")].find(r => r.dataset.a === key)?.focus();  // back to the row (focus-visible: keyboard only)
+});
+// Auto-wake: the server wakes this Codex conversation whenever it has unread messages (wake.py keeps the limits).
+$("#ctxAuto").addEventListener("click", async () => {
+  const key = ctxKey;
+  closeCtx();
+  if (!key) return;
+  const on = autoOn(key);
+  if (!on && !confirm(t("autoAsk").replace("{name}", short(key)))) return;
+  const a = autoList().filter(k => S.sessions.some(s => s.address === k));  // drop sessions that are gone
+  if (!on && a.length >= 50) return say(t("autoFull"), true);  // the server keeps at most 50
+  await setPref("autoWake", on ? a.filter(k => k !== key) : [...a, key]);
+  [...$("#list").querySelectorAll(".ses")].find(r => r.dataset.a === key)?.focus();
 });
 document.addEventListener("click", e => { if (!e.target.closest("#ctx")) closeCtx(); });
 document.addEventListener("keydown", e => {

@@ -10,7 +10,9 @@ import threading
 from pathlib import Path
 
 FAV_RE = re.compile(r"^(room:r-[0-9a-f]{8}|[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,128})$")
+ADDR_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,128}$")
 MAX_FAVORITES = 100
+MAX_AUTO_WAKE = 50
 SIDE_MIN, SIDE_MAX = 180, 900
 CHECKS = {
     "hideOffline": lambda v: isinstance(v, bool),
@@ -19,8 +21,11 @@ CHECKS = {
     and all(isinstance(x, str) and FAV_RE.match(x) for x in v) and len(set(v)) == len(v),
     # width of the session list in CSS pixels; the page also keeps it inside the window
     "sideWidth": lambda v: isinstance(v, int) and not isinstance(v, bool) and SIDE_MIN <= v <= SIDE_MAX,
+    # Codex sessions woken automatically when a message arrives (wake.py checks each one at wake time)
+    "autoWake": lambda v: isinstance(v, list) and len(v) <= MAX_AUTO_WAKE
+    and all(isinstance(x, str) and ADDR_RE.match(x) for x in v) and len(set(v)) == len(v),
 }
-DEFAULTS = {"hideOffline": True, "favorites": [], "sideWidth": 260}
+DEFAULTS = {"hideOffline": True, "favorites": [], "sideWidth": 260, "autoWake": []}
 
 
 class PrefError(Exception):

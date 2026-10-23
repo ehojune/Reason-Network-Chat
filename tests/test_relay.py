@@ -587,6 +587,23 @@ class RelayTest(unittest.TestCase):
         self.r.deliver(self.room, B, ME, A, "question", 1, item=item)
         self.assertEqual(self.counts(), [1, 1, 0])
 
+    def test_reconciliation_keeps_an_unrelated_permanent_failure_notice(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.r.notice[self.room["id"]] = "pat/b-claude → pat/c-codex: retries exhausted"
+        self.insert(A, ME, "@b-claude another hand-off", reply_to=self.last_id_to(A))
+        class Crash(BaseException):
+            pass
+        def crash(to, body, fyi):
+            self.send(to, body, fyi)
+            raise Crash()
+        self.r.send_one = crash
+        with self.assertRaises(Crash):
+            self.r.scan(ME)
+        self.r = self.new_relay()
+        self.r.scan(ME)
+        self.assertIsNone(self.queued())
+        self.assertIn("retries exhausted", self.r.view(set())[2][self.room["id"]])
+
     def test_crash_during_manual_retry_does_not_authorize_a_second_retry(self):
         self.r.post(self.room, ME, "@a-codex go")
         self.insert(A, ME, "@b-claude question", reply_to=self.last_id_to(A))

@@ -60,6 +60,8 @@ LINE_CHARS = 600
 KEEP = 3000  # records of sent messages kept on disk
 RETRIES = 3  # attempts at one hand-off before it is reported as failed
 STORAGE_NOTICE = "Could not save the hand-off; no message was sent. Waiting for storage recovery."
+AMBIGUOUS_NOTICE = "Delivery outcome unknown; Send all now explicitly retries it."
+RECEIPT_NOTICE = "Delivery accepted; waiting for its database receipt."
 # @name or @person/name (ASCII, so "@codex-worker1에게" still names codex-worker1), or @모두 / @전체
 # The same pattern as MENTION_RE in index.html, so the page shows who the server will send to ("안녕@b-claude" names
 # b-claude; "pat@b-claude" does not).
@@ -432,7 +434,7 @@ class Relay:
                 if item is not None:
                     # An exception may have happened after delivery: retain the claim for reconciliation.
                     item.pop("force", None)  # one explicit retry is not permission to retry forever
-                    self.notice[room["id"]] = "Delivery outcome unknown; inspect the queue before retrying with Send all now."
+                    self.notice[room["id"]] = AMBIGUOUS_NOTICE
                     self.save()
             return False, f"{type(e).__name__}: {e}"
         if rc != 0:
@@ -446,7 +448,7 @@ class Relay:
         with self.lock:
             if item is not None and not rows:
                 item.pop("force", None)
-                self.notice[room["id"]] = "Delivery accepted; waiting for its database receipt."
+                self.notice[room["id"]] = RECEIPT_NOTICE
                 self.save()
                 return False, "Waiting for delivery receipt"
             if rows:
@@ -458,8 +460,7 @@ class Relay:
             self.seen[key] = max(self.seen.get(key, 0), newest, skip_at)
             if item is not None:
                 self.dequeue(room["id"], item)
-                if not created or self.notice.get(room["id"]) == STORAGE_NOTICE:
-                    self.notice.pop(room["id"], None)  # the explicit retry resolved this ambiguous delivery
+                self.clear_transient_notice(room["id"])
             self.save()
         return True, ""
 
@@ -481,9 +482,14 @@ class Relay:
         key = f'{room["id"]}|{item["to"]}'
         self.seen[key] = max(self.seen.get(key, 0), flight.get("newest", 0), item.get("at", 0))
         self.dequeue(room["id"], item)
-        self.notice.pop(room["id"], None)
+        self.clear_transient_notice(room["id"])
         self.save()
         return True
+
+    def clear_transient_notice(self, rid):
+        """Recovery resolves temporary delivery state, never an unrelated exhausted-retry failure."""
+        if self.notice.get(rid) in (STORAGE_NOTICE, AMBIGUOUS_NOTICE, RECEIPT_NOTICE):
+            self.notice.pop(rid, None)
 
     def dequeue(self, rid, item):
         """Take one item off a room's queue (call with self.lock held)."""
@@ -686,7 +692,7 @@ class Relay:
                         if self.reconcile(room, me, item):
                             continue
                         if not item.get("force"):
-                            self.notice[rid] = "Delivery outcome unknown; Send all now explicitly retries it."
+                            self.notice[rid] = AMBIGUOUS_NOTICE
                             break  # keep an ambiguous send; a restart must never guess and spend another turn
                     slot = self.take(room) if not item.get("force") else time.time()
                     if slot is None:

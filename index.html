@@ -23,8 +23,14 @@ html, body { height: 100%; margin: 0; }
 /* Segoe UI before Malgun Gothic: Malgun Gothic draws "\" as a won sign, which wrecks Windows paths. */
 body { background: var(--bg); color: var(--text); display: flex; overflow: hidden;
   font: 14px/1.5 "Pretendard", "Segoe UI", "Malgun Gothic", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
-#side { width: 260px; min-width: 200px; background: var(--panel); border-right: 1px solid var(--line);
+#side { width: 260px; flex: none; background: var(--panel); border-right: 1px solid var(--line);
   display: flex; flex-direction: column; }
+/* Drag (or arrow keys) to resize the list; double-click to reset. A wide invisible grip over the border line. */
+#split { flex: none; width: 8px; margin: 0 -4px; z-index: 2; cursor: col-resize; touch-action: none; position: relative; }
+#split::after { content: ""; position: absolute; inset: 0 3px; background: transparent; transition: background .15s; }
+#split:hover::after, #split:focus-visible::after, #split.drag::after { background: var(--accent); }
+#split:focus-visible { outline: none; }
+body.resizing { cursor: col-resize; user-select: none; }
 #brand { display: flex; justify-content: space-between; align-items: center; padding: 14px 14px 4px; }
 #brand h1 { font-size: 15px; margin: 0; }
 #langs button { background: none; color: var(--muted); border: none; padding: 0 3px; font-size: 11px; font-weight: 600; cursor: pointer; }
@@ -126,7 +132,8 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
 .dbtn { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .dbtn button { font: inherit; font-size: 13px; border-radius: 8px; padding: 6px 14px; }
 .plain { color: var(--text); background: var(--bg); border: 1px solid var(--line); cursor: pointer; }
-@media (max-width: 640px) { #side { width: 170px; min-width: 0; } .sub { display: none; } .two { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { #side { width: 170px !important; } #split { display: none; } .sub { display: none; }
+  .two { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -137,6 +144,7 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
     <button type="button" class="act" id="newRoom" data-t="newRoom"></button></div>
   <div id="list"></div>
 </aside>
+<div id="split" role="separator" aria-orientation="vertical" tabindex="0" aria-valuemin="180"></div>
 <main>
   <div id="head"><span><b id="title"></b><span id="members"></span></span><span id="headR">
     <button type="button" id="editRoom" hidden data-t="editRoom"></button>
@@ -207,7 +215,7 @@ const T = {
     stop: "워커 중지", stopAsk: "이 워커를 중지할까요? ", stopped: "중지함: ", wk: "워커", here: "여기서 시작함",
     restart: "서버를 다시 시작하세요: 페이지와 서버의 버전이 다릅니다 (페이지 {p}, 서버 {s}).",
     reloadPage: "서버가 다시 시작됐습니다. 페이지를 새로고침하세요.",
-    fav: "★ 즐겨찾기", unfav: "☆ 즐겨찾기 해제", favs: "즐겨찾기", favFull: "즐겨찾기는 100개까지입니다.",
+    fav: "★ 즐겨찾기", unfav: "☆ 즐겨찾기 해제", favs: "즐겨찾기", favFull: "즐겨찾기는 100개까지입니다.", split: "목록 너비 (←/→, 두 번 누르면 원래대로)",
     rNow: "바로 답함", rWorkerBusy: "작업 중, 끝나면 답함", rPushed: "바로 받음", rAfterTurn: "작업 중, 이번 차례 뒤에 읽음",
     rPull: "직접 확인할 때만 읽음", rNextTurn: "다음 차례에 읽음", rOffline: "오프라인", rGone: "종료됨", rCli: "일회성 질문",
     gNow: "바로 받는 세션", gLater: "나중에 읽는 세션", hideOff: "오프라인·기록 {n}개 숨김 · 보이기",
@@ -245,7 +253,7 @@ const T = {
     stop: "Stop worker", stopAsk: "Stop this worker? ", stopped: "Stopped: ", wk: "worker", here: "started here",
     restart: "Restart the server: the page and the server are different versions (page {p}, server {s}).",
     reloadPage: "The server restarted. Reload this page.",
-    fav: "★ Favorite", unfav: "☆ Remove from favorites", favs: "Favorites", favFull: "Up to 100 favorites.",
+    fav: "★ Favorite", unfav: "☆ Remove from favorites", favs: "Favorites", favFull: "Up to 100 favorites.", split: "List width (←/→, double-click to reset)",
     rNow: "answers right away", rWorkerBusy: "busy, answers when done", rPushed: "gets it right away",
     rAfterTurn: "busy, reads after this turn", rPull: "reads only when it checks", rNextTurn: "reads on its next turn",
     rOffline: "offline", rGone: "gone", rCli: "one-off ask",
@@ -284,7 +292,7 @@ const T = {
     stop: "停止 worker", stopAsk: "要停止这个 worker 吗？", stopped: "已停止：", wk: "worker", here: "在此启动",
     restart: "请重启服务器：页面与服务器版本不一致（页面 {p}，服务器 {s}）。",
     reloadPage: "服务器已重启，请刷新页面。",
-    fav: "★ 收藏", unfav: "☆ 取消收藏", favs: "收藏", favFull: "最多收藏 100 个。",
+    fav: "★ 收藏", unfav: "☆ 取消收藏", favs: "收藏", favFull: "最多收藏 100 个。", split: "列表宽度（←/→，双击恢复）",
     rNow: "立即回复", rWorkerBusy: "工作中，完成后回复", rPushed: "立即收到", rAfterTurn: "工作中，本轮结束后读取",
     rPull: "只在自己查看时读取", rNextTurn: "下一轮才读", rOffline: "离线", rGone: "已结束", rCli: "一次性提问",
     gNow: "立即收到的会话", gLater: "稍后读取的会话", hideOff: "已隐藏 {n} 个离线和过往会话 · 显示",
@@ -354,6 +362,7 @@ function applyLang() {
   document.querySelectorAll("[data-t]").forEach(e => e.textContent = t(e.dataset.t));
   $("#body").placeholder = t("ph");
   $("#fyiLabel").title = t("fyiTip");
+  $("#split").title = t("split"); $("#split").setAttribute("aria-label", t("split"));
   $("#langs").innerHTML = [["ko", "KO"], ["en", "EN"], ["zh", "中"]]
     .map(([k, l]) => `<button type="button" data-l="${k}" class="${k === lang ? "on" : ""}">${l}</button>`).join("");
   if (!S) { $("#team").textContent = t("connecting"); $("#tl").innerHTML = `<div class="empty">${t("loading")}</div>`; }
@@ -514,6 +523,7 @@ function renderTl() {
 }
 
 function render(force) {
+  if (S) applySide();
   const room = roomOf(sel);
   $("#title").textContent = room ? `# ${room.name}` : sel && !sel.startsWith("room:") ? short(sel) : t("all");
   $("#members").textContent = room ? (room.group ? `${t("grp")} · ` : "") + room.members.map(short).join(", ") : "";
@@ -812,6 +822,46 @@ $("#rfDelete").addEventListener("click", async () => {
     $("#rdlg").close(); if (sel === `room:${editing.id}`) sel = null; render(true);
   } catch (err) { rhint(t("failed") + err.message, true); }
 });
+
+// ---- resizable split between the list and the chat; the width is saved like the other settings ----
+const SIDE = {min: 180, max: 900, def: 260};
+const sideMax = () => Math.max(SIDE.min, Math.min(SIDE.max, Math.floor(innerWidth * 0.6)));
+function setSide(w) {
+  w = Math.round(Math.max(SIDE.min, Math.min(sideMax(), w)));
+  $("#side").style.width = w + "px";
+  $("#split").setAttribute("aria-valuenow", w); $("#split").setAttribute("aria-valuemax", sideMax());
+  return w;
+}
+let sideSaved = null, saveTimer = null;
+function saveSide(w) {  // one save after the drag or the last key press
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { if (w !== pref("sideWidth")) setPref("sideWidth", w); }, 400);
+}
+function applySide() {  // the saved width, once known, unless the user is mid-drag
+  const w = pref("sideWidth");
+  if (typeof w === "number" && w !== sideSaved && !$("#split").classList.contains("drag")) { sideSaved = w; setSide(w); }
+}
+$("#split").addEventListener("pointerdown", e => {
+  e.preventDefault();
+  const sp = $("#split"), start = e.clientX, w0 = $("#side").getBoundingClientRect().width;
+  sp.setPointerCapture(e.pointerId); sp.classList.add("drag"); document.body.classList.add("resizing");
+  const move = ev => setSide(w0 + ev.clientX - start);
+  const up = () => {
+    sp.removeEventListener("pointermove", move); sp.removeEventListener("pointerup", up); sp.removeEventListener("pointercancel", up);
+    sp.classList.remove("drag"); document.body.classList.remove("resizing");
+    sideSaved = setSide($("#side").getBoundingClientRect().width); saveSide(sideSaved);
+  };
+  sp.addEventListener("pointermove", move); sp.addEventListener("pointerup", up); sp.addEventListener("pointercancel", up);
+});
+$("#split").addEventListener("keydown", e => {
+  const w = $("#side").getBoundingClientRect().width, step = e.shiftKey ? 48 : 16;
+  const to = {ArrowLeft: w - step, ArrowRight: w + step, Home: SIDE.min, End: sideMax()}[e.key];
+  if (to === undefined) return;
+  e.preventDefault(); sideSaved = setSide(to); saveSide(sideSaved);
+});
+$("#split").addEventListener("dblclick", () => { sideSaved = setSide(SIDE.def); saveSide(sideSaved); });
+addEventListener("resize", () => setSide($("#side").getBoundingClientRect().width));
+setSide(SIDE.def);
 
 applyLang(); render(); poll(); setInterval(poll, 3000);
 </script>

@@ -31,11 +31,19 @@ class PrefsTest(unittest.TestCase):
             with self.assertRaises(prefs.PrefError):
                 p.set("favorites", bad)
 
+    def test_side_width(self):
+        p = prefs.Prefs(tempfile.mkdtemp())
+        self.assertEqual(p.get()["sideWidth"], 260)
+        self.assertEqual(p.set("sideWidth", 320)["sideWidth"], 320)
+        for bad in (179, 901, 300.5, "300", True, None):
+            with self.assertRaises(prefs.PrefError):
+                p.set("sideWidth", bad)
+
     def test_bad_file_and_failed_write(self):
         home = tempfile.mkdtemp()
         Path(home, "prefs.json").write_text(json.dumps({"hideOffline": "x", "evil": 1}), encoding="utf-8")
         p = prefs.Prefs(home)
-        self.assertEqual(p.get(), {"hideOffline": True, "favorites": []})
+        self.assertEqual(p.get(), {"hideOffline": True, "favorites": [], "sideWidth": 260})
         Path(home, "blocked").write_text("a file where a folder must go", encoding="utf-8")
         p.path = Path(home, "blocked", "prefs.json")
         with self.assertRaises(prefs.PrefError) as e:

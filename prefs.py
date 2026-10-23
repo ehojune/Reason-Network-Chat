@@ -11,13 +11,16 @@ from pathlib import Path
 
 FAV_RE = re.compile(r"^(room:r-[0-9a-f]{8}|[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,128})$")
 MAX_FAVORITES = 100
+SIDE_MIN, SIDE_MAX = 180, 900
 CHECKS = {
     "hideOffline": lambda v: isinstance(v, bool),
     # session addresses and room keys, pinned to the top of the list in this order
     "favorites": lambda v: isinstance(v, list) and len(v) <= MAX_FAVORITES
     and all(isinstance(x, str) and FAV_RE.match(x) for x in v) and len(set(v)) == len(v),
+    # width of the session list in CSS pixels; the page also keeps it inside the window
+    "sideWidth": lambda v: isinstance(v, int) and not isinstance(v, bool) and SIDE_MIN <= v <= SIDE_MAX,
 }
-DEFAULTS = {"hideOffline": True, "favorites": []}
+DEFAULTS = {"hideOffline": True, "favorites": [], "sideWidth": 260}
 
 
 class PrefError(Exception):

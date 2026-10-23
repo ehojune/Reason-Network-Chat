@@ -13,10 +13,21 @@ A wake starts detached (launcher.spawn), like a worker, so stopping or restartin
 its outcome is read from the database rather than from an exit code: it is done when the messages that were unread
 at the start have been read. Running wakes are recorded in wakes.json, so a restarted server watches them to the end
 and judges the ones that ended while it was down.
+
+The Codex app keeps every conversation it has opened locked for writing until the app exits
+(CODEX_HOME/thread-writer-locks/<thread>.lock); `codex exec resume` is then refused with "already has an active
+writer". Checked with `codex app-server` on a throwaway thread: refused while loaded (also after thread/unsubscribe),
+accepted once the app-server exited. So a wake first checks that lock and says so instead of failing.
+
+Auto-wake (the `autoWake` setting): the server calls Waker.auto() every few seconds; a session on that list is woken
+when it has unread messages, at most AUTO_BUDGET times per AUTO_WINDOW and not within AUTO_GAP of its last wake, so
+two agents answering each other cannot run up turns without end. Those limits are kept in autowake.json, so a
+restarted server does not start counting again.
 """
 import json
 import os
 import re
+import sys
 import threading
 import time
 from pathlib import Path
@@ -27,8 +38,42 @@ WAKE_PROMPT = ("You have unread Reason Network messages. Read them with check_in
                "with send_message. Do nothing else.")
 TIMEOUT = 600  # seconds for one woken turn
 MAX_RUNNING = 3
+AUTO_GAP = 60  # seconds between two auto-wakes of one session: messages arriving close together share a turn
+AUTO_BUDGET, AUTO_WINDOW = 12, 3600  # at most this many auto-wakes per session per window (seconds)
+AUTO_RETRY = 600  # seconds before an auto-wake that failed is tried again
+HELD_TTL = 10  # seconds a lock check is reused
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+
+
+def codex_home():
+    return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+
+
+def held(uuid, home=None):
+    """True while a Codex process (the desktop app, a CLI, a running wake) holds this conversation for writing.
+
+    The check takes the lock for an instant and gives it back at once; a missing lock file means nobody holds it.
+    """
+    path = Path(home or codex_home()) / "thread-writer-locks" / f"{uuid}.lock"
+    try:
+        fd = os.open(path, os.O_RDWR)
+    except OSError:
+        return False
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        return False
+    except OSError:
+        return True
+    finally:
+        os.close(fd)
 
 
 class WakeError(Exception):
@@ -38,43 +83,99 @@ class WakeError(Exception):
 
 
 class Waker:
-    def __init__(self, db_rows, home=None, poll=2.0):
+    def __init__(self, db_rows, home=None, poll=2.0, codex_dir=None):
         self.db_rows = db_rows
         self.poll = poll
+        self.codex_dir = codex_dir  # CODEX_HOME override, for tests
+        self.held_seen = {}  # thread id -> (checked at, held)
+        self.auto_starts = {}  # address -> start times (s) of its auto-wakes inside AUTO_WINDOW
         self.lock = threading.Lock()
         self.state = {}  # address -> {"status": "running" | "done" | "failed", "at": ms, "error": str}
         self.path = Path(home) / "wakes.json" if home else None
+        self.auto_path = Path(home) / "autowake.json" if home else None
         self.running = {}  # address -> {"pid", "started", "at", "ids", "log"}
+        now = time.time()
+        for address, a in self.load(self.auto_path).items():  # auto-wake limits from before a restart
+            if not isinstance(a, dict):
+                continue
+            starts = [t for t in a.get("starts") or [] if isinstance(t, (int, float)) and 0 <= now - t < AUTO_WINDOW]
+            if starts:
+                self.auto_starts[address] = starts
+            f = a.get("failed")
+            if isinstance(f, dict) and isinstance(f.get("at"), int):
+                self.state[address] = {"status": "failed", "at": f["at"], "error": str(f.get("error") or "")[:300],
+                                       "auto": True}
         for address, w in self.load().items():
             if not (isinstance(w, dict) and isinstance(w.get("pid"), int) and isinstance(w.get("cutoff"), int)):
                 continue
             w["address"] = address
             self.running[address] = w
-            self.state[address] = {"status": "running", "at": int(w.get("at") or 0), "error": ""}
+            self.state[address] = {"status": "running", "at": int(w.get("at") or 0), "error": "",
+                                   "auto": bool(w.get("auto"))}
             threading.Thread(target=self.watch, args=(address, w), daemon=True).start()  # alive or not: it judges
 
     # ---------- the record of running wakes ----------
-    def load(self):
+    def load(self, path=None):
+        path = path or self.path
         try:
-            data = json.loads(self.path.read_text(encoding="utf-8")) if self.path else {}
+            data = json.loads(path.read_text(encoding="utf-8")) if path else {}
         except (OSError, ValueError):
             data = {}
         return data if isinstance(data, dict) else {}
 
-    def save(self):
-        if not self.path:
+    @staticmethod
+    def write(path, data):
+        if not path:
             return
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(self.running), encoding="utf-8")
-            os.replace(tmp, self.path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(data), encoding="utf-8")
+            os.replace(tmp, path)
         except OSError:
             pass
 
+    def save(self):
+        self.write(self.path, self.running)
+
+    def save_auto(self):
+        """Keep the auto-wake limits (recent starts, a recent failure) across restarts; call with self.lock held."""
+        now = time.time()
+        data = {}
+        for a in set(self.auto_starts) | set(self.state):
+            starts = [t for t in self.auto_starts.get(a, []) if now - t < AUTO_WINDOW]
+            st = self.state.get(a, {})
+            failed = ({"at": st["at"], "error": st.get("error", "")} if st.get("status") == "failed" and st.get("auto")
+                      and now * 1000 - st["at"] < AUTO_RETRY * 1000 else None)
+            if starts or failed:
+                data[a] = {"starts": starts, "failed": failed}
+        self.write(self.auto_path, data)
+
     def view(self):
         with self.lock:
-            return {a: dict(v) for a, v in self.state.items()}
+            out = {a: dict(v) for a, v in self.state.items()}
+            now = time.time()
+            for a, starts in self.auto_starts.items():
+                recent = [t for t in starts if now - t < AUTO_WINDOW]
+                if len(recent) >= AUTO_BUDGET:  # resting until the oldest of them leaves the window
+                    out.setdefault(a, {"status": "done", "at": 0, "error": ""})["limitUntil"] =                         int((min(recent) + AUTO_WINDOW) * 1000)
+            return out
+
+    def is_held(self, uuid, address=None):
+        """held(), reused for HELD_TTL seconds: the page asks every few seconds for every Codex session.
+
+        A session this server is waking holds its own lock; that is not the app having it open.
+        """
+        with self.lock:
+            if address and self.state.get(address, {}).get("status") == "running":
+                return False
+        now = time.time()
+        seen = self.held_seen.get(uuid)
+        if seen and now - seen[0] < HELD_TTL:
+            return seen[1]
+        h = held(uuid, self.codex_dir)
+        self.held_seen[uuid] = (now, h)
+        return h
 
     @staticmethod
     def resumable(key):
@@ -107,9 +208,37 @@ class Waker:
         unread = self.db_rows("select count(*) as n from messages where recipient = ? and read_at is null", (address,))
         if not unread or not unread[0]["n"]:
             raise WakeError("It has no unread messages.")
+        if held(uuid, self.codex_dir):
+            self.held_seen[uuid] = (time.time(), True)
+            raise WakeError("The Codex app has this conversation open, so it cannot be woken from here: type in it in "
+                            "the app. The app lets go of it when the app is closed.", 423)
         return uuid, str(cwd)
 
-    def wake(self, address, who):
+    def auto(self, addresses, who):
+        """One auto-wake pass over the sessions in the autoWake setting; `who` is a recent `who --all --json`."""
+        now = time.time()
+        for address in addresses:
+            with self.lock:
+                st = self.state.get(address, {})
+                starts = [t for t in self.auto_starts.get(address, []) if now - t < AUTO_WINDOW]
+                self.auto_starts[address] = starts
+            if st.get("status") == "running" or len(starts) >= AUTO_BUDGET:
+                continue
+            if starts and now - starts[-1] < AUTO_GAP:
+                continue
+            if st.get("status") == "failed" and now * 1000 - st.get("at", 0) < AUTO_RETRY * 1000:
+                continue
+            # Only a message that asked to wake it does: an FYI (`--fyi`) or a held one waits for its next turn.
+            fresh = self.db_rows("select count(*) as n from messages where recipient = ? and read_at is null"
+                                 " and wake = 1 and held = 0", (address,))
+            if not fresh or not fresh[0]["n"]:
+                continue
+            try:
+                self.wake(address, who, auto=True)
+            except WakeError:
+                continue  # nothing unread, busy, open in the app, gone: try again on a later pass
+
+    def wake(self, address, who, auto=False):
         uuid, cwd = self.target(address, who)
         codex = find_codex()
         if not codex:
@@ -122,7 +251,10 @@ class Waker:
                 raise WakeError("Already waking it.", 409)
             if sum(v["status"] == "running" for v in self.state.values()) >= MAX_RUNNING:
                 raise WakeError(f"Already waking {MAX_RUNNING} sessions; wait for one to finish.", 429)
-            self.state[address] = {"status": "running", "at": int(time.time() * 1000), "error": ""}
+            self.state[address] = {"status": "running", "at": int(time.time() * 1000), "error": "", "auto": auto}
+            if auto:
+                self.auto_starts.setdefault(address, []).append(time.time())
+                self.save_auto()
         env = base_env()
         env["PATH"] = os.pathsep.join([str(Path(codex).parent), env.get("PATH", "")])  # ahead of any codex.cmd shim
         logs = STATE / "logs"
@@ -134,7 +266,7 @@ class Waker:
             self.finish(address, f"could not start codex: {e}")
             raise WakeError(f"Could not start Codex: {e}", 500)
         w = {"pid": pid, "started": started_at(pid) or "", "at": int(time.time() * 1000), "address": address,
-             "cutoff": cutoff, "log": log}
+             "cutoff": cutoff, "log": log, "auto": auto}
         with self.lock:
             self.running[address] = w
             self.save()
@@ -168,7 +300,11 @@ class Waker:
 
     def finish(self, address, error):
         with self.lock:
+            self.held_seen.clear()  # the woken turn has let go of its lock
             self.running.pop(address, None)
             self.save()
+            auto = self.state.get(address, {}).get("auto", False)
             self.state[address] = {"status": "failed" if error else "done", "at": int(time.time() * 1000),
-                                   "error": error[:300]}
+                                   "error": error[:300], "auto": auto}
+            if auto:
+                self.save_auto()

@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 os.environ.setdefault("REASON_CHAT_HOME", tempfile.mkdtemp())
+os.environ["CODEX_HOME"] = tempfile.mkdtemp()  # thread locks of a fake Codex, never the real one
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import wake  # noqa: E402
 
@@ -20,8 +21,10 @@ ROWS = {
     "moved-codex": {"key": f"codex:{UUID}", "agent": "codex", "cwd": os.path.join(FOLDER, "gone")},
     "read-codex": {"key": f"codex:{UUID}", "agent": "codex", "cwd": FOLDER},
     "odd-codex": {"key": "codex:../../etc", "agent": "codex", "cwd": FOLDER},
+    "auto-codex": {"key": f"codex:{UUID}", "agent": "codex", "cwd": FOLDER},
 }
-UNREAD = {"pat/sleepy-codex": 2, "pat/busy-codex": 1, "pat/a-claude": 1, "pat/moved-codex": 1, "pat/odd-codex": 1}
+UNREAD = {"pat/sleepy-codex": 2, "pat/busy-codex": 1, "pat/a-claude": 1, "pat/moved-codex": 1, "pat/odd-codex": 1,
+          "pat/auto-codex": 1}
 WHO = {"person": "pat", "machine": "box", "sessions": [
     {"address": "pat/sleepy-codex", "machine": "box", "status": "offline"},
     {"address": "pat/busy-codex", "machine": "box", "status": "busy"},
@@ -30,6 +33,7 @@ WHO = {"person": "pat", "machine": "box", "sessions": [
 
 
 STILL_UNREAD = {"n": 0}  # what a finished wake left unread, for judge()
+WAKEABLE = {}  # address -> unread messages sent without --fyi, when it differs from UNREAD
 
 
 def db_rows(sql, params=()):
@@ -39,6 +43,8 @@ def db_rows(sql, params=()):
     if "sent_at <= ?" in sql:
         STILL_UNREAD["asked"] = params
         return [{"n": STILL_UNREAD["n"]}]
+    if "wake = 1" in sql:  # unread messages that asked to wake it
+        return [{"n": WAKEABLE.get(params[0], UNREAD.get(params[0], 0))}]
     if sql.startswith("select max(sent_at)"):
         return [{"t": 1000 if UNREAD.get(params[0], 0) else None}]
     return [{"n": UNREAD.get(params[0], 0)}]
@@ -128,9 +134,150 @@ class WakeTest(unittest.TestCase):
         # judged on every message unread at the start (recipient + time cutoff), not a capped list of ids
         self.assertEqual(STILL_UNREAD["asked"], ("pat/sleepy-codex", 1000))
 
+    def test_conversation_open_in_the_codex_app(self):
+        locks = Path(os.environ["CODEX_HOME"]) / "thread-writer-locks"
+        locks.mkdir(parents=True, exist_ok=True)
+        path = locks / f"{UUID}.lock"
+        path.write_bytes(b"")
+        self.assertFalse(wake.held(UUID))  # a lock file nobody holds
+        with HeldLock(path):
+            self.assertTrue(wake.held(UUID))
+            self.bad("pat/sleepy-codex", 423)
+            self.w.state["pat/sleepy-codex"] = {"status": "running", "at": 0, "error": ""}
+            self.assertFalse(self.w.is_held(UUID, "pat/sleepy-codex"))  # our own wake holds it
+            self.w.state.clear()
+            self.assertTrue(self.w.is_held(UUID, "pat/sleepy-codex"))
+        self.assertFalse(wake.held(UUID))
+        path.unlink()
+        self.assertFalse(wake.held(UUID))  # no lock file: nobody has it
+
     def test_prompt_is_fixed(self):
         self.assertIn("check_inbox", wake.WAKE_PROMPT)
         self.assertIn("send_message", wake.WAKE_PROMPT)
+
+
+class HeldLock:
+    """Hold a Codex thread lock the way another process would."""
+    def __init__(self, path):
+        self.path = path
+
+    def __enter__(self):
+        self.fd = os.open(self.path, os.O_RDWR)
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(self.fd, msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def __exit__(self, *a):
+        if sys.platform == "win32":
+            import msvcrt
+            os.lseek(self.fd, 0, 0)
+            msvcrt.locking(self.fd, msvcrt.LK_UNLCK, 1)
+        os.close(self.fd)
+
+
+AUTO_WHO = {"person": "pat", "machine": "box", "sessions": [{"address": "pat/auto-codex", "machine": "box", "status": "idle"}]}
+
+
+class AutoWakeTest(unittest.TestCase):
+    """Waker.auto() with spawning faked: each wake ends at once and is judged from the fake database."""
+    def setUp(self):
+        self.spawned = []
+        self.saved = (wake.find_codex, wake.spawn, wake.started_at, wake.AUTO_GAP)
+        wake.find_codex = lambda: sys.executable
+        wake.spawn = lambda args, *a: self.spawned.append(args) or 4242
+        wake.started_at = lambda pid: None  # the woken turn is already over
+        self.w = wake.Waker(db_rows, poll=0.01)
+        STILL_UNREAD["n"] = 0
+
+    def tearDown(self):
+        wake.find_codex, wake.spawn, wake.started_at, wake.AUTO_GAP = self.saved
+        STILL_UNREAD["n"] = 0
+
+    def run_pass(self, who=AUTO_WHO):
+        self.w.auto(["pat/auto-codex", "pat/a-claude", "pat/unknown-codex"], who)
+        for _ in range(100):
+            if self.w.view().get("pat/auto-codex", {}).get("status") != "running":
+                return
+            time.sleep(0.01)
+
+    def test_wakes_with_the_fixed_prompt(self):
+        self.run_pass()
+        self.assertEqual(len(self.spawned), 1)  # the Claude and unknown sessions are skipped
+        self.assertEqual(self.spawned[0][-2:], [UUID, wake.WAKE_PROMPT])
+        self.assertEqual(self.w.view()["pat/auto-codex"]["status"], "done")
+        self.assertTrue(self.w.view()["pat/auto-codex"]["auto"])
+
+    def test_gap_and_hourly_budget(self):
+        self.run_pass()
+        self.run_pass()
+        self.assertEqual(len(self.spawned), 1)  # within AUTO_GAP of the last wake
+        wake.AUTO_GAP = 0
+        for _ in range(wake.AUTO_BUDGET + 3):
+            self.run_pass()
+        self.assertEqual(len(self.spawned), wake.AUTO_BUDGET)
+        self.assertGreater(self.w.view()["pat/auto-codex"]["limitUntil"], time.time() * 1000)
+
+    def test_failed_wake_waits_before_retrying(self):
+        wake.AUTO_GAP = 0
+        STILL_UNREAD["n"] = 1
+        self.run_pass()
+        self.assertEqual(self.w.view()["pat/auto-codex"]["status"], "failed")
+        self.run_pass()
+        self.assertEqual(len(self.spawned), 1)
+
+    def test_fyi_messages_do_not_auto_wake(self):
+        WAKEABLE["pat/auto-codex"] = 0  # its one unread message was sent with --fyi
+        try:
+            self.run_pass()
+        finally:
+            WAKEABLE.clear()
+        self.assertEqual(self.spawned, [])
+        self.run_pass()
+        self.assertEqual(len(self.spawned), 1)
+
+    def test_limits_survive_a_restart(self):
+        home = tempfile.mkdtemp()
+        self.w = wake.Waker(db_rows, home, poll=0.01)
+        wake.AUTO_GAP = 0
+        for _ in range(wake.AUTO_BUDGET):
+            self.run_pass()
+        self.assertEqual(len(self.spawned), wake.AUTO_BUDGET)
+        self.w = wake.Waker(db_rows, home, poll=0.01)  # a restarted server keeps counting
+        self.run_pass()
+        self.assertEqual(len(self.spawned), wake.AUTO_BUDGET)
+        self.assertIn("limitUntil", self.w.view()["pat/auto-codex"])
+
+    def test_failure_wait_survives_a_restart(self):
+        home = tempfile.mkdtemp()
+        self.w = wake.Waker(db_rows, home, poll=0.01)
+        wake.AUTO_GAP = 0
+        STILL_UNREAD["n"] = 1
+        self.run_pass()
+        self.assertEqual(self.w.view()["pat/auto-codex"]["status"], "failed")
+        STILL_UNREAD["n"] = 0
+        self.w = wake.Waker(db_rows, home, poll=0.01)
+        self.assertEqual(self.w.view()["pat/auto-codex"]["status"], "failed")
+        self.run_pass()
+        self.assertEqual(len(self.spawned), 1)
+
+    def test_skips_busy_and_app_open(self):
+        busy = {**AUTO_WHO, "sessions": [{"address": "pat/auto-codex", "machine": "box", "status": "busy"}]}
+        self.run_pass(busy)
+        locks = Path(os.environ["CODEX_HOME"]) / "thread-writer-locks"
+        locks.mkdir(parents=True, exist_ok=True)
+        path = locks / f"{UUID}.lock"
+        path.write_bytes(b"")
+        try:
+            with HeldLock(path):
+                self.run_pass()
+        finally:
+            path.unlink()
+        self.assertEqual(self.spawned, [])
+        self.run_pass()
+        self.assertEqual(len(self.spawned), 1)
 
 
 if __name__ == "__main__":

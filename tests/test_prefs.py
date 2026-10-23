@@ -39,11 +39,19 @@ class PrefsTest(unittest.TestCase):
             with self.assertRaises(prefs.PrefError):
                 p.set("sideWidth", bad)
 
+    def test_auto_wake(self):
+        p = prefs.Prefs(tempfile.mkdtemp())
+        self.assertEqual(p.get()["autoWake"], [])
+        self.assertEqual(p.set("autoWake", ["pat/labhq-codex"])["autoWake"], ["pat/labhq-codex"])
+        for bad in ("pat/x", ["pat/a", "pat/a"], ["room:r-0123abcd"], ["x"], [5], [f"pat/s{i}" for i in range(51)]):
+            with self.assertRaises(prefs.PrefError):
+                p.set("autoWake", bad)
+
     def test_bad_file_and_failed_write(self):
         home = tempfile.mkdtemp()
         Path(home, "prefs.json").write_text(json.dumps({"hideOffline": "x", "evil": 1}), encoding="utf-8")
         p = prefs.Prefs(home)
-        self.assertEqual(p.get(), {"hideOffline": True, "favorites": [], "sideWidth": 260})
+        self.assertEqual(p.get(), {"hideOffline": True, "favorites": [], "sideWidth": 260, "autoWake": []})
         Path(home, "blocked").write_text("a file where a folder must go", encoding="utf-8")
         p.path = Path(home, "blocked", "prefs.json")
         with self.assertRaises(prefs.PrefError) as e:

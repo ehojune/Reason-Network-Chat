@@ -12,7 +12,7 @@ and starts new agent sessions.
 |---|---|
 | `server.py` | Python standard library HTTP server on `127.0.0.1:8765`. No dependencies. |
 | `launcher.py` | New sessions: model catalogs, `reason network serve` workers, terminal windows, the Codex model shim. |
-| `wake.py` | Wake a sleeping Codex session: `codex exec resume <thread> <fixed prompt>` in its folder. |
+| `wake.py` | Wake a sleeping Codex session: `codex exec resume <thread> <fixed prompt>` in its folder; auto-wake with limits. |
 | `prefs.py` | Viewer settings in `REASON_CHAT_HOME/prefs.json` (whitelisted keys), so they survive a lost localStorage. |
 | `rooms.py` | Rooms: named sets of session addresses in `REASON_CHAT_HOME/rooms.json`. |
 | `relay.py` | Group rooms: sends your message with each member's missed lines, passes on `@name` replies, guards loops. |
@@ -62,7 +62,7 @@ then stop the worker.
 | `REASON_CHAT_DB` | `~/.reason/network/network.db` | Daemon database path. |
 | `REASON_BIN` | `%LOCALAPPDATA%\Reason\bin\reason.exe` on Windows, else `reason` on PATH | The Reason CLI. |
 | `NODE_EXTRA_CA_CERTS` | unset | Root CA file for TLS-inspecting corporate networks. The CLI (Bun) needs it there. On Windows, children get it from the stored user environment even if the server started before it was set. |
-| `REASON_CHAT_HOME` | `~/.reason-network-chat` | Rooms (`rooms.json`), relayed-message records (`relay.json`), settings (`prefs.json`), running wakes (`wakes.json`), worker registry (`workers.json`), worker logs (`logs/`), the Codex shim (`codex-shim/`). |
+| `REASON_CHAT_HOME` | `~/.reason-network-chat` | Rooms (`rooms.json`), relayed-message records (`relay.json`), settings (`prefs.json`), running wakes (`wakes.json`), auto-wake limits (`autowake.json`), worker registry (`workers.json`), worker logs (`logs/`), the Codex shim (`codex-shim/`). |
 | `REASON_CHAT_CLAUDE`, `REASON_CHAT_CODEX`, `REASON_CHAT_AGY` | found automatically | Full path to an agent CLI. On Windows it must be an `.exe`. |
 
 ## HTTP API
@@ -79,8 +79,9 @@ get the new token, and a newer server also triggers a reload.
 
 - `GET /api/state` →
   `{api, boot, team, me, sessions[], messages[], launched[], rooms[], relays{}, paused{}, notices{}, prefs{}, wakes{}, whoError, now}`.
-  Each session also has `resumable` (a Codex session of yours on this computer); `wakes{}` = address →
-  `{status: running|done|failed, at, error}`.
+  Each session also has `resumable` (a Codex session of yours on this computer) and `appOpen` (another Codex process,
+  usually the desktop app, holds the thread's writer lock, so it cannot be woken); `wakes{}` = address →
+  `{status: running|done|failed, at, error, auto, limitUntil?}` (`limitUntil`: auto-wake rests until then).
   `me` is the address the page sends as (`<person>/terminal`).
   `sessions[]` = live entries from `who --all --json` (`address, name, agent, status, doing, cwd, tier, live: true`)
   plus addresses seen only in history (`status: "gone"`, `live: false`).
@@ -107,10 +108,13 @@ get the new token, and a newer server also triggers a reload.
   `{ok, sent, results[{to, ok, err}]}`; `ok` when at least one member got it.
 - `POST /api/prefs` `{key, value}` → saves one whitelisted setting: `hideOffline` (bool), `favorites` (up to 100
   session addresses or `room:<id>` keys, no repeats), `sideWidth` (int 180–900; the page also keeps it under 60 % of
-  the window). Returns `{ok, prefs}`.
+  the window), `autoWake` (up to 50 session addresses the server wakes on unread messages). Returns `{ok, prefs}`.
 - `POST /api/wake` `{address}` → wakes a Codex session (`wake.py`): yours, on this computer, not busy, with unread
-  messages. The thread id comes from `sessions.key` (`codex:<uuid>`), the folder from `sessions.cwd`, the prompt is
-  `WAKE_PROMPT`; nothing from the request is run. Answers at once; progress shows in `wakes{}`.
+  messages, not open in the Codex app (HTTP 423 if it is). The thread id comes from `sessions.key` (`codex:<uuid>`),
+  the folder from `sessions.cwd`, the prompt is `WAKE_PROMPT`; nothing from the request is run. Answers at once;
+  progress shows in `wakes{}`. Auto-wake runs the same `wake()` from a server loop every 10 s for the `autoWake` list,
+  limited by `AUTO_GAP` (60 s), `AUTO_BUDGET`/`AUTO_WINDOW` (12 per hour) and `AUTO_RETRY` (600 s after a failure),
+  kept in `autowake.json` across restarts. Only an unread message with `wake = 1` and `held = 0` triggers it (not `--fyi`).
   The wake starts detached (like a worker, log in `logs/wake-<name>.log`) and is judged from the database: `done`
   when the messages unread at its start are read, else `failed` with the log's last lines. `wakes.json` lets a
   restarted server watch running wakes to the end and judge those that ended while it was down.
@@ -150,11 +154,18 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
 - **Agents may also use their own Reason tools.** A Codex or Claude member with the Reason Network MCP server can
   message another member directly instead of writing `@name`. The envelope asks them not to; those messages do not
   show in the room because they come from the agent's inner session (`codex exec` registers its own name).
-- **Waking writes into the user's conversation.** `codex exec resume` appends a turn to that thread's rollout file;
-  if the Codex app has the conversation open, both write to it. The page confirms each wake. Test on a throwaway
-  thread (start one with `codex exec` in a scratch folder), never on the user's conversations without their OK.
-  `sessions.key` prefixes seen: `codex:<uuid>`, `claude-code:<id>`, `proc:<pid>` (Antigravity), `cli:<name>` (asks
-  and workers); only `codex:` is woken.
+- **Waking writes into the user's conversation.** `codex exec resume` appends a turn to that thread's rollout file.
+  The page confirms each wake, and auto-wake only with the user's toggle (with its own confirmation). Test on a
+  throwaway thread (start one with `codex exec` in a scratch folder), never on the user's conversations without their
+  OK. `sessions.key` prefixes seen: `codex:<uuid>`, `claude-code:<id>`, `proc:<pid>` (Antigravity), `cli:<name>`
+  (asks and workers); only `codex:` is woken.
+- **The Codex app locks conversations.** Every thread the app (or a Codex TUI, or a running exec) has loaded keeps
+  `CODEX_HOME/thread-writer-locks/<thread>.lock` locked until that process exits, even after `thread/unsubscribe`;
+  `codex exec resume` then fails with "already has an active writer". `wake.held()` checks the lock by taking it for
+  an instant (LockFileEx via `msvcrt.locking` on Windows, `flock` elsewhere). Measured with `codex app-server`
+  (the desktop app's own binary, 0.163 alpha). Writing the app's automations from outside is unsupported; do not.
+- **Auto-wake costs turns.** A Claude Code (push) session answers at once, so a Codex session on auto-wake and a
+  Claude session can keep answering each other. The auto-wake limits in `wake.py` are what stops that; keep them.
 - **Starting sessions is too.** A worker takes work on the network as the user and keeps running after the page
   closes. Start one only when the user asks, and stop test workers afterwards.
 - **A killed worker looks alive.** `serve` reports "stopped" only when it exits on Ctrl+C. After `taskkill /F`

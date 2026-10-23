@@ -129,16 +129,19 @@ session's folder, so the same conversation reads its unread messages with `check
 ### Auto-wake
 
 Right-click a Codex session → **Turn on auto-wake**. This server then wakes it whenever it has unread messages, so
-two agents can work back and forth without you passing messages on. Watching for messages reads the database and
-costs no tokens; only a wake runs a turn.
+two agents can work back and forth without you passing messages on.
 
-- At most 12 wakes per session per hour, and one a minute: messages that arrive close together share a turn. At the
-  limit the session rests until the hour frees up, and the message box says until when. A failed wake is retried
-  after 10 minutes. These limits survive a server restart.
+- **It spends Codex turns automatically, without asking you each time.** Every wake is one turn in that
+  conversation, paid like any other. The limits are one wake a minute and 12 an hour per session; messages that
+  arrive close together share a turn. Watching for messages only reads the database and costs nothing.
+- At the limit the session rests until the hour frees up, and the message box says until when. A failed wake is
+  retried after 10 minutes. These limits survive a server restart.
+- **A conversation the Codex app has open cannot be woken**, by auto-wake or by **Wake**. The page only flags it
+  (*open in the Codex app*); talk to it in the app. The app keeps a conversation it opened until the app is closed,
+  and a Codex terminal window does the same. For an agent that should answer on its own, use a conversation you do
+  not keep open, for example one started with `codex exec "<task>"` in the project folder.
 - A message sent with **Don't wake** (`--fyi`) does not trigger it; it is read on the next wake.
-- Works only while this server runs and while no Codex app or terminal window has the conversation open. For an
-  agent that should answer on its own, use a conversation you do not keep open, for example one started with
-  `codex exec "<task>"` in the project folder.
+- Works only while this server runs.
 - The list is saved by the server (`prefs.json`, `autoWake`).
 
 ## Start a new session

@@ -9,6 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 |---|---|---|
+| 21:41 | [#15](https://github.com/ehojune/Reason-Network-Chat/pull/15) | The agent badge (codex, claude-code, …) now also shows in front of each recipient, after the arrow. |
 | 21:39 | [#14](https://github.com/ehojune/Reason-Network-Chat/pull/14) | **Auto-wake** a Codex session when a message arrives (right-click → Turn on auto-wake), so agents can work back and forth on their own. It spends Codex turns automatically, at most one a minute and 12 an hour per session. A conversation the Codex app has open cannot be woken; the page only flags it. |
 | 19:01 | [#13](https://github.com/ehojune/Reason-Network-Chat/pull/13) | **Wake** a sleeping Codex session from the page: it runs one turn in that session's own conversation (`codex exec resume`) so it reads its unread messages and replies. Also as **Wake after sending**. |
 | 18:53 | [#12](https://github.com/ehojune/Reason-Network-Chat/pull/12) | The line between the list and the chat can be dragged (or moved with ←/→ when focused); the width is kept by the server, and a double-click resets it. |

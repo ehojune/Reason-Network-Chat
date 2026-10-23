@@ -88,7 +88,7 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .bub { background: var(--bubble); border: 1px solid var(--line); border-radius: 14px; padding: 8px 12px;
   max-width: min(720px, 85%); white-space: pre-wrap; word-break: break-word; }
 .msg.me .bub { background: var(--me); }
-.msg.me .tag { background: var(--accent); }
+.tag.me { background: var(--accent); }
 .quote { border-left: 3px solid var(--line); color: var(--muted); font-size: 12px; padding: 0 0 0 8px; margin-bottom: 6px;
   max-height: 3em; overflow: hidden; }
 .foot { font-size: 11px; color: var(--muted); margin: 2px 6px 0; }
@@ -405,6 +405,12 @@ function agentOf(addr, recorded) {
   if (s && s.agent && s.agent !== "?") return s.agent;
   return recorded || S.messages.find(x => x.sender === addr && x.sender_agent)?.sender_agent || "?";
 }
+// The agent badge in front of a session name; the page's own address shows as "me".
+function agentTag(addr, recorded, quiet) {
+  const ag = agentOf(addr, recorded);
+  if (quiet && ag === "?") return "";
+  return `<span class="tag ${addr === S.me ? "me" : esc(ag)}">${esc(ag)}</span>`;
+}
 const person = () => (S && S.me ? S.me.split("/")[0] : "");
 // The selection is "" (everything), a session address, or "room:<id>".
 const roomOf = key => key && key.startsWith("room:") && S ? (S.rooms || []).find(r => r.id === key.slice(5)) : null;
@@ -546,7 +552,6 @@ function renderTl() {
     }
     const me = m.sender === S.me;
     const q = m.reply_to && byId[m.reply_to], qr = q && S.relays[q.id];  // quote the plain message, not the envelope
-    const ag = agentOf(m.sender, m.sender_agent);
     // Replies to the page's own address are read here, not through an inbox, so skip the read mark.
     const nread = m.all.filter(x => x.read_at).length;
     const flags = [m.recipient === S.me ? "" : m.all.length > 1 ? `${t("read")} ${nread}${t("of")}${m.all.length}`
@@ -554,8 +559,8 @@ function renderTl() {
       : `${t("unread")} · ${reachLabel(S.sessions.find(x => x.address === m.recipient) || {live: false})}`,
       m.all.some(x => x.held) ? t("held") : "", m.wake ? "" : "fyi"].filter(Boolean).join(" · ");
     h += `<div class="msg ${me ? "me" : ""}">
-      <div class="meta"><span class="tag ${esc(ag)}">${esc(ag)}</span><span class="who" data-a="${esc(m.sender)}">${esc(short(m.sender))}</span>
-        → ${m.to.map(a => `<span class="who" data-a="${esc(a)}">${esc(short(a))}</span>`).join(", ")} · ${fmtT(m.sent_at)}</div>
+      <div class="meta">${agentTag(m.sender, m.sender_agent)}<span class="who" data-a="${esc(m.sender)}">${esc(short(m.sender))}</span>
+        → ${m.to.map(a => `${agentTag(a, null, true)}<span class="who" data-a="${esc(a)}">${esc(short(a))}</span>`).join(", ")} · ${fmtT(m.sent_at)}</div>
       <div class="bub">${q ? `<div class="quote">↪ ${esc(short(qr ? qr.speaker : q.sender))}: ${esc((qr ? qr.core : q.body).slice(0, 160))}</div>` : ""}${esc(m.body)}</div>
       <div class="foot">${esc(flags)}</div></div>`;
   }

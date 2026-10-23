@@ -279,7 +279,7 @@ class Relay:
             raise RelayError("That room is gone, or the member left it.", 409)
         with self.send_lock:
             ok, err = self.deliver(room, rec["to"], me, rec["speaker"], rec["core"], rec.get("hop", 0),
-                                   implicit=bool(rec.get("implicit")))
+                                implicit=bool(rec.get("implicit")), post=rec.get("post"))
         if not ok:
             raise RelayError(err or "The message could not be sent.", 502)
         return rec["to"]

@@ -328,6 +328,12 @@ class RelayTest(unittest.TestCase):
         self.r.scan(ME)
         self.assertEqual((self.counts(), self.queued()), ([0, 1, 0], {"waiting": 1, "held": 0}))
 
+    def test_resending_preserves_first_post_provenance(self):
+        self.r.post_as(self.room, A, "@b-claude report", "allowed")
+        self.r.scan(ME)
+        self.r.redeliver(self.last_id_to(B), ME)
+        self.assertEqual(self.r.sent[self.last_id_to(B)]["post"], "allowed")
+
     def test_no_mention_no_wake_and_self_mention_ignored(self):
         self.r.post(self.room, ME, "@a-codex hi")
         self.insert(A, ME, "done, nothing for @a-codex or @pat", reply_to=self.last_id_to(A))

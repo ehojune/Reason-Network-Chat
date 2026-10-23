@@ -43,6 +43,18 @@ class RoomsTest(unittest.TestCase):
         self.bad(name="t", members=["--help"])
         self.bad(404, id="r-00000000", name="t", members=["pat/api-claude"])
 
+    def test_failed_write_changes_nothing(self):
+        room = self.r.upsert({"name": "t", "members": ["pat/api-claude"]}, KNOWN, ME)
+        self.r.path = Path(self.home, "missing-dir", "x", "rooms.json")
+        Path(self.home, "missing-dir").write_text("a file where a folder must go", encoding="utf-8")
+        for req in ({"name": "new", "members": ["pat/web-codex"]}, {"id": room["id"], "name": "renamed", "members": ["pat/web-codex"]}):
+            with self.assertRaises(rooms.RoomError) as e:
+                self.r.upsert(req, KNOWN, ME)
+            self.assertEqual(e.exception.code, 500)
+        with self.assertRaises(rooms.RoomError):
+            self.r.delete(room["id"])
+        self.assertEqual([(x["name"], x["members"]) for x in self.r.list()], [("t", ["pat/api-claude"])])
+
     def test_bad_file_is_ignored(self):
         Path(self.home, "rooms.json").write_text('[{"id": "x", "name": "t", "members": ["a/b"]}, 5, "z"]', encoding="utf-8")
         self.assertEqual(rooms.Rooms(self.home).list(), [])

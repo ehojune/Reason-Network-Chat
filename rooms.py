@@ -54,11 +54,16 @@ class Rooms:
             if ID_RE.match(str(room["id"])) and room["members"]:
                 self.rooms.append(room)
 
-    def save(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.rooms, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, self.path)
+    def commit(self, rooms):
+        """Write the new list, then adopt it: a failed write leaves memory and disk as they were."""
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(rooms, ensure_ascii=False, indent=1), encoding="utf-8")
+            os.replace(tmp, self.path)
+        except OSError as e:
+            raise RoomError(f"Could not save rooms: {e}", 500)
+        self.rooms = rooms
 
     def list(self):
         with self.lock:
@@ -88,19 +93,19 @@ class Rooms:
                     raise RoomError(f"At most {MAX_ROOMS} rooms.", 429)
                 room = {"id": f"r-{secrets.token_hex(4)}", "name": name, "members": members,
                         "created": int(time.time() * 1000)}
-                self.rooms.append(room)
+                rooms = self.rooms + [room]
             else:
-                room = next((r for r in self.rooms if r["id"] == rid), None)
-                if not room:
+                old = next((r for r in self.rooms if r["id"] == rid), None)
+                if not old:
                     raise RoomError("No such room.", 404)
-                room.update(name=name, members=members)
-            self.save()
+                room = dict(old, name=name, members=members)
+                rooms = [room if r is old else r for r in self.rooms]
+            self.commit(rooms)
             return dict(room, members=list(room["members"]))
 
     def delete(self, rid):
         with self.lock:
-            before = len(self.rooms)
-            self.rooms = [r for r in self.rooms if r["id"] != rid]
-            if len(self.rooms) == before:
+            rooms = [r for r in self.rooms if r["id"] != rid]
+            if len(rooms) == len(self.rooms):
                 raise RoomError("No such room.", 404)
-            self.save()
+            self.commit(rooms)

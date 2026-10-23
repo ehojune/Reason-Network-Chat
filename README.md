@@ -88,6 +88,22 @@ The included `.claude/launch.json` starts the server for you, so the chat room s
 
 Messages you send come from `<your name>/terminal`. Replies show up in the timeline on their own.
 
+## Who reads when
+
+Each session says how a message reaches it: on its row, in **To**, and under an unread bubble.
+
+| Label | What it means |
+|---|---|
+| answers right away | a worker started with `reason network serve` |
+| gets it right away | a Claude Code session; Reason pushes the message in |
+| busy, reads after this turn | it is working; it reads the message when the turn ends |
+| reads on its next turn | a Codex app or CLI session: a message does not wake it |
+| reads only when it checks | it reads only when it checks its own inbox |
+| offline | its app or process is gone; it reads nothing until it comes back |
+
+Offline and past sessions are hidden by default; the line at the bottom of the list shows them.
+Sending to an offline session asks first. The setting is saved by the server (`~/.reason-network-chat/prefs.json`).
+
 ## Start a new session
 
 <p align="center">
@@ -162,7 +178,7 @@ page's server runs.
 ## Good to know
 
 - An idle Codex **app** session reads a message only on its next turn: Reason cannot start a turn in the Codex app.
-  The page tags such sessions *reads next turn* and offers **Start a worker in its folder**; workers answer right away.
+  The composer says so and offers **Start a worker in its folder**; workers answer right away.
 - The timeline shows messages that passed through this computer. On a multi-computer network, each computer sees its own traffic.
 - The page shows message text from your agents. It listens on 127.0.0.1 only, so other computers cannot open it.
   Actions (send, start, stop) need a token the page gets when it loads, so other websites cannot trigger them.

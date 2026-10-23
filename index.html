@@ -89,6 +89,9 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .empty { color: var(--muted); text-align: center; margin-top: 30vh; }
 #comp { border-top: 1px solid var(--line); background: var(--panel); padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
 #nowake { font-size: 12px; color: var(--muted); }
+#offToggle { font: inherit; font-size: 11.5px; color: var(--muted); background: none; border: none; padding: 8px 8px 4px;
+  cursor: pointer; text-align: left; }
+#offToggle:hover { color: var(--text); text-decoration: underline; }
 #nowake button { font: inherit; color: var(--accent); background: none; border: none; padding: 0; cursor: pointer;
   text-decoration: underline; }
 #row { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
@@ -184,7 +187,7 @@ const T = {
   ko: { all: "전체 대화", connecting: "연결 중…", loading: "불러오는 중…", empty: "메시지가 없습니다",
     to: "받는 세션", fyi: "깨우지 않기", fyiTip: "--fyi: 상대를 깨우지 않고 받은편지함에만 넣음",
     ph: "메시지 (Enter 보내기, Shift+Enter 줄바꿈)", send: "보내기", sending: "보내는 중…", sent: "보냄 →",
-    failed: "실패: ", online: "접속 중", offline: "오프라인", history: "기록에만 남은 세션",
+    failed: "실패: ", offline: "오프라인", history: "기록에만 남은 세션",
     busy: "작업 중", idle: "대기", gone: "종료됨", read: "읽음", unread: "안 읽음", held: "보류됨",
     me: "나", updated: "갱신", whoErr: "세션 상태를 못 읽음: ", connErr: "연결 실패: ", as: "보내는 이름", noTeam: "팀 정보 없음",
     newSession: "+ 새 세션", newSessionTitle: "새 세션 열기", folder: "폴더", agent: "에이전트", runAs: "실행 방식", model: "모델", effort: "추론 강도",
@@ -196,8 +199,17 @@ const T = {
     stop: "워커 중지", stopAsk: "이 워커를 중지할까요? ", stopped: "중지함: ", wk: "워커", here: "여기서 시작함",
     restart: "서버를 다시 시작하세요: 페이지와 서버의 버전이 다릅니다 (페이지 {p}, 서버 {s}).",
     reloadPage: "서버가 다시 시작됐습니다. 페이지를 새로고침하세요.",
-    noAgent: "설치된 에이전트가 없습니다", nextTurn: "다음 턴에 읽음",
-    nowake: "이 세션은 자기 턴이 올 때만 메시지를 읽습니다. 쉬고 있는 Codex 앱 세션은 메시지로 깨어나지 않습니다.",
+    rNow: "바로 답함", rWorkerBusy: "작업 중, 끝나면 답함", rPushed: "바로 받음", rAfterTurn: "작업 중, 이번 차례 뒤에 읽음",
+    rPull: "직접 확인할 때만 읽음", rNextTurn: "다음 차례에 읽음", rOffline: "오프라인", rGone: "종료됨", rCli: "일회성 질문",
+    gNow: "바로 받는 세션", gLater: "나중에 읽는 세션", hideOff: "오프라인·기록 {n}개 숨김 · 보이기",
+    showOff: "오프라인·기록 {n}개 보이는 중 · 숨기기",
+    nwOffline: "이 세션은 오프라인이라 다시 켜질 때까지 메시지를 읽지 않습니다.",
+    nwPull: "이 세션은 직접 받은편지함을 확인할 때만 메시지를 읽습니다.",
+    sendOffline: "{name} 세션은 오프라인이라 다시 켜질 때까지 읽지 않습니다. 그래도 보낼까요?",
+    roomOffline: "오프라인인 참여 세션: {names}. 다시 켜질 때까지 읽지 않습니다. 그래도 보낼까요?",
+    prefLocal: "설정을 서버에 저장하지 못해 이 브라우저에만 저장했습니다: ",
+    noAgent: "설치된 에이전트가 없습니다",
+    nowake: "이 세션은 다음 차례가 와야 메시지를 읽습니다. 쉬고 있는 Codex 앱 세션은 메시지로 깨어나지 않습니다.",
     toWorker: "같은 폴더에 워커 열기",
     newRoom: "+ 대화방", newRoomTitle: "새 대화방", editRoom: "대화방 편집", roomName: "대화방 이름", roomMembers: "참여 세션",
     deleteRoom: "대화방 삭제", save: "저장", rooms: "대화방", everyone: "대화방 전체", sentTo: "보냄", of: "/",
@@ -212,7 +224,7 @@ const T = {
   en: { all: "All messages", connecting: "Connecting…", loading: "Loading…", empty: "No messages",
     to: "To", fyi: "Don't wake", fyiTip: "--fyi: drop it in the inbox without waking the session",
     ph: "Message (Enter to send, Shift+Enter for a new line)", send: "Send", sending: "Sending…", sent: "Sent →",
-    failed: "Failed: ", online: "Online", offline: "Offline", history: "History only",
+    failed: "Failed: ", offline: "Offline", history: "History only",
     busy: "busy", idle: "idle", gone: "gone", read: "read", unread: "unread", held: "held",
     me: "me", updated: "updated", whoErr: "Can't read sessions: ", connErr: "Connection failed: ", as: "sending as", noTeam: "no team",
     newSession: "+ New session", newSessionTitle: "Start a new session", folder: "Folder", agent: "Agent", runAs: "Run as", model: "Model", effort: "Effort",
@@ -224,7 +236,17 @@ const T = {
     stop: "Stop worker", stopAsk: "Stop this worker? ", stopped: "Stopped: ", wk: "worker", here: "started here",
     restart: "Restart the server: the page and the server are different versions (page {p}, server {s}).",
     reloadPage: "The server restarted. Reload this page.",
-    noAgent: "No agent is installed", nextTurn: "reads next turn",
+    rNow: "answers right away", rWorkerBusy: "busy, answers when done", rPushed: "gets it right away",
+    rAfterTurn: "busy, reads after this turn", rPull: "reads only when it checks", rNextTurn: "reads on its next turn",
+    rOffline: "offline", rGone: "gone", rCli: "one-off ask",
+    gNow: "Get messages now", gLater: "Read later", hideOff: "Hiding {n} offline and past · Show",
+    showOff: "Showing {n} offline and past · Hide",
+    nwOffline: "This session is offline; it reads nothing until it comes back.",
+    nwPull: "This session reads messages only when it checks its inbox itself.",
+    sendOffline: "{name} is offline and reads nothing until it comes back. Send anyway?",
+    roomOffline: "Offline members: {names}. They read nothing until they come back. Send anyway?",
+    prefLocal: "Could not save the setting on the server; saved in this browser only: ",
+    noAgent: "No agent is installed",
     nowake: "This session reads messages only when it takes its next turn; an idle Codex app session does not wake on one.",
     toWorker: "Start a worker in its folder",
     newRoom: "+ Room", newRoomTitle: "New room", editRoom: "Edit room", roomName: "Room name", roomMembers: "Sessions in this room",
@@ -240,7 +262,7 @@ const T = {
   zh: { all: "全部消息", connecting: "连接中…", loading: "加载中…", empty: "暂无消息",
     to: "发送给", fyi: "不唤醒", fyiTip: "--fyi：只放进收件箱，不唤醒对方会话",
     ph: "输入消息（Enter 发送，Shift+Enter 换行）", send: "发送", sending: "发送中…", sent: "已发送 →",
-    failed: "失败：", online: "在线", offline: "离线", history: "仅在记录中",
+    failed: "失败：", offline: "离线", history: "仅在记录中",
     busy: "工作中", idle: "空闲", gone: "已结束", read: "已读", unread: "未读", held: "已暂扣",
     me: "我", updated: "已更新", whoErr: "无法读取会话：", connErr: "连接失败：", as: "发送身份", noTeam: "无团队信息",
     newSession: "+ 新会话", newSessionTitle: "启动新会话", folder: "文件夹", agent: "智能体", runAs: "运行方式", model: "模型", effort: "推理强度",
@@ -252,7 +274,16 @@ const T = {
     stop: "停止 worker", stopAsk: "要停止这个 worker 吗？", stopped: "已停止：", wk: "worker", here: "在此启动",
     restart: "请重启服务器：页面与服务器版本不一致（页面 {p}，服务器 {s}）。",
     reloadPage: "服务器已重启，请刷新页面。",
-    noAgent: "没有已安装的智能体", nextTurn: "下一轮才读",
+    rNow: "立即回复", rWorkerBusy: "工作中，完成后回复", rPushed: "立即收到", rAfterTurn: "工作中，本轮结束后读取",
+    rPull: "只在自己查看时读取", rNextTurn: "下一轮才读", rOffline: "离线", rGone: "已结束", rCli: "一次性提问",
+    gNow: "立即收到的会话", gLater: "稍后读取的会话", hideOff: "已隐藏 {n} 个离线和过往会话 · 显示",
+    showOff: "正在显示 {n} 个离线和过往会话 · 隐藏",
+    nwOffline: "该会话离线，重新上线前不会读取消息。",
+    nwPull: "该会话只在自己查看收件箱时读取消息。",
+    sendOffline: "{name} 已离线，重新上线前不会读取。仍要发送吗？",
+    roomOffline: "离线成员：{names}。重新上线前不会读取。仍要发送吗？",
+    prefLocal: "无法在服务器保存设置，仅保存在此浏览器：",
+    noAgent: "没有已安装的智能体",
     nowake: "该会话只在自己下一轮运行时读取消息；空闲的 Codex 应用会话不会被消息唤醒。",
     toWorker: "在同一文件夹启动 worker",
     newRoom: "+ 聊天室", newRoomTitle: "新建聊天室", editRoom: "编辑聊天室", roomName: "聊天室名称", roomMembers: "成员会话",
@@ -268,13 +299,14 @@ const T = {
 };
 const LOCALE = {ko: "ko-KR", en: "en-US", zh: "zh-CN"};
 const store = {get: k => { try { return localStorage.getItem(k); } catch { return null; } },
-  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} }};
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+  del: k => { try { localStorage.removeItem(k); } catch {} }};
 const guess = () => { const l = (navigator.language || "en").toLowerCase(); return l.startsWith("ko") ? "ko" : l.startsWith("zh") ? "zh" : "en"; };
 let lang = new URLSearchParams(location.search).get("lang") || store.get("reason-chat-lang") || guess();
 if (!T[lang]) lang = "en";
 const t = k => T[lang][k];
 const TOKEN = document.querySelector('meta[name="reason-chat-token"]').content;
-const API = 2;  // must match API in server.py
+const API = 3;  // must match API in server.py
 const BOOT = document.querySelector('meta[name="reason-chat-boot"]').content;  // which server start served this page
 // Reload to pick up a restarted or newer server, at most once a minute so a broken setup cannot loop.
 function reloadOnce() {
@@ -331,15 +363,48 @@ function inRoom(m, room) {
 }
 const shown = m => { const r = roomOf(sel); return r ? inRoom(m, r) : !sel || m.sender === sel || m.recipient === sel; };
 const launchedHere = addr => S.launched.some(w => `${person()}/${w.name}` === addr);
-// App and CLI sessions read Reason messages only when they take a turn; an idle Codex app session never wakes on one.
-// Workers answer at once; "cli" rows are one-off `reason network` asks.
-const sleepy = s => !!s && !s.worker && s.agent !== "cli" && s.agent !== "claude-code";
+// How a message reaches a session, from Reason's tier and the live status. Measured on this network: idle Claude
+// Code sessions (push) read at once; Codex app sessions do not wake on a message (push idle: next turn; pull: only
+// when they check their inbox); serve workers answer at once; "cli" rows are one-off `reason network` asks.
+function reach(s) {
+  if (!s) return null;
+  if (!s.live) return "gone";
+  if (s.status === "offline") return "offline";
+  if (s.worker) return s.status === "busy" ? "workerBusy" : "now";
+  if (s.agent === "cli") return "cli";
+  if (s.status === "busy") return "afterTurn";
+  if (s.tier === "pull") return "pull";
+  return s.tier === "push" && s.agent === "claude-code" ? "pushed" : "nextTurn";
+}
+const reachLabel = s => t("r" + reach(s)[0].toUpperCase() + reach(s).slice(1));
+const NOW = ["now", "workerBusy", "pushed", "afterTurn"], LATER = ["pull", "nextTurn", "cli"];
+// Sessions that will not read soon: the composer says so and offers a worker in the same folder.
+const sleepy = s => !!s && ["offline", "pull", "nextTurn"].includes(reach(s));
+
+// Preferences live on the server (the Browser pane can lose localStorage); localStorage only when saving fails.
+function pref(key) {
+  const local = store.get("rnc-pref-" + key);  // only there when the server could not save it
+  if (local !== null) { try { return JSON.parse(local); } catch {} }
+  return S && S.prefs ? S.prefs[key] : undefined;
+}
+async function setPref(key, value) {
+  try {
+    S.prefs = (await post("/api/prefs", {key, value})).prefs;
+    store.del("rnc-pref-" + key);
+  } catch (err) {
+    store.set("rnc-pref-" + key, JSON.stringify(value)); say(t("prefLocal") + err.message, true);
+  }
+  render(true);
+}
 
 function renderSide() {
   const count = a => S.messages.filter(m => m.sender === a || m.recipient === a).length;
-  const order = {busy: 0, idle: 1, offline: 2, gone: 3};
-  const ss = [...S.sessions].sort((a, b) => (order[a.status] ?? 2) - (order[b.status] ?? 2)
+  const group = s => NOW.includes(reach(s)) ? 0 : LATER.includes(reach(s)) ? 1 : reach(s) === "offline" ? 2 : 3;
+  const hide = pref("hideOffline") !== false;
+  const all = [...S.sessions].sort((a, b) => group(a) - group(b) || (b.status === "busy") - (a.status === "busy")
     || (count(b.address) - count(a.address)) || a.name.localeCompare(b.name));
+  const away = all.filter(s => group(s) >= 2 && s.address !== sel);  // the selected one always shows
+  const ss = hide ? all.filter(s => !away.includes(s)) : all;
   let h = `<div class="ses ${sel ? "" : "sel"}" data-a=""><span class="dot idle"></span><span class="nm">${t("all")}</span>
     <span class="cnt">${S.messages.length}</span></div>`;
   if ((S.rooms || []).length) h += `<div class="grp">${t("rooms")}</div>`;
@@ -351,7 +416,7 @@ function renderSide() {
   }
   let grp = null;
   for (const s of ss) {
-    const g = s.live ? (s.status === "offline" ? t("offline") : t("online")) : t("history");
+    const g = [t("gNow"), t("gLater"), t("offline"), t("history")][group(s)];
     if (g !== grp) { h += `<div class="grp">${g}</div>`; grp = g; }
     const c = count(s.address);
     const sub = s.doing || s.cwd || "";
@@ -359,18 +424,19 @@ function renderSide() {
     h += `<div class="ses ${s.live ? "" : "gone"} ${sel === s.address ? "sel" : ""}" data-a="${esc(s.address)}"
       title="${esc(s.address)} · ${esc(st(s.status))}${s.tier ? " · " + esc(s.tier) : ""}${here ? " · " + esc(t("here")) : ""}">
       <span class="dot ${esc(s.status)}"></span><span class="nm">${esc(s.name)}</span><span class="cnt">${c || ""}</span>
-      <span class="sub"><span class="tag ${esc(s.agent)}">${esc(s.agent)}</span>${s.worker ? `<span class="tag wk">${t("wk")}</span>` : ""}${s.status === "idle" && sleepy(s) ? `<span class="tag wk">${t("nextTurn")}</span>` : ""}${esc(st(s.status))}${sub ? " · " + esc(sub) : ""}</span></div>`;
+      <span class="sub"><span class="tag ${esc(s.agent)}">${esc(s.agent)}</span>${s.worker ? `<span class="tag wk">${t("wk")}</span>` : ""}${esc(reachLabel(s))}${sub ? " · " + esc(sub) : ""}</span></div>`;
   }
+  if (away.length) h += `<button type="button" id="offToggle">${esc(t(hide ? "hideOff" : "showOff").replace("{n}", away.length))}</button>`;
   $("#list").innerHTML = h;
   $("#team").textContent = `${S.team || t("noTeam")}${S.me ? ` · ${t("as")} ${S.me}` : ""}`;
 }
 
 function renderTo() {
   const cur = $("#to").value, room = roomOf(sel);
-  let live = S.sessions.filter(s => s.live && s.status !== "offline" && s.address !== S.me);
+  let live = S.sessions.filter(s => s.address !== S.me && ((s.live && s.status !== "offline") || s.address === sel));
   if (room) live = room.group ? [] : live.filter(s => room.members.includes(s.address));  // group: always via the relay
   $("#to").innerHTML = (room ? `<option value="room:${esc(room.id)}">${esc(t("everyone"))} (${room.members.length})</option>` : "") +
-    live.map(s => `<option value="${esc(s.address)}">${esc(s.name)} (${esc(s.agent)})</option>`).join("");
+    live.map(s => `<option value="${esc(s.address)}">${esc(s.name)} (${esc(s.agent)}) · ${esc(reachLabel(s))}</option>`).join("");
   const want = room ? (live.some(s => s.address === cur) ? cur : `room:${room.id}`)
     : sel && live.some(s => s.address === sel) ? sel : cur;
   if (want && [...$("#to").options].some(o => o.value === want)) $("#to").value = want;
@@ -408,7 +474,8 @@ function renderTl() {
     // Replies to the page's own address are read here, not through an inbox, so skip the read mark.
     const nread = m.all.filter(x => x.read_at).length;
     const flags = [m.recipient === S.me ? "" : m.all.length > 1 ? `${t("read")} ${nread}${t("of")}${m.all.length}`
-      : m.read_at ? `${t("read")} ${fmtT(m.read_at)}` : t("unread"),
+      : m.read_at ? `${t("read")} ${fmtT(m.read_at)}`
+      : `${t("unread")} · ${reachLabel(S.sessions.find(x => x.address === m.recipient) || {live: false})}`,
       m.all.some(x => x.held) ? t("held") : "", m.wake ? "" : "fyi"].filter(Boolean).join(" · ");
     h += `<div class="msg ${me ? "me" : ""}">
       <div class="meta"><span class="tag ${esc(ag)}">${esc(ag)}</span><span class="who" data-a="${esc(m.sender)}">${esc(short(m.sender))}</span>
@@ -436,7 +503,7 @@ function render(force) {
     sel = pendingAddr; pendingAddr = null; $("#tl").dataset.first = "1"; force = true;
   }
   $("#stop").hidden = !(sel && launchedHere(sel));
-  const sig = JSON.stringify([S.sessions, S.launched, S.rooms, S.paused, S.notices, Object.keys(S.relays).length,
+  const sig = JSON.stringify([S.sessions, S.launched, S.rooms, S.paused, S.notices, S.prefs, Object.keys(S.relays).length,
     S.messages.map(m => [m.id, m.read_at, m.held]), sel, lang]);
   if (!force && sig === lastSig) return;
   lastSig = sig;
@@ -445,7 +512,9 @@ function render(force) {
 
 function renderNoWake() {
   const s = S.sessions.find(x => x.address === $("#to").value);
-  $("#nowake").hidden = !(sleepy(s) && s.status !== "busy");
+  $("#nowake").hidden = !sleepy(s);
+  if (sleepy(s)) $("#nowake span").textContent = t({offline: "nwOffline", pull: "nwPull", nextTurn: "nowake"}[reach(s)]);
+  $("#toWorker").hidden = !(s && s.cwd && ["codex", "claude-code"].includes(s.agent));
 }
 
 function say(msg, err) { $("#status").className = err ? "err" : ""; $("#status").textContent = msg; }
@@ -466,7 +535,7 @@ async function poll() {
     if ((j.boot && j.boot !== BOOT) || j.api > API) { if (reloadOnce()) return; }
     if (j.api !== API) return say(t(j.api > API ? "reloadPage" : "restart").replace("{p}", API).replace("{s}", j.api ?? 1), true);
     if (j.boot !== BOOT) return say(t("reloadPage"), true);
-    S = {sessions: [], messages: [], launched: [], rooms: [], relays: {}, paused: {}, notices: {}, ...j}; render();
+    S = {sessions: [], messages: [], launched: [], rooms: [], relays: {}, paused: {}, notices: {}, prefs: {}, ...j}; render();
     say(j.whoError ? t("whoErr") + j.whoError : `${t("updated")} ${fmtT(j.now)}`, !!j.whoError);
   } catch (e) {
     if (e instanceof TypeError) lost = true;  // fetch itself failed: the server is down or restarting
@@ -475,7 +544,10 @@ async function poll() {
 }
 
 function pick(a) { sel = a || null; $("#tl").dataset.first = "1"; render(true); }
-$("#list").addEventListener("click", e => { const x = e.target.closest(".ses"); if (x) pick(x.dataset.a); });
+$("#list").addEventListener("click", e => {
+  if (e.target.closest("#offToggle")) return setPref("hideOffline", !(pref("hideOffline") !== false));
+  const x = e.target.closest(".ses"); if (x) pick(x.dataset.a);
+});
 $("#tl").addEventListener("click", e => { const x = e.target.closest(".who"); if (x) pick(x.dataset.a); });
 $("#langs").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
@@ -486,6 +558,11 @@ $("#comp").addEventListener("submit", async e => {
   e.preventDefault();
   const to = $("#to").value, body = $("#body").value.trim();
   if (!to || !body) return;
+  const room = roomOf(to), target = S.sessions.find(x => x.address === to);
+  const off = room ? room.members.filter(a => ["offline", "gone"].includes(reach(S.sessions.find(x => x.address === a) || {live: false})))
+    : target && ["offline", "gone"].includes(reach(target)) ? [to] : [];
+  if (off.length && !confirm(room ? t("roomOffline").replace("{names}", off.map(short).join(", "))
+    : t("sendOffline").replace("{name}", short(to)))) return;
   $("#btn").disabled = true; $("#sendmsg").textContent = t("sending");
   try {
     if (to.startsWith("room:")) {

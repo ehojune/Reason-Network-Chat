@@ -477,7 +477,6 @@ class Relay:
             self.seen[key] = max(self.seen.get(key, 0), newest, skip_at)
             if item is not None:
                 self.dequeue(room["id"], item)
-                self.clear_transient_notice(room["id"])
             self.save()
         return True, ""
 
@@ -499,7 +498,6 @@ class Relay:
         key = f'{room["id"]}|{item["to"]}'
         self.seen[key] = max(self.seen.get(key, 0), flight.get("newest", 0), item.get("at", 0))
         self.dequeue(room["id"], item)
-        self.clear_transient_notice(room["id"])
         self.save()
         return True
 
@@ -517,6 +515,7 @@ class Relay:
             items.remove(item)
         if not items:
             self.queue.pop(rid, None)
+        self.clear_transient_notice(rid)
 
     @staticmethod
     def mentioned(room, text, exclude=None, everyone=False):
@@ -691,6 +690,7 @@ class Relay:
                     items = self.queue.get(rid) or []
                     if not room or not room.get("group"):  # the room is gone or no longer a group: nothing to pass
                         self.queue.pop(rid, None)
+                        self.clear_transient_notice(rid)
                         self.save()
                         break
                     # Someone who left the room gets nothing more from it, and a reply of someone who left is not passed on.

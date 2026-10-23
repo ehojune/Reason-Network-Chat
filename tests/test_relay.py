@@ -641,6 +641,29 @@ class RelayTest(unittest.TestCase):
         self.r.post(self.room, ME, "@a-codex new message")
         self.assertIn("unknown", self.r.view(set())[2][self.room["id"]])
 
+    def test_invalidated_flights_clear_only_their_temporary_warning(self):
+        for invalidation in ("member-left", "group-disabled"):
+            with self.subTest(invalidation=invalidation):
+                home = tempfile.mkdtemp()
+                room = dict(self.room, members=list(self.room["members"]), group=True)
+                r = relay.Relay(home, FakeRooms(room), self.rows, self.send)
+                r.since = 0
+                r.post(room, ME, "@a-codex go")
+                r.forward(room, ME, self.row(self.insert(A, ME, "@b-claude question")))
+                r.notice[room["id"]] = "older retries exhausted"
+                r.send_one = lambda *args: (_ for _ in ()).throw(subprocess.TimeoutExpired("reason", 60))
+                r.scan(ME)
+                self.assertIn("unknown", r.view(set())[2][room["id"]])
+                if invalidation == "member-left":
+                    room["members"].remove(B)
+                else:
+                    room["group"] = False
+                r.scan(ME)
+                self.assertFalse(r.queue)
+                self.assertEqual(r.view(set())[2][room["id"]], "older retries exhausted")
+                restarted = relay.Relay(home, FakeRooms(room), self.rows, self.send)
+                self.assertEqual(restarted.view(set())[2][room["id"]], "older retries exhausted")
+
     def test_crash_during_manual_retry_does_not_authorize_a_second_retry(self):
         self.r.post(self.room, ME, "@a-codex go")
         self.insert(A, ME, "@b-claude question", reply_to=self.last_id_to(A))

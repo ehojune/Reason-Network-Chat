@@ -272,6 +272,7 @@ def shim_dir():
     d = STATE / "codex-shim"
     target = d / ("codex.exe" if WIN else "codex")
     exe = sys.executable.encode("utf-8")
+    extra = []  # (path, bytes) written next to the shim
     if WIN:
         try:
             from pip._vendor.distlib.scripts import ScriptMaker
@@ -282,14 +283,18 @@ def shim_dir():
         with zipfile.ZipFile(buf, "w") as z:  # fixed timestamp: the same Python gives the same bytes
             z.writestr(zipfile.ZipInfo("__main__.py", date_time=(1980, 1, 1, 0, 0, 0)), SHIM_MAIN)
         data = launcher + b"#!" + (b'"' + exe + b'"' if b" " in exe else exe) + b"\n" + buf.getvalue()
-    else:
-        data = b"#!" + exe + b"\n" + SHIM_MAIN
+    else:  # a shebang cannot hold a path with spaces; sh can, quoted
+        q = lambda b: b"'" + b.replace(b"'", b"'\\''") + b"'"
+        main = d / "codex_shim.py"
+        extra.append((main, SHIM_MAIN))
+        data = b"#!/bin/sh\nexec " + q(exe) + b" " + q(str(main).encode("utf-8")) + b' "$@"\n'
     try:
         d.mkdir(parents=True, exist_ok=True)
-        if not target.is_file() or target.read_bytes() != data:
-            tmp = target.with_suffix(".tmp")
-            tmp.write_bytes(data)
-            os.replace(tmp, target)
+        for path, content in extra + [(target, data)]:
+            if not path.is_file() or path.read_bytes() != content:
+                tmp = path.with_suffix(".tmp")
+                tmp.write_bytes(content)
+                os.replace(tmp, path)
         if not WIN:
             target.chmod(0o755)
     except OSError:  # e.g. a running worker holds the old shim open; it still works
@@ -420,28 +425,29 @@ def kill_tree(pid):
 # Workers and windows must not be children of this server: the Claude desktop app stops a preview by killing its
 # whole process tree, which would take every worker with it and leave it showing "idle" on the network for good.
 # A short-lived spawner starts the process and exits, so the process has no living parent to be found through.
-SPAWNER = """import json, subprocess, sys
+SPAWNER = """import json, os, subprocess, sys
 spec = json.loads(sys.stdin.read())
 kw = {"cwd": spec["cwd"], "env": spec["env"]}
 if spec["log"]:
     kw.update(stdin=subprocess.DEVNULL, stdout=open(spec["log"], "ab"), stderr=subprocess.STDOUT)
-try:  # also leave any job object the server runs in, when the job allows it
-    p = subprocess.Popen(spec["args"], creationflags=spec["flags"] | 0x01000000, **kw)
-except OSError:
-    p = subprocess.Popen(spec["args"], creationflags=spec["flags"], **kw)
+elif os.name != "nt":  # nothing may hold this spawner's stdout pipe open
+    kw.update(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+if os.name != "nt":  # its own session and process group, so Ctrl+C can go to the whole group
+    p = subprocess.Popen(spec["args"], start_new_session=True, **kw)
+else:
+    try:  # also leave any job object the server runs in, when the job allows it
+        p = subprocess.Popen(spec["args"], creationflags=spec["flags"] | 0x01000000, **kw)
+    except OSError:
+        p = subprocess.Popen(spec["args"], creationflags=spec["flags"], **kw)
 print(p.pid)
 """
 
 
 def spawn(args, cwd, env, flags, log=None):
-    """Start a process detached from this server; returns its pid."""
-    if not WIN:  # its own session: not in this server's process group
-        with open(log or os.devnull, "ab") as out:
-            return subprocess.Popen(args, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=out,
-                                    stderr=subprocess.STDOUT, start_new_session=True).pid
+    """Start a process detached from this server (on every platform: a tree kill follows parent pids); returns its pid."""
     spec = {"args": args, "cwd": cwd, "env": env, "flags": flags, "log": log}
     r = subprocess.run([sys.executable, "-c", SPAWNER], input=json.dumps(spec).encode("utf-8"), capture_output=True,
-                       timeout=30, creationflags=NOWIN)
+                       timeout=30, creationflags=NOWIN if WIN else 0)
     try:
         return int(r.stdout.strip())
     except ValueError:

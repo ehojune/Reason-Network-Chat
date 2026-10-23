@@ -298,14 +298,14 @@ class StuckWorkerTest(unittest.TestCase):
 
     def setUp(self):
         self.l = launcher.Launcher("reason", FakeCatalog())
-        self.saved = {k: launcher.__dict__[k] for k in ("list_processes", "started_at", "started_epoch", "kill_tree")}
+        self.saved = {k: launcher.__dict__[k] for k in ("list_processes", "started_at", "started_epoch", "kill_pid")}
         self.alive = launcher.Launcher.__dict__["alive"]
         born = {10: "100", 11: "110", 12: "120", 13: "101", 99: "130", 20: "5"}
         launcher.started_at = lambda pid: born.get(pid, "")
         launcher.started_epoch = lambda s: float(s) if s else None  # creation times in seconds
         launcher.list_processes = lambda: list(self.PROCS)
         self.killed, self.halted, self.started = [], [], []
-        launcher.kill_tree = lambda pid: self.killed.append(pid)
+        launcher.kill_pid = lambda pid: self.killed.append(pid)
         launcher.Launcher.alive = staticmethod(lambda w: True)
         self.l.halt = lambda w: self.halted.append(w["name"])
         self.l.settle = lambda w: None

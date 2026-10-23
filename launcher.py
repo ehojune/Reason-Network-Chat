@@ -491,6 +491,18 @@ def kill_tree(pid):
             pass
 
 
+def kill_pid(pid):
+    """Kill one process (and on Windows what runs under it): a leftover of a worker's tree, verified by the caller.
+    Not a group kill: on POSIX a leftover usually shares its parent's process group instead of leading one."""
+    if WIN:
+        kill_tree(pid)
+    else:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+
 # ---------- launching ----------
 # Workers and windows must not be children of this server: the Claude desktop app stops a preview by killing its
 # whole process tree, which would take every worker with it and leave it showing "idle" on the network for good.
@@ -1013,12 +1025,13 @@ class Launcher:
                 raise LaunchError("No such worker running outside this page.", 404)
             if name in self.workers:
                 raise LaunchError("A worker with that name is managed here already.", 409)
-            if model or effort:
+            if model or effort:  # the pair it will be restarted with: what is given, else what was seen running
                 fam = self.catalog.family(w["family"])
                 if not fam:
                     raise LaunchError("Unknown agent.")
-                entry, model, effort = self.check_model(fam, fam["modes"]["worker"], model or "", effort or "")
-                w = dict(w, model=model or w.get("model"), effort=effort or w.get("effort"))
+                entry, model, effort = self.check_model(fam, fam["modes"]["worker"], model or w.get("model") or "",
+                                                        effort or w.get("effort") or "")
+                w = dict(w, model=model or None, effort=effort or None)
             self.workers[name] = dict(w, external=True)
             self.foreign.pop(name, None)
             self.stopped.discard(name)
@@ -1144,7 +1157,7 @@ class Launcher:
             self.halt(w)
             for pid, started in left:
                 if started and started_at(pid) == started:
-                    kill_tree(pid)
+                    kill_pid(pid)
             time.sleep(1)  # let the network take in "stopped" before the same name comes back
             with self.lock:
                 nw = self.start_worker(fam, cwd, model, effort, name, full)

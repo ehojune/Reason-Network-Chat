@@ -682,6 +682,29 @@ class RelayTest(unittest.TestCase):
         self.assertEqual(self.r.view(set())[2][self.room["id"]], "older retries exhausted")
         self.assertEqual(self.new_relay().view(set())[2][self.room["id"]], "older retries exhausted")
 
+    def test_held_sender_mismatch_remains_visible_when_another_item_changes(self):
+        for outcome in ("success", "ambiguous", "member-left"):
+            with self.subTest(outcome=outcome):
+                room = dict(self.room, members=list(self.room["members"]), limits={"hops": 1})
+                r = relay.Relay(tempfile.mkdtemp(), FakeRooms(room), self.rows, self.send)
+                rid = room["id"]
+                r.queue[rid] = [
+                    {"reply": "old", "to": B, "sender": A, "body": "old", "hop": 2,
+                     "flight": {"me": "old/identity", "body": "claimed", "newest": 0}},
+                    {"reply": "new", "to": C, "sender": A, "body": "new", "hop": 1}]
+                r.notice[rid] = "older retries exhausted"
+                r.transient_notice[rid] = relay.SENDER_NOTICE
+                if outcome == "ambiguous":
+                    r.send_one = lambda *args: (_ for _ in ()).throw(subprocess.TimeoutExpired("reason", 60))
+                elif outcome == "member-left":
+                    room["members"].remove(C)
+                r.save()
+                r.scan(ME)
+                self.assertIn("older retries exhausted", r.view(set())[2][rid])
+                self.assertEqual(r.transient_notice[rid], relay.SENDER_NOTICE)
+                restarted = relay.Relay(r.path.parent, FakeRooms(room), self.rows, self.send)
+                self.assertEqual(restarted.transient_notice[rid], relay.SENDER_NOTICE)
+
     def test_crash_during_manual_retry_does_not_authorize_a_second_retry(self):
         self.r.post(self.room, ME, "@a-codex go")
         self.insert(A, ME, "@b-claude question", reply_to=self.last_id_to(A))

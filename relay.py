@@ -62,6 +62,7 @@ RETRIES = 3  # attempts at one hand-off before it is reported as failed
 STORAGE_NOTICE = "Could not save the hand-off; no message was sent. Waiting for storage recovery."
 AMBIGUOUS_NOTICE = "Delivery outcome unknown; Send all now explicitly retries it."
 RECEIPT_NOTICE = "Delivery accepted; waiting for its database receipt."
+SENDER_NOTICE = "Queued delivery belongs to a different sender; it was not retried."
 # @name or @person/name (ASCII, so "@codex-worker1에게" still names codex-worker1), or @모두 / @전체
 # The same pattern as MENTION_RE in index.html, so the page shows who the server will send to ("안녕@b-claude" names
 # b-claude; "pat@b-claude" does not).
@@ -206,7 +207,7 @@ class Relay:
             self.notice = {k: str(v) for k, v in (data.get("notice") or {}).items()}
             self.transient_notice = {k: str(v) for k, v in (data.get("transientNotice") or {}).items()}
             for rid, text in list(self.notice.items()):
-                if text in (STORAGE_NOTICE, AMBIGUOUS_NOTICE, RECEIPT_NOTICE):
+                if text in (STORAGE_NOTICE, AMBIGUOUS_NOTICE, RECEIPT_NOTICE, SENDER_NOTICE):
                     self.transient_notice.setdefault(rid, self.notice.pop(rid))
         except (ValueError, TypeError, AttributeError):
             pass
@@ -448,7 +449,7 @@ class Relay:
                 if item is not None:
                     # An exception may have happened after delivery: retain the claim for reconciliation.
                     item.pop("force", None)  # one explicit retry is not permission to retry forever
-                    self.transient_notice[room["id"]] = AMBIGUOUS_NOTICE
+                    self.refresh_transient_notice(room["id"], me, AMBIGUOUS_NOTICE)
                     self.save()
             return False, f"{type(e).__name__}: {e}"
         if rc != 0:
@@ -457,7 +458,7 @@ class Relay:
                     if created:
                         item.pop("flight", None)
                     else:
-                        self.transient_notice[room["id"]] = AMBIGUOUS_NOTICE
+                        self.refresh_transient_notice(room["id"], me, AMBIGUOUS_NOTICE)
                     self.save()
             return False, err or out or f"rc={rc}"
         rows = self.db_rows("select id, sent_at from messages where sender = ? and recipient = ? and body = ?"
@@ -465,7 +466,7 @@ class Relay:
         with self.lock:
             if item is not None and not rows:
                 item.pop("force", None)
-                self.transient_notice[room["id"]] = RECEIPT_NOTICE
+                self.refresh_transient_notice(room["id"], me, RECEIPT_NOTICE)
                 self.save()
                 return False, "Waiting for delivery receipt"
             if rows:
@@ -476,7 +477,7 @@ class Relay:
             # plus the handed-off reply itself, which it just got as the message.
             self.seen[key] = max(self.seen.get(key, 0), newest, skip_at)
             if item is not None:
-                self.dequeue(room["id"], item)
+                self.dequeue(room["id"], item, me)
             self.save()
         return True, ""
 
@@ -497,25 +498,30 @@ class Relay:
                                 "implicit": bool(item.get("implicit")), "post": item.get("post")}
         key = f'{room["id"]}|{item["to"]}'
         self.seen[key] = max(self.seen.get(key, 0), flight.get("newest", 0), item.get("at", 0))
-        self.dequeue(room["id"], item)
+        self.dequeue(room["id"], item, me)
         self.save()
         return True
 
-    def clear_transient_notice(self, rid):
+    def refresh_transient_notice(self, rid, me, pending=None):
         """Recovery resolves temporary delivery state, never an unrelated exhausted-retry failure."""
-        if any(item.get("flight") for item in self.queue.get(rid, [])):
+        flights = [item["flight"] for item in self.queue.get(rid, []) if item.get("flight")]
+        if any(flight.get("me") != me for flight in flights):
+            self.transient_notice[rid] = SENDER_NOTICE
+        elif pending:
+            self.transient_notice[rid] = pending
+        elif flights:
             self.transient_notice[rid] = AMBIGUOUS_NOTICE
         else:
             self.transient_notice.pop(rid, None)
 
-    def dequeue(self, rid, item):
+    def dequeue(self, rid, item, me):
         """Take one item off a room's queue (call with self.lock held)."""
         items = self.queue.get(rid) or []
         if item in items:
             items.remove(item)
         if not items:
             self.queue.pop(rid, None)
-        self.clear_transient_notice(rid)
+        self.refresh_transient_notice(rid, me)
 
     @staticmethod
     def mentioned(room, text, exclude=None, everyone=False):
@@ -552,7 +558,7 @@ class Relay:
         with self.transaction():
             with self.lock:
                 self.notice.pop(room["id"], None)
-                self.clear_transient_notice(room["id"])
+                self.refresh_transient_notice(room["id"], me)
                 self.passes[room["id"]].clear()  # you are back in the conversation: a fresh budget
             results = []
             for m in targets:
@@ -690,7 +696,7 @@ class Relay:
                     items = self.queue.get(rid) or []
                     if not room or not room.get("group"):  # the room is gone or no longer a group: nothing to pass
                         self.queue.pop(rid, None)
-                        self.clear_transient_notice(rid)
+                        self.refresh_transient_notice(rid, me)
                         self.save()
                         break
                     # Someone who left the room gets nothing more from it, and a reply of someone who left is not passed on.
@@ -698,24 +704,28 @@ class Relay:
                     gone = [i for i in items if i["to"] not in room["members"] or i["sender"] not in room["members"]
                             or worker_failure(i["body"])]
                     for i in gone:
-                        self.dequeue(rid, i)
+                        self.dequeue(rid, i, me)
                     if gone:
                         self.save()
+                    # A held flight still belongs to its original identity. Keep its warning accurate
+                    # even while another item is delivered/removed or the hop limit changes.
+                    if self.transient_notice.get(rid) == SENDER_NOTICE or any(
+                            i.get("flight") and i["flight"].get("me") != me for i in items):
+                        previous = self.transient_notice.get(rid)
+                        self.refresh_transient_notice(rid, me)
+                        if previous != self.transient_notice.get(rid):
+                            self.save()
                     # Held items (past the room's current hop limit) wait for you; the others go out in order.
                     item = next((i for i in self.queue.get(rid) or [] if not held(room, i)), None)
                     if not item:
                         break
                     if item.get("flight"):
                         if item["flight"].get("me") != me:
-                            warning = "Queued delivery belongs to a different sender; it was not retried."
-                            if self.transient_notice.get(rid) != warning:
-                                self.transient_notice[rid] = warning
-                                self.save()
                             break
                         if self.reconcile(room, me, item):
                             continue
                         if not item.get("force"):
-                            self.transient_notice[rid] = AMBIGUOUS_NOTICE
+                            self.refresh_transient_notice(rid, me)
                             break  # keep an ambiguous send; a restart must never guess and spend another turn
                     slot = self.take(room) if not item.get("force") else time.time()
                     if slot is None:
@@ -735,7 +745,7 @@ class Relay:
             with self.lock:
                 if slot in self.passes[rid]:
                     self.passes[rid].remove(slot)
-                self.transient_notice[rid] = STORAGE_NOTICE
+                self.refresh_transient_notice(rid, me, STORAGE_NOTICE)
                 self.save()
             raise
         with self.lock:
@@ -749,7 +759,7 @@ class Relay:
                 self.passes[rid].remove(slot)  # a failed send does not use up the budget
             self.tries[key] += 1
             if self.tries[key] >= RETRIES:
-                self.dequeue(rid, item)
+                self.dequeue(rid, item, me)
                 self.notice[rid] = f"{short(item['sender'])} → {short(item['to'])}: {err}"
                 self.tries.pop(key, None)
                 self.save()

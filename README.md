@@ -106,6 +106,21 @@ Each session says how a message reaches it: on its row, in **To**, and under an 
 Offline and past sessions are hidden by default; the line at the bottom of the list shows them.
 Sending to an offline session asks first. The setting is saved by the server (`~/.reason-network-chat/prefs.json`).
 
+## Wake a sleeping Codex session
+
+A Codex app or CLI session reads a message only when it takes a turn. **Wake** (above the message box, or in the
+header of the selected session) gives it one: the server runs `codex exec resume <thread> "<fixed prompt>"` in that
+session's folder, so the same conversation reads its unread messages with `check_inbox` and answers with
+`send_message`. Tick **Wake after sending** to do it right after a send.
+
+- Only your Codex sessions on this computer that have unread messages and are not busy. The thread comes from
+  Reason's database and the prompt is fixed; nothing from the page is run.
+- The turn is added to the same conversation (its `~/.codex/sessions/…/rollout-…-<thread>.jsonl`). If the Codex app
+  has that conversation open, both write to it; the page asks first. Reopen the conversation in the app to see the
+  turn (not checked inside the app).
+- A wake takes about half a minute. One per session at a time, cut off after 10 minutes.
+- Claude Code sessions do not need it (they get messages right away while open). Other agents cannot be woken here.
+
 ## Start a new session
 
 <p align="center">

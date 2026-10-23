@@ -23,6 +23,7 @@ from launcher import STATE, Catalog, Launcher, LaunchError, allow_ctrl_c, base_e
 from prefs import PrefError, Prefs
 from relay import Relay
 from rooms import RoomError, Rooms
+from wake import WakeError, Waker
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("REASON_CHAT_PORT", "8765"))
@@ -37,7 +38,7 @@ ORIGINS = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 TOKEN = secrets.token_urlsafe(32)
 # Shape of /api/state and the POSTs. Bump together with API in index.html: a page that meets a server of another
 # version (the server kept running across an update) asks for a restart instead of breaking.
-API = 5
+API = 6
 BOOT = secrets.token_hex(8)  # new each start: an open page that sees another one reloads to get the new token
 NOWIN = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
 
@@ -101,14 +102,17 @@ def db_rows(sql, params=()):
 def state():
     msgs = db_rows("select * from (select id, sender, sender_agent, recipient, reply_to, body, wake, sent_at,"
                    f" read_at, held from messages order by sent_at desc limit {MAX_MESSAGES}) order by sent_at")
-    known = {r["name"]: r for r in db_rows("select name, agent, cwd, doing, tier from sessions")}
+    known = {r["name"]: r for r in db_rows("select name, agent, cwd, doing, tier, key from sessions")}
     with _lock:
         who, who_err = _who["data"] or {}, _who["error"]
     person = who.get("person")
     me = f"{person}/terminal" if person else None  # address `reason network send` uses from a plain process
     live = who.get("sessions") or []
     seen = {s["address"] for s in live}
-    sessions = [dict(s, live=True) for s in live]
+    # Codex sessions of yours on this computer can be woken (wake.py): their key in the database names the thread.
+    mine = lambda person_, machine: person_ == person and machine in (None, who.get("machine"))
+    can_wake = lambda name, person_, machine: mine(person_, machine) and bool(Waker.resumable(known.get(name, {}).get("key")))
+    sessions = [dict(s, live=True, resumable=can_wake(s["name"], s.get("person"), s.get("machine"))) for s in live]
     # Sessions that now exist only in history: finished CLI asks, departed agents.
     for addr in sorted({m["sender"] for m in msgs} | {m["recipient"] for m in msgs}):
         if addr in seen or addr == me:
@@ -119,12 +123,12 @@ def state():
                                         if m["sender"] == addr and m["sender_agent"]), None)
         sessions.append({"address": addr, "name": name, "agent": agent or "?", "status": "gone",
                          "doing": k.get("doing"), "cwd": k.get("cwd"), "tier": k.get("tier"),
-                         "live": False})
+                         "live": False, "resumable": can_wake(name, addr.split("/", 1)[0], None)})
         seen.add(addr)
     relays, paused, notices = RELAY.view({m["id"] for m in msgs})
     return {"api": API, "boot": BOOT, "team": who.get("team"), "me": me, "sessions": sessions, "messages": msgs,
             "launched": LAUNCHER.list(), "rooms": ROOMS.list(), "relays": relays, "paused": paused, "notices": notices,
-            "prefs": PREFS.get(),
+            "prefs": PREFS.get(), "wakes": WAKER.view(),
             "whoError": who_err, "now": int(time.time() * 1000)}
 
 
@@ -173,6 +177,7 @@ def folders():
 
 
 RELAY = Relay(STATE, ROOMS, db_rows, send_one)
+WAKER = Waker(db_rows)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -255,7 +260,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         if path not in ("/api/send", "/api/launch", "/api/stop", "/api/rooms/save", "/api/rooms/delete",
-                        "/api/rooms/send", "/api/prefs"):
+                        "/api/rooms/send", "/api/prefs", "/api/wake"):
             return self.send_error(404)
         req = self.read_json()
         if req is None:
@@ -275,13 +280,19 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_room(req)
             elif path == "/api/prefs":
                 self.send_json({"ok": True, "prefs": PREFS.set(req.get("key"), req.get("value"))})
+            elif path == "/api/wake":
+                with _lock:
+                    who = _who["data"]
+                if not who:
+                    return self.send_json({"error": "Reason Network is not answering yet; try again."}, 503)
+                self.send_json(WAKER.wake(req.get("address"), who))
             else:
                 name = req.get("name")
                 if not isinstance(name, str):
                     return self.send_json({"error": "name must be a string"}, 400)
                 LAUNCHER.stop(name)
                 self.send_json({"ok": True})
-        except (LaunchError, RoomError, PrefError) as e:
+        except (LaunchError, RoomError, PrefError, WakeError) as e:
             self.send_json({"error": str(e)}, e.code)
         except Exception as e:
             self.send_json({"error": str(e)}, 500)

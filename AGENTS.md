@@ -12,6 +12,7 @@ and starts new agent sessions.
 |---|---|
 | `server.py` | Python standard library HTTP server on `127.0.0.1:8765`. No dependencies. |
 | `launcher.py` | New sessions: model catalogs, `reason network serve` workers, terminal windows, the Codex model shim. |
+| `wake.py` | Wake a sleeping Codex session: `codex exec resume <thread> <fixed prompt>` in its folder. |
 | `prefs.py` | Viewer settings in `REASON_CHAT_HOME/prefs.json` (whitelisted keys), so they survive a lost localStorage. |
 | `rooms.py` | Rooms: named sets of session addresses in `REASON_CHAT_HOME/rooms.json`. |
 | `relay.py` | Group rooms: sends your message with each member's missed lines, passes on `@name` replies, guards loops. |
@@ -77,7 +78,9 @@ written into the page) tells an open page that the server restarted: it reloads 
 get the new token, and a newer server also triggers a reload.
 
 - `GET /api/state` →
-  `{api, team, me, sessions[], messages[], launched[], rooms[], relays{}, paused{}, notices{}, prefs{}, whoError, now}`.
+  `{api, boot, team, me, sessions[], messages[], launched[], rooms[], relays{}, paused{}, notices{}, prefs{}, wakes{}, whoError, now}`.
+  Each session also has `resumable` (a Codex session of yours on this computer); `wakes{}` = address →
+  `{status: running|done|failed, at, error}`.
   `me` is the address the page sends as (`<person>/terminal`).
   `sessions[]` = live entries from `who --all --json` (`address, name, agent, status, doing, cwd, tier, live: true`)
   plus addresses seen only in history (`status: "gone"`, `live: false`).
@@ -105,6 +108,9 @@ get the new token, and a newer server also triggers a reload.
 - `POST /api/prefs` `{key, value}` → saves one whitelisted setting: `hideOffline` (bool), `favorites` (up to 100
   session addresses or `room:<id>` keys, no repeats), `sideWidth` (int 180–900; the page also keeps it under 60 % of
   the window). Returns `{ok, prefs}`.
+- `POST /api/wake` `{address}` → wakes a Codex session (`wake.py`): yours, on this computer, not busy, with unread
+  messages. The thread id comes from `sessions.key` (`codex:<uuid>`), the folder from `sessions.cwd`, the prompt is
+  `WAKE_PROMPT`; nothing from the request is run. Answers at once; progress shows in `wakes{}`.
 - `POST /api/stop` `{name}` → stops a worker this server started: Ctrl+C first (so the network shows it as stopped),
   then a kill after 10 s.
 
@@ -141,6 +147,11 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
 - **Agents may also use their own Reason tools.** A Codex or Claude member with the Reason Network MCP server can
   message another member directly instead of writing `@name`. The envelope asks them not to; those messages do not
   show in the room because they come from the agent's inner session (`codex exec` registers its own name).
+- **Waking writes into the user's conversation.** `codex exec resume` appends a turn to that thread's rollout file;
+  if the Codex app has the conversation open, both write to it. The page confirms each wake. Test on a throwaway
+  thread (start one with `codex exec` in a scratch folder), never on the user's conversations without their OK.
+  `sessions.key` prefixes seen: `codex:<uuid>`, `claude-code:<id>`, `proc:<pid>` (Antigravity), `cli:<name>` (asks
+  and workers); only `codex:` is woken.
 - **Starting sessions is too.** A worker takes work on the network as the user and keeps running after the page
   closes. Start one only when the user asks, and stop test workers afterwards.
 - **A killed worker looks alive.** `serve` reports "stopped" only when it exits on Ctrl+C. After `taskkill /F`

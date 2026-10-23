@@ -14,6 +14,9 @@ A 1:1 message (sent to one session, outside the room) is not relayed, and neithe
 answer @mentions members of a group room the agent is in, you can forward it there (`forward`): it is then passed on
 as if it had answered a room message, once, within the room's limits.
 
+A member can also start a message (`post_as`, from `rnc.py room send`): it goes out like a member's answer, to the
+members it @mentions (never @all: that stays yours), within the room's limits, and answers to it come back to it.
+
 A worker's failure ("The Codex worker failed: …", which `serve` sends when it could not run the turn) is not an
 answer: it is passed on to nobody, and never comes back to an asker. Passing failures on once made workers whose
 own turns failed answer each other's failures, 36 hand-offs in half a minute (2026-10-24). You can send the
@@ -28,6 +31,7 @@ import collections
 import json
 import os
 import re
+import secrets
 import threading
 import time
 from pathlib import Path
@@ -132,6 +136,8 @@ class Relay:
     def __init__(self, home, rooms, db_rows, send_one):
         self.path = Path(home) / "relay.json"
         self.rooms, self.db_rows, self.send_one = rooms, db_rows, send_one
+        # How a member starts a message later, for the envelope: a format string with {room} and {member}, or None.
+        self.post_cmd = None
         self.lock = threading.Lock()  # state below; never held while a CLI send runs
         self.send_lock = threading.Lock()  # one delivery batch at a time (your message, or a scan)
         self.sent = {}  # message id -> {room, hop, core, speaker, to, at}
@@ -219,7 +225,8 @@ class Relay:
     def view(self, ids):
         """For the page: the relay record of each listed message, queued hand-offs per room, failed hand-offs."""
         with self.lock:
-            rel = {i: {k: self.sent[i].get(k) for k in ("room", "hop", "core", "speaker")} for i in ids if i in self.sent}
+            rel = {i: {k: self.sent[i].get(k) for k in ("room", "hop", "core", "speaker", "post")} for i in ids
+                   if i in self.sent}
             queued = {}
             for rid, items in self.queue.items():
                 room = self.rooms.get(rid)
@@ -337,12 +344,15 @@ class Relay:
                 f"Answers to 1:1 messages are not passed on. {person} sees the whole room. "
                 "Do not message members with Reason Network tools.\n"
                 'The message to answer is after "---"; lines under "Earlier in the room" are clipped context.')
+        if self.post_cmd:
+            head += ("\nTo start a new message in this room later (not an answer), run: "
+                     + self.post_cmd.format(room=room["id"], member=handle(member, room)))
         lines = self.lines_for(room, member, me, skip, (speaker, core))
         earlier = ("\nEarlier in the room:\n" + "\n".join(f"{who}: {t}" for _, who, t in lines)) \
             if lines else ""
         return f"{head}{earlier}\n---\n{label(speaker, me, room)}: {core}", (lines[-1][0] if lines else 0)
 
-    def deliver(self, room, member, me, speaker, core, hop, skip=None, skip_at=0, item=None, implicit=False):
+    def deliver(self, room, member, me, speaker, core, hop, skip=None, skip_at=0, item=None, implicit=False, post=None):
         """Compose and send one relayed message. The CLI runs without self.lock, so polling never waits on it.
         A queued `item` leaves the queue in the same save that records the message as sent: a restart in between
         cannot send it twice."""
@@ -359,7 +369,7 @@ class Relay:
         with self.lock:
             if rows:
                 self.sent[rows[0]["id"]] = {"room": room["id"], "hop": hop, "core": core, "speaker": speaker,
-                                            "to": member, "at": rows[0]["sent_at"], "implicit": implicit}
+                                            "to": member, "at": rows[0]["sent_at"], "implicit": implicit, "post": post}
             key = f'{room["id"]}|{member}'
             # Only as far as the lines it was given (a reply that landed while this was sent stays "missed"),
             # plus the handed-off reply itself, which it just got as the message.
@@ -426,6 +436,30 @@ class Relay:
             if items:
                 self.save()
             return len(items)
+
+    # ---------- a member starts a message ----------
+    def post_as(self, room, member, body, via):
+        """A member's own message to the room (rnc.py room send), queued like a member's answer: to the members it
+        @mentions (an @all is not honoured: only you message everyone), hop 1, within the room's limits; answers come
+        back to the member. `via`: how the server knew it was the member ("session" or "allowed"). Returns targets."""
+        if not room.get("group"):
+            raise RelayError("Only a group room relays.")
+        if member not in room["members"]:
+            raise RelayError("Not a member of this room.", 403)
+        body = str(body or "").strip()
+        if no_answer(body) or len(body) > 20000:
+            raise RelayError("Write a message (at most 20000 characters).")
+        targets = self.mentioned(room, body, exclude=member)
+        if not targets:
+            raise RelayError("Mention who should get it (@name). Only the person can message everyone.")
+        now, key = int(time.time() * 1000), f"post-{secrets.token_hex(6)}"
+        with self.lock:
+            items = self.queue.setdefault(room["id"], [])
+            for m in targets:
+                items.append({"reply": key, "to": m, "sender": member, "body": body, "hop": 1, "at": now,
+                              "implicit": False, "post": via})
+            self.save()
+        return targets
 
     # ---------- a 1:1 answer, forwarded by you ----------
     def forward(self, room, me, msg):
@@ -545,7 +579,8 @@ class Relay:
     def send_item(self, room, me, item, slot):
         rid, key = room["id"], (item["reply"], item["to"])
         ok, err = self.deliver(room, item["to"], me, item["sender"], item["body"], item["hop"],
-                               skip=item["reply"], skip_at=item.get("at", 0), item=item, implicit=bool(item.get("implicit")))
+                               skip=item["reply"], skip_at=item.get("at", 0), item=item, implicit=bool(item.get("implicit")),
+                               post=item.get("post"))
         with self.lock:
             if ok:
                 self.tries.pop(key, None)

@@ -330,6 +330,11 @@ class StuckWorkerTest(unittest.TestCase):
         launcher.started_at = lambda pid: {10: "100", 11: "90"}.get(pid, "")  # 11 is older than 10: pid reuse
         self.assertEqual([r[0] for r in launcher.descendants(self.PROCS, 10)], [13])
 
+    def test_ancestors_stop_at_a_reused_pid(self):
+        self.assertEqual(launcher.ancestors(self.PROCS, 12), [11, 10, 1])
+        launcher.started_at = lambda pid: {12: "120", 11: "130"}.get(pid, "")  # 11 started after 12: a reused pid
+        self.assertEqual(launcher.ancestors(self.PROCS, 12), [])
+
     def test_tree_lists_the_serve_and_what_runs_under_it(self):
         tree = self.l.tree("lead-codex")
         self.assertTrue(tree["managed"])

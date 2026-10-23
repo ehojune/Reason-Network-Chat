@@ -44,7 +44,7 @@ ORIGINS = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 TOKEN = secrets.token_urlsafe(32)
 # Shape of /api/state and the POSTs. Bump together with API in index.html: a page that meets a server of another
 # version (the server kept running across an update) asks for a restart instead of breaking.
-API = 15
+API = 16
 BOOT = secrets.token_hex(8)  # new each start: an open page that sees another one reloads to get the new token
 NOWIN = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
 
@@ -115,6 +115,22 @@ def quiet_since(activity, log_at, now):
     the first sight."""
     marks = [x for x in ((activity or {}).get("at") if (activity or {}).get("changed") else None, log_at) if x]
     return max(marks) if marks else (activity or {}).get("at", now)
+
+
+def member_of(room, who):
+    """The room member `who` names: an address, or a name only one member has."""
+    if who in room["members"]:
+        return who
+    found = [m for m in room["members"] if m.split("/", 1)[-1] == who]
+    return found[0] if len(found) == 1 else None
+
+
+def post_proof(room, member, caller, person):
+    """How a post as `member` is vouched for: "session" when the caller runs inside that member's own worker here,
+    "allowed" when the room lets the member post first without proof, else None."""
+    if caller and member == f"{person}/{caller}":
+        return "session"
+    return "allowed" if member in (room.get("allowPost") or []) else None
 
 
 def restart_blocked(who):
@@ -291,6 +307,7 @@ def folders():
 
 
 RELAY = Relay(STATE, ROOMS, db_rows, send_one)
+RELAY.post_cmd = f'python "{Path(__file__).with_name("rnc.py")}" room send {{room}} --as {{member}} "@name ..."'
 WAKER = Waker(db_rows, STATE)
 
 
@@ -380,7 +397,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         if path not in ("/api/send", "/api/launch", "/api/stop", "/api/rooms/save", "/api/rooms/delete",
-                        "/api/rooms/send", "/api/rooms/flush", "/api/rooms/forward", "/api/resend", "/api/prefs", "/api/wake", "/api/workers/configure", "/api/workers/adopt", "/api/workers/reboot",
+                        "/api/rooms/send", "/api/rooms/post", "/api/rooms/flush", "/api/rooms/forward", "/api/resend", "/api/prefs", "/api/wake", "/api/workers/configure", "/api/workers/adopt", "/api/workers/reboot",
                         "/api/workers/restart"):
             return self.send_error(404)
         req = self.read_json()
@@ -409,6 +426,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.resend(req)
             elif path == "/api/rooms/forward":
                 self.forward_room(req)
+            elif path == "/api/rooms/post":
+                self.post_as(req)
             elif path == "/api/rooms/flush":
                 if not ROOMS.get(req.get("id")):
                     return self.send_json({"error": "No such room."}, 404)
@@ -468,6 +487,28 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "to and body are required"}, 400)
         rc, out, err = send_one(to, body + dm_note(to), fyi)
         self.send_json({"ok": rc == 0, "rc": rc, "out": out, "err": err}, 200 if rc == 0 else 502)
+
+    def post_as(self, req):
+        """A member starts a message in a group room (rnc.py room send). Taken only from the member's own session —
+        the caller runs inside that worker's process tree on this computer — or when the room allows the member to
+        post first without that proof."""
+        room, who, body = ROOMS.get(req.get("id")), req.get("as"), req.get("body")
+        if not room or not room.get("group"):
+            return self.send_json({"error": "No such group room."}, 404)
+        if not isinstance(who, str) or not isinstance(body, str):
+            return self.send_json({"error": "as and body must be strings"}, 400)
+        me = my_address()
+        if not me:
+            return self.send_json({"error": "Reason Network is not answering yet; try again."}, 503)
+        member = member_of(room, who)
+        if not member:
+            return self.send_json({"error": f"{who} is not a member of this room."}, 403)
+        caller = LAUNCHER.caller_worker(self.client_address[1], PORT)
+        via = post_proof(room, member, caller, me.split("/", 1)[0])
+        if not via:
+            return self.send_json({"error": f"Only {member}'s own session can post as it: run rnc.py inside its turn "
+                                            "(a worker on this computer), or allow it in the room's settings."}, 403)
+        self.send_json({"ok": True, "to": RELAY.post_as(room, member, body, via), "via": via})
 
     def reboot(self, req):
         """Restart a worker with its recorded settings: a running one managed here is stopped first (what a stuck one

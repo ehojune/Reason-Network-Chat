@@ -112,6 +112,11 @@ class Rooms:
         default_to = req.get("defaultTo")
         if default_to is not None and default_to not in members:
             raise RoomError("The default recipient must be a member of the room.")
+        # Members whose posts (rnc.py room send) are taken without proof that they come from the member's own session.
+        allow_post = req.get("allowPost") or []
+        if not isinstance(allow_post, list) or not all(isinstance(m, str) and m in members for m in allow_post):
+            raise RoomError("Members allowed to post first must be members of the room.")
+        allow_post = list(dict.fromkeys(allow_post))
         rid = req.get("id")
         old = next((r for r in self.rooms if r["id"] == rid), None) if rid is not None else None
         kept = set(old["members"]) if old else set()  # a saved member may have left and never sent anything
@@ -123,13 +128,15 @@ class Rooms:
                 if len(self.rooms) >= MAX_ROOMS:
                     raise RoomError(f"At most {MAX_ROOMS} rooms.", 429)
                 room = {"id": f"r-{secrets.token_hex(4)}", "name": name, "members": members, "group": group,
-                        "created": int(time.time() * 1000), "limits": limits, "defaultTo": default_to}
+                        "created": int(time.time() * 1000), "limits": limits, "defaultTo": default_to,
+                        "allowPost": allow_post}
                 rooms = self.rooms + [room]
             else:
                 old = next((r for r in self.rooms if r["id"] == rid), None)
                 if not old:
                     raise RoomError("No such room.", 404)
-                room = dict(old, name=name, members=members, group=group, limits=limits, defaultTo=default_to)
+                room = dict(old, name=name, members=members, group=group, limits=limits, defaultTo=default_to,
+                            allowPost=allow_post)
                 rooms = [room if r is old else r for r in self.rooms]
             self.commit(rooms)
             return dict(room, members=list(room["members"]))

@@ -79,5 +79,17 @@ class RoomsTest(unittest.TestCase):
         self.assertEqual(rooms.Rooms(self.home).list(), [])
 
 
+class AllowPostTest(unittest.TestCase):
+    def test_allow_post_is_a_subset_of_the_members(self):
+        import rooms as rooms_mod
+        r = rooms_mod.Rooms(Path(tempfile.mkdtemp()))
+        known = {"pat/a-codex", "pat/b-claude"}
+        room = r.upsert({"name": "t", "members": sorted(known), "group": True, "allowPost": ["pat/a-codex"]}, known, "pat/terminal")
+        self.assertEqual(room["allowPost"], ["pat/a-codex"])
+        self.assertEqual(r.upsert({"name": "u", "members": ["pat/a-codex"], "group": True}, known, "pat/terminal")["allowPost"], [])
+        with self.assertRaises(rooms_mod.RoomError):
+            r.upsert({"name": "v", "members": ["pat/a-codex"], "allowPost": ["pat/b-claude"]}, known, "pat/terminal")
+
+
 if __name__ == "__main__":
     unittest.main()

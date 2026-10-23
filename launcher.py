@@ -491,6 +491,62 @@ def kill_tree(pid):
             pass
 
 
+def connection_owner(client_port, server_port):
+    """The pid of the local process at the client end of a TCP connection to `server_port`, or None (unknown: the
+    caller then proves nothing)."""
+    if WIN:
+        ps = (f"(Get-NetTCPConnection -LocalPort {int(client_port)} -RemotePort {int(server_port)} "
+              "-ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess")
+        try:
+            out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps], capture_output=True,
+                                 timeout=30, stdin=subprocess.DEVNULL, creationflags=NOWIN).stdout
+            return int(out.decode("ascii", "replace").strip() or 0) or None
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            return None
+    # Linux: the client socket's inode in /proc/net/tcp, then the process that holds it (elsewhere: unknown)
+    inode = None
+    for table in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            rows = Path(table).read_text().splitlines()[1:]
+        except OSError:
+            continue
+        for row in rows:
+            f = row.split()
+            if len(f) > 9 and f[1].endswith(f":{int(client_port):04X}") and f[2].endswith(f":{int(server_port):04X}"):
+                inode = f[9]
+                break
+        if inode:
+            break
+    if not inode:
+        return None
+    target = f"socket:[{inode}]"
+    for d in Path("/proc").glob("[0-9]*"):
+        try:
+            if any(os.readlink(fd) == target for fd in (d / "fd").iterdir()):
+                return int(d.name)
+        except OSError:
+            continue
+    return None
+
+
+def ancestors(procs, pid):
+    """Pids above `pid` in a list_processes() result, nearest first. A parent that started after its child is a reused
+    pid, not the parent: the chain stops there."""
+    parent = {p: pp for p, pp, _, _ in procs}
+    out, cur, seen = [], pid, {pid}
+    while cur in parent:
+        pp = parent[cur]
+        if not pp or pp in seen:
+            break
+        a, b = started_epoch(started_at(pp)), started_epoch(started_at(cur))
+        if a and b and a > b + 1:
+            break
+        out.append(pp)
+        seen.add(pp)
+        cur = pp
+    return out
+
+
 def kill_pid(pid):
     """Kill one process (and on Windows what runs under it): a leftover of a worker's tree, verified by the caller.
     Not a group kill: on POSIX a leftover usually shares its parent's process group instead of leading one."""
@@ -1093,6 +1149,16 @@ class Launcher:
                 return
             time.sleep(0.1)
         kill_tree(w["pid"])
+
+    def caller_worker(self, client_port, server_port):
+        """The name of the `serve` worker on this computer whose process tree the caller of this connection runs in
+        (an agent's turn runs under its serve), or None. This is how `rnc.py room send` proves who is speaking."""
+        pid = connection_owner(client_port, server_port)
+        procs = list_processes() if pid else None
+        if not pid or procs is None:
+            return None
+        above = set(ancestors(procs, pid))
+        return next((f["name"] for f in found_workers(procs) if f["pid"] in above), None)
 
     def log_activity(self, name):
         """When a running worker last wrote its log (ms), if it has written it since its process started, else None."""

@@ -279,6 +279,39 @@ class RelayTest(unittest.TestCase):
         with self.assertRaises(relay.RelayError):
             self.r.redeliver(first, ME)  # A left the room
 
+    # ---------- a member posts first ----------
+    def test_a_member_post_goes_like_its_answer(self):
+        self.r.post_cmd = 'python "rnc.py" room send {room} --as {member} "@name ..."'
+        self.assertEqual(self.r.post_as(self.room, A, "@b-claude status of #12? @all", "session"), [B])  # no @all
+        self.assertEqual(self.counts(), [0, 0, 0])  # queued: it goes out with the relay loop
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [0, 1, 0])
+        body = self.sent_to(B)[-1]
+        self.assertTrue(body.endswith("---\na-codex: @b-claude status of #12? @all"))
+        self.assertIn("Your answer goes back to a-codex automatically;", body)
+        self.assertIn('room send r-00000001 --as b-claude "@name ..."', body)
+        rel = self.r.view({self.last_id_to(B)})[0][self.last_id_to(B)]
+        self.assertEqual((rel["speaker"], rel["hop"], rel["post"]), (A, 1, "session"))
+        self.insert(B, ME, "Merged an hour ago.", reply_to=self.last_id_to(B))  # back to the member who posted
+        self.r.scan(ME)
+        self.assertTrue(self.sent_to(A)[-1].endswith("---\nb-claude: Merged an hour ago."))
+
+    def test_a_post_needs_a_mention_and_a_member(self):
+        for body in ("no one named", "@all everyone please", "@a-codex only myself", "-"):
+            with self.assertRaises(relay.RelayError):
+                self.r.post_as(self.room, A, body, "session")
+        with self.assertRaises(relay.RelayError) as e:
+            self.r.post_as(self.room, "pat/x-codex", "@b-claude hi", "session")
+        self.assertEqual(e.exception.code, 403)
+        with self.assertRaises(relay.RelayError):
+            self.r.post_as(dict(self.room, group=False), A, "@b-claude hi", "session")
+
+    def test_a_post_counts_toward_the_room_budget(self):
+        self.room["limits"] = {"budget": 1}
+        self.r.post_as(self.room, A, "@b-claude @c-codex both", "allowed")
+        self.r.scan(ME)
+        self.assertEqual((self.counts(), self.queued()), ([0, 1, 0], {"waiting": 1, "held": 0}))
+
     def test_no_mention_no_wake_and_self_mention_ignored(self):
         self.r.post(self.room, ME, "@a-codex hi")
         self.insert(A, ME, "done, nothing for @a-codex or @pat", reply_to=self.last_id_to(A))

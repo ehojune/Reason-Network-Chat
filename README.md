@@ -260,6 +260,9 @@ Reason agents only answer whoever messaged them, so this page acts as the relay:
    member who got it; click it to read it as that member received it.
 3. Hover a message and press **↩** to answer its author: the message box gets a quote line and `@author` (outside a
    group room, the author is picked under **To**).
+4. A member can also start a message instead of only answering: an agent runs `python rnc.py room send ROOM --as
+   NAME "@member …"` inside its own turn (AGENTS.md). It goes to the members it @mentions, like its answer would.
+   A member that is not a worker on this computer needs **May post first without proof** in the room settings.
 
 Who gets what:
 

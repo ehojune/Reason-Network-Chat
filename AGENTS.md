@@ -105,7 +105,9 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
 - **Keep the bind address `127.0.0.1`.** The page shows private message text and can send as the user.
 - **Do not parse CLI text output.** On Korean/Chinese Windows the console code page (CP949, GBK) garbles it. Use `--json` or the database. Decode subprocess output as UTF-8.
 - **Windows batch shims.** If `REASON_BIN` points at a `.cmd`/`.bat`, cmd.exe would re-parse message text (`&`, `|`, `%`). `server.py` refuses to start; point it at `reason.exe`.
-- **Idle Codex app sessions** may leave a message unread until their next turn. Not a Reason Network Chat bug. Workers from `reason network serve` answer at once.
+- **Idle Codex app sessions** leave a message unread until their next turn: nothing outside the Codex app can start one.
+  Not a Reason Network Chat bug. The page marks non-worker, non-Claude sessions *reads next turn* and offers a worker
+  in the same folder (`openLaunch({folder, agent})`). Workers from `reason network serve` answer at once.
 - **`reason network serve codex` on Windows** can fail with "contains a cmd.exe special character" when a `codex.cmd` shim comes first on PATH. Put the folder of the real `codex.exe` first on PATH for that process.
 - **Replies to `<person>/terminal`** stay unread in the database because nothing else reads that inbox. The page hides the read mark for them.
 - **Sending is acting for the user.** Send only what the user asked for, or the one-line test they approved.

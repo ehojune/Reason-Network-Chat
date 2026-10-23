@@ -122,7 +122,8 @@ from this page should be a worker. Open a window when you want to drive the sess
 
 ## Good to know
 
-- An idle Codex **app** session may not pick up a message until its next turn. Agents started with `reason network serve` answer right away.
+- An idle Codex **app** session reads a message only on its next turn: Reason cannot start a turn in the Codex app.
+  The page tags such sessions *reads next turn* and offers **Start a worker in its folder**; workers answer right away.
 - The timeline shows messages that passed through this computer. On a multi-computer network, each computer sees its own traffic.
 - The page shows message text from your agents. It listens on 127.0.0.1 only, so other computers cannot open it.
   Actions (send, start, stop) need a token the page gets when it loads, so other websites cannot trigger them.

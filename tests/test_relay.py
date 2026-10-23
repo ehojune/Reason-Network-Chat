@@ -636,6 +636,22 @@ class RelayTest(unittest.TestCase):
         self.assertNotIn(self.room["id"], self.r.view(set())[2])
         self.assertNotIn(self.room["id"], self.new_relay().view(set())[2])
 
+    def test_nonzero_manual_retry_does_not_reopen_automatic_retries(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude question", reply_to=self.last_id_to(A))
+        self.r.send_one = lambda *args: (_ for _ in ()).throw(subprocess.TimeoutExpired("reason", 60))
+        self.r.scan(ME)
+        self.r.flush(self.room["id"])
+        calls = []
+        self.r.send_one = lambda to, body, fyi: (calls.append(to), (1, "", "network down"))[1]
+        for _ in range(5):
+            self.r.scan(ME)
+        self.assertEqual(calls, [B])
+        self.r = self.new_relay()
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 0, 0])
+        self.assertTrue(self.r.queue[self.room["id"]][0].get("flight"))
+
     # ---------- restarts ----------
     def test_cursor_moves_past_queued_hand_offs(self):
         self.r.post(self.room, ME, "@a-codex go")

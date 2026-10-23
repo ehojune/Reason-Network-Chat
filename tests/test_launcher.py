@@ -497,9 +497,9 @@ class DiscoverTest(unittest.TestCase):
         launcher.interrupt = lambda pid: calls.append(("ctrl-c", pid))
         launcher.subprocess.run = lambda args, **kw: calls.append(tuple(args[:2]))
         launcher.list_processes = lambda: self.procs
-        launcher.os.kill = lambda pid, sig: calls.append(("signal", pid))
-        alive = iter([True, False])
-        launcher.Launcher.alive = staticmethod(lambda w: next(alive, False))
+        active = {"value": True}
+        launcher.os.kill = lambda pid, sig: (calls.append(("signal", pid)), active.update(value=False))[0]
+        launcher.Launcher.alive = staticmethod(lambda w: active["value"])
         try:
             self.l.stop("their-codex")
         finally:
@@ -595,11 +595,17 @@ class RecordsTest(unittest.TestCase):
         res = lambda names, online=set(): self.l.restart(names, online)["results"]
         self.assertEqual(res(["lead-codex"])[0]["code"], 409)  # still running
         self.l.workers["lead-codex"]["pid"] = 1001
+        with self.l.lock:
+            self.l.save()
         self.assertEqual(res(["lead-codex"], {"lead-codex"})[0]["code"], 409)  # running here, or online elsewhere
         self.assertEqual(res(["nobody"])[0]["code"], 404)
         self.l.records["moved"] = dict(self.l.records["lead-codex"], name="moved", cwd=str(Path(FOLDER) / "gone"))
+        with self.l.lock:
+            self.l.save_records()
         self.assertIn("folder", res(["moved"])[0]["error"])
         self.l.records["odd"] = dict(self.l.records["lead-codex"], name="odd", model="no-such-model")
+        with self.l.lock:
+            self.l.save_records()
         self.assertIn("catalog", res(["odd"])[0]["error"])
         with self.assertRaises(launcher.LaunchError):
             self.l.restart("lead-codex", set())
@@ -627,6 +633,8 @@ class RecordsTest(unittest.TestCase):
     def test_stale_names_after_discovery(self):
         self.assertEqual(self.l.stale_names(), set())  # nothing known before a discovery pass
         self.l.workers["lead-codex"]["pid"] = 1001  # killed
+        with self.l.lock:
+            self.l.save()
         self.l.discover([])  # no serve processes here
         self.assertEqual(self.l.stale_names(), {"lead-codex"})
         saved = launcher.list_processes

@@ -440,7 +440,10 @@ class Relay:
         if rc != 0:
             with self.lock:
                 if item is not None:
-                    item.pop("flight", None)
+                    if created:
+                        item.pop("flight", None)
+                    else:
+                        self.notice[room["id"]] = AMBIGUOUS_NOTICE
                     self.save()
             return False, err or out or f"rc={rc}"
         rows = self.db_rows("select id, sent_at from messages where sender = ? and recipient = ? and body = ?"

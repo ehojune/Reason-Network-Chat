@@ -10,6 +10,8 @@ Codex `models_cache.json`, `claude --help` (+ `~/.claude.json` extras), `agy mod
 Arguments always go to subprocess as a list; nothing is built into a shell string.
 """
 import io
+import contextlib
+import functools
 import json
 import os
 import re
@@ -977,11 +979,21 @@ class LaunchError(Exception):
         self.code = code
 
 
+def worker_operation(method):
+    @functools.wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self.operation():
+            return method(self, *args, **kwargs)
+    return wrapped
+
+
 class Launcher:
     def __init__(self, reason, catalog):
         self.reason = reason
         self.catalog = catalog
         self.lock = threading.Lock()
+        self.operation_lock = threading.RLock()
+        self.operation_depth = 0
         self.reg = STATE / "workers.json"
         # name -> {name, pid, started, family, model, effort, cwd, log, fullAccess, settings}; `settings` is the
         # shim's per-worker file (absent for workers started before it existed: those restart to change)
@@ -998,6 +1010,27 @@ class Launcher:
         self.serving = None
         self.load()
         self.load_records()
+
+    @contextlib.contextmanager
+    def operation(self):
+        """Reserve names across processes before validating/spawning, through the final registry write."""
+        with self.operation_lock:
+            if self.operation_depth:
+                yield
+                return
+            try:
+                with file_lock(self.reg.with_suffix(".operations.lock")):
+                    with self.lock:
+                        self.workers = {n: w for n, w in self.workers.items() if self.alive(w)}
+                        self.load()
+                    self.load_records()
+                    self.operation_depth = 1
+                    try:
+                        yield
+                    finally:
+                        self.operation_depth = 0
+            except TimeoutError as exc:
+                raise LaunchError("Another server is changing workers; try again shortly.", 409) from exc
 
     # Registry on disk, so a restarted server can still stop the workers it started.
     def load(self):
@@ -1121,6 +1154,7 @@ class Launcher:
         procs = list_processes() if procs is None else procs
         return None if procs is None else {f["name"] for f in found_workers(procs)}
 
+    @worker_operation
     def restart(self, names, blocked):
         """Start recorded workers again with their last settings. `blocked`: names whose serve runs on this computer or
         that are online on another one. A name the network still shows only because its process was killed is free:
@@ -1162,6 +1196,7 @@ class Launcher:
         # The request itself succeeded; each name's outcome is in results (the page shows the failures).
         return {"ok": True, "started": sum(r["ok"] for r in results), "results": results}
 
+    @worker_operation
     def discover(self, procs=None):
         """Take back `serve` workers this page started (recorded in spawned.jsonl) that workers.json lost; note the others.
 
@@ -1200,6 +1235,7 @@ class Launcher:
                     foreign[f["name"]] = w
             self.foreign = foreign
 
+    @worker_operation
     def adopt(self, name, model=None, effort=None):
         """Manage a worker started outside this page (the user asked to, in the page or with rnc.py). `model` and
         `effort`: what it is known to run with, when its processes cannot tell (checked against the catalog); they are
@@ -1250,6 +1286,7 @@ class Launcher:
         """A Codex worker started with a settings file takes a new model or effort with its next message."""
         return w.get("family") == "codex" and bool(w.get("settings"))
 
+    @worker_operation
     def stop(self, name):
         with self.lock:
             if name in self.restarting:
@@ -1330,6 +1367,7 @@ class Launcher:
                 "procs": [{"pid": pid, "ppid": ppid, "name": pname, "cmd": " ".join(argv)[:400]}
                           for pid, ppid, pname, argv in rows]}
 
+    @worker_operation
     def relaunch(self, name):
         """Stop a running worker managed here and start it again with its recorded settings: the cure for a stuck
         one. Ctrl+C first (a forced tree kill for one started elsewhere), then whatever was left under it (an agent
@@ -1433,6 +1471,7 @@ class Launcher:
                 raise LaunchError("That model is not in the agent's catalog.")
         return entry, model, effort
 
+    @worker_operation
     def launch(self, req, live_names):
         with self.lock:
             fam, mode, cwd, entry, model, effort, name, full = self.check(req, live_names)
@@ -1471,6 +1510,7 @@ class Launcher:
         running = self.running_serve_names(procs)
         return running is not None and name not in running  # only on proof that the old process is gone
 
+    @worker_operation
     def configure(self, req, busy):
         """Change a running worker's model, effort or permission. `busy`: the worker is in a turn right now.
 

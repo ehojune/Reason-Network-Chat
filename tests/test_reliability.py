@@ -44,6 +44,47 @@ class EndpointTest(unittest.TestCase):
 
 
 class RegistryTest(unittest.TestCase):
+    def test_two_servers_reserve_the_same_worker_name_before_spawning(self):
+        with tempfile.TemporaryDirectory() as home:
+            code = '''import json,sys,time
+from pathlib import Path
+import launcher
+launcher.STATE=Path(sys.argv[1])
+launcher.started_at=lambda pid: 't'+str(pid)
+launcher.Launcher.alive=staticmethod(lambda w: True)
+class Catalog:
+ def family(self,f): return {'id':f,'modes':{'worker':{'ok':True,'models':True,'fullAccess':True}},'models':[],'defaultModel':None,'efforts':[],'defaultEffort':None}
+l=launcher.Launcher('reason',Catalog())
+def spawn(fam,cwd,model,effort,name,full):
+ with Path(sys.argv[1],'spawned').open('a') as f: f.write(sys.argv[2]+'\\n')
+ return {'name':name,'pid':int(sys.argv[2]),'started':'t'+sys.argv[2],'family':'codex','cwd':cwd,'model':None,'effort':None,'fullAccess':False}
+l.start_worker=spawn
+l.settle=lambda w: None
+Path(sys.argv[1],sys.argv[2]+'.ready').touch()
+while not Path(sys.argv[1],'go').exists(): time.sleep(.01)
+try:
+ l.launch({'agent':'codex','mode':'worker','folder':sys.argv[1],'name':'same'},set())
+ result=0
+except launcher.LaunchError as e: result=e.code
+Path(sys.argv[1],sys.argv[2]+'.result').write_text(str(result))
+'''
+            children=[subprocess.Popen([sys.executable,'-c',code,home,pid],cwd=Path(__file__).resolve().parents[1],stdout=subprocess.PIPE,stderr=subprocess.PIPE) for pid in ('101','202')]
+            try:
+                import time
+                deadline=time.monotonic()+10
+                while not all(Path(home,p+'.ready').exists() for p in ('101','202')):
+                    if time.monotonic()>deadline: self.fail('launch writers did not start')
+                    time.sleep(.02)
+                Path(home,'go').touch()
+                for p in children:
+                    out,err=p.communicate(timeout=20)
+                    self.assertEqual(p.returncode,0,err.decode())
+                self.assertEqual(len(Path(home,'spawned').read_text().splitlines()),1)
+                self.assertEqual(sorted(int(Path(home,p+'.result').read_text()) for p in ('101','202')),[0,409])
+            finally:
+                for p in children:
+                    if p.poll() is None: p.kill(); p.communicate()
+
     def test_two_relay_processes_preserve_queue_claims(self):
         with tempfile.TemporaryDirectory() as home:
             code = '''import json,sys,time

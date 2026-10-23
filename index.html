@@ -182,6 +182,11 @@ textarea { flex: 1; resize: none; padding: 8px 10px; min-height: 42px; max-heigh
 dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--text);
   padding: 18px 20px; width: min(560px, 94vw); }
 dialog::backdrop { background: rgba(0, 0, 0, .35); }
+.stuck { color: var(--err); font-weight: 600; }
+#pdlg ul { list-style: none; padding: 0; margin: 8px 0; max-height: 50vh; overflow: auto; font-size: 12px; }
+#pdlg li { padding: 3px 0; border-bottom: 1px solid var(--line); word-break: break-all; }
+#pdlg li b { font-family: ui-monospace, Consolas, monospace; }
+#pdlgNote { font-size: 12px; color: var(--muted); white-space: pre-wrap; }
 dialog h2 { font-size: 16px; margin: 0 0 4px; }
 .fld { display: flex; flex-direction: column; gap: 4px; margin: 12px 0 0; font-size: 12px; color: var(--muted); }
 .fld input, .fld select { font-size: 14px; padding: 6px 8px; max-width: none; }
@@ -239,7 +244,9 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
     </div>
   </form>
 </main>
-<div id="ctx" role="menu" hidden><button type="button" role="menuitem" id="ctxFav"></button><button type="button" role="menuitem" id="ctxAuto" hidden></button><button type="button" role="menuitem" id="ctxConf" hidden></button><button type="button" role="menuitem" id="ctxAdopt" hidden></button><button type="button" role="menuitem" id="ctxRestart" hidden></button></div>
+<div id="ctx" role="menu" hidden><button type="button" role="menuitem" id="ctxFav"></button><button type="button" role="menuitem" id="ctxAuto" hidden></button><button type="button" role="menuitem" id="ctxConf" hidden></button><button type="button" role="menuitem" id="ctxAdopt" hidden></button><button type="button" role="menuitem" id="ctxRestart" hidden></button><button type="button" role="menuitem" id="ctxProcs" hidden></button></div>
+<dialog id="pdlg"><h2 id="pdlgTitle"></h2><div id="pdlgNote"></div><ul id="pdlgList"></ul>
+  <div class="dbtn"><button type="button" class="plain" id="pdlgClose"></button><button type="button" class="go" id="pdlgRestart"></button></div></dialog>
 <dialog id="dlg">
   <form id="lf">
     <h2 id="lfTitle" data-t="newSessionTitle"></h2>
@@ -351,6 +358,12 @@ const T = {
     groupHint: "메시지는 @로 부른 멤버에게만 갑니다(@모두: 전체, 부르지 않으면 기본 받는 멤버). 받는 멤버는 놓친 대화도 함께 받고, "
       + "답에 @이름이 있으면 그 멤버에게 넘어갑니다.\n한도를 넘은 넘겨주기는 버리지 않고 대기열에 넣어 순서대로 보냅니다. 받는 멤버마다 에이전트 한 턴씩 씁니다.",
     passed: "의 답을 넘김 →", fold: "접기", unfold: "펼쳐서 넘긴 내용 보기",
+    rStuck: "멈춤 의심 · {m}분째 진행 없음", ctxProcs: "프로세스 보기 · 다시 시작", procsTitle: "{name}의 프로세스",
+    procsNote: "serve와 그 아래 에이전트 프로세스입니다. 멈췄다면 다시 시작하세요: Ctrl+C로 멈추고, 남은 프로세스까지 끝낸 뒤 같은 설정으로 띄웁니다. 진행 중인 턴은 잃습니다.",
+    procsForeign: "이 페이지 밖에서 시작한 워커입니다. 다시 시작하려면 먼저 오른쪽 클릭 메뉴에서 가져오세요.",
+    procsRestart: "다시 시작", procsClose: "닫기",
+    procsPending: "답하지 못한 메시지 {n}건: 다시 시작하면 Reason이 이것들을 다시 처리합니다. 멈춤의 원인이 그중 하나면 다시 멈출 수 있습니다.", rebootAsk: "{name}을(를) 다시 시작할까요? 진행 중인 턴은 잃습니다.",
+    rebooted: "다시 시작함: ",
     wFailed: "워커가 이 메시지를 처리하지 못했습니다. 답이 아니라서 넘기지 않습니다.",
     tFailed: "처리 실패", tNoAnswer: "응답 없이 처리됨", resend: "다시 보내기", resent: "다시 보냄", dismissed: "덮어 둠",
     notRunning: "워커가 꺼져 있습니다. 먼저 다시 시작하세요.",
@@ -431,6 +444,12 @@ const T = {
       + "They also get the room lines they missed, and a reply that @mentions a member is passed on to it.\n"
       + "Hand-offs over the room's limits are queued and sent in order, never dropped. Each recipient costs one agent turn.",
     passed: "'s reply passed to", fold: "Fold", unfold: "Show what was passed on",
+    rStuck: "possibly stuck · no progress for {m} min", ctxProcs: "Processes · restart", procsTitle: "Processes of {name}",
+    procsNote: "The serve process and the agent processes under it. If it is stuck, restart it: Ctrl+C, then whatever is left under it is ended, and it starts again with the same settings. A turn in progress is lost.",
+    procsForeign: "This worker was started outside this page. To restart it here, adopt it first (right-click menu).",
+    procsRestart: "Restart", procsClose: "Close",
+    procsPending: "{n} messages taken but not answered: after a restart Reason runs them again. If one of them caused the hang, it can hang again.", rebootAsk: "Restart {name}? A turn in progress is lost.",
+    rebooted: "Restarted: ",
     wFailed: "the worker could not run this message. It is not an answer, so it is not passed on.",
     tFailed: "Failed", tNoAnswer: "Taken without an answer", resend: "Send again", resent: "Sent again", dismissed: "Put aside",
     notRunning: "The worker is not running; start it first.",
@@ -509,6 +528,12 @@ const T = {
     groupHint: "消息只发给你 @ 的成员（@all：全体；未 @ 时发给默认接收成员）。接收的成员还会收到错过的聊天内容，"
       + "回复里 @某成员 时会转给该成员。\n超过房间上限的转发不会丢弃，而是排队按顺序发出。每个接收成员消耗一次智能体回合。",
     passed: " 的回复已转给", fold: "收起", unfold: "展开查看转发的内容",
+    rStuck: "疑似卡住 · {m} 分钟无进展", ctxProcs: "查看进程 · 重新启动", procsTitle: "{name} 的进程",
+    procsNote: "serve 进程及其下的智能体进程。若卡住请重新启动：先 Ctrl+C，再结束其下残留的进程，然后以相同设置启动。进行中的回合会丢失。",
+    procsForeign: "此 worker 是在本页面之外启动的。要在这里重新启动，请先（右键菜单）接管。",
+    procsRestart: "重新启动", procsClose: "关闭",
+    procsPending: "已接收但未回答的消息 {n} 条：重新启动后 Reason 会再次处理它们。若卡住正是其中一条引起的，可能再次卡住。", rebootAsk: "重新启动 {name}？进行中的回合会丢失。",
+    rebooted: "已重新启动：",
     wFailed: "worker 未能处理这条消息。这不是回答，所以不转发。",
     tFailed: "处理失败", tNoAnswer: "已读但未回答", resend: "再次发送", resent: "已再次发送", dismissed: "已搁置",
     notRunning: "worker 未运行，请先重新启动。",
@@ -532,7 +557,7 @@ let lang = new URLSearchParams(location.search).get("lang") || store.get("reason
 if (!T[lang]) lang = "en";
 const t = k => T[lang][k];
 const TOKEN = document.querySelector('meta[name="reason-chat-token"]').content;
-const API = 14;  // must match API in server.py
+const API = 15;  // must match API in server.py
 const BOOT = document.querySelector('meta[name="reason-chat-boot"]').content;  // which server start served this page
 // Reload to pick up a restarted or newer server, at most once a minute so a broken setup cannot loop.
 function reloadOnce() {
@@ -610,6 +635,7 @@ function reach(s) {
   if (!s.live) return "gone";
   if (s.status === "offline") return "offline";
   if (s.stale) return "stale";  // stopped here; only the network's entry is left
+  if (s.stuck) return "stuck";  // busy for long with no new step and no new log line
   if (s.worker) return s.status === "busy" ? "workerBusy" : "now";
   if (s.agent === "cli") return "cli";
   if (s.status === "busy") return "afterTurn";
@@ -617,14 +643,15 @@ function reach(s) {
   if (s.tier === "pull") return "pull";
   return s.tier === "push" && s.agent === "claude-code" ? "pushed" : "nextTurn";
 }
-const reachLabel = s => t("r" + reach(s)[0].toUpperCase() + reach(s).slice(1));
+const reachLabel = s => reach(s) === "stuck" ? t("rStuck").replace("{m}", Math.round((S.now - s.quietSince) / 60000))
+  : t("r" + reach(s)[0].toUpperCase() + reach(s).slice(1));
 // Under an unread bubble. A message sent with --fyi is not pushed and does not auto-wake, so a session that would
 // otherwise get it at once reads it only on its next turn; say that instead of its usual label.
 const fyiLabelled = m => !m.wake && !m.read_at && m.all.length === 1 && m.recipient !== S.me
   && ["now", "workerBusy", "pushed", "auto"].includes(reach(recipientOf(m)));
 const recipientOf = m => S.sessions.find(x => x.address === m.recipient) || {live: false};
 const unreadHow = m => fyiLabelled(m) ? t("rFyi") : reachLabel(recipientOf(m));
-const NOW = ["now", "workerBusy", "pushed", "afterTurn", "auto"], LATER = ["appOpen", "pull", "nextTurn", "cli"];
+const NOW = ["now", "workerBusy", "stuck", "pushed", "afterTurn", "auto"], LATER = ["appOpen", "pull", "nextTurn", "cli"];
 // Sessions that will not read soon: the composer says so and offers a worker in the same folder.
 const sleepy = s => !!s && ["offline", "stale", "appOpen", "pull", "nextTurn", "gone"].includes(reach(s));
 const autoList = () => { const a = pref("autoWake"); return Array.isArray(a) ? a : []; };
@@ -681,7 +708,7 @@ function renderSide() {
     return `<div class="ses ${s.live ? "" : "gone"} ${sel === s.address ? "sel" : ""}" tabindex="0" data-a="${esc(s.address)}"
       title="${esc(s.address)} · ${esc(st(s.status))}${s.tier ? " · " + esc(s.tier) : ""}${here ? " · " + esc(t("here")) : ""}">
       <span class="dot ${esc(s.status)}"></span><span class="nm">${star(s.address)}${esc(s.name)}</span><span class="cnt">${c || ""}</span>
-      <span class="sub"><span class="tag ${esc(s.agent)}">${esc(s.agent)}</span>${s.worker ? `<span class="tag wk">${t("wk")}</span>` : ""}${conf}${esc(reachLabel(s))}${sub ? " · " + esc(sub) : ""}</span></div>`;
+      <span class="sub"><span class="tag ${esc(s.agent)}">${esc(s.agent)}</span>${s.worker ? `<span class="tag wk">${t("wk")}</span>` : ""}${conf}${s.stuck ? `<span class="stuck">${esc(reachLabel(s))}</span>` : esc(reachLabel(s))}${sub ? " · " + esc(sub) : ""}</span></div>`;
   };
   let h = `<div class="ses ${sel ? "" : "sel"}" tabindex="0" data-a=""><span class="dot idle"></span><span class="nm">${t("all")}</span>
     <span class="cnt">${S.messages.length}</span></div>`;
@@ -1011,7 +1038,7 @@ function troubles() {
     const rs = (replies[m.id] || []).filter(x => x.sender === m.recipient);
     if (rs.length) {
       if (rs.every(x => isFailure(x.body))) out.set(m.id, {kind: "failed", to: m.recipient});
-    } else if (m.read_at && S.now - m.read_at > NOANS_MS && (s.status !== "busy" || s.stale)) {
+    } else if (m.read_at && S.now - m.read_at > NOANS_MS && (s.status !== "busy" || s.stale || s.stuck)) {
       out.set(m.id, {kind: "noanswer", to: m.recipient});
     }
   }
@@ -1293,6 +1320,9 @@ function openCtx(row, pointer) {
   const rroom = roomOf(ctxKey);  // a stopped worker, or a room with stopped workers among its members
   ctxStopped = rroom ? stoppedWorkers(rroom.members) : stoppedWorkers([ctxKey]);
   $("#ctxRestart").hidden = !ctxStopped.length;
+  // A worker running on this computer, managed here or not: its processes, and a restart for a stuck one.
+  $("#ctxProcs").hidden = !(launchedHere(ctxKey) || S.foreignWorkers.some(w => `${person()}/${w.name}` === ctxKey));
+  $("#ctxProcs").textContent = t("ctxProcs");
   $("#ctxRestart").textContent = t(rroom ? "ctxRestartRoom" : "ctxRestart");
   const m = $("#ctx"), r = row.getBoundingClientRect();
   m.hidden = false;
@@ -1330,6 +1360,34 @@ $("#ctxAuto").addEventListener("click", async () => {
 });
 let ctxStopped = [];
 $("#ctxRestart").addEventListener("click", () => { const recs = ctxStopped; closeCtx(); restartWorkers(recs); });
+let procsOf = null;
+$("#ctxProcs").addEventListener("click", async () => {
+  const name = short(ctxKey);
+  closeCtx();
+  procsOf = name;
+  $("#pdlgTitle").textContent = t("procsTitle").replace("{name}", name);
+  $("#pdlgRestart").textContent = t("procsRestart"); $("#pdlgClose").textContent = t("procsClose");
+  $("#pdlgList").innerHTML = ""; $("#pdlgNote").textContent = "…";
+  $("#pdlg").showModal();
+  try {
+    const r = await fetch(`/api/workers/procs?name=${encodeURIComponent(name)}`), j = await r.json();
+    if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
+    const pend = (j.pending || []).filter(p => !p.answered);
+    $("#pdlgNote").textContent = t(j.managed ? "procsNote" : "procsForeign") +
+      (pend.length ? "\n" + t("procsPending").replace("{n}", pend.length) + "\n" + pend.map(p => `· ${short(p.from || "")}: ${p.body.split("\n")[0].slice(0, 100)}`).join("\n") : "");
+    $("#pdlgRestart").hidden = !j.managed;
+    $("#pdlgList").innerHTML = j.procs.map(x => `<li><b>${esc(x.name)}</b> · ${esc(String(x.pid))}<br>${esc(x.cmd)}</li>`).join("");
+  } catch (err) { $("#pdlgNote").textContent = t("failed") + err.message; $("#pdlgRestart").hidden = true; }
+});
+$("#pdlgClose").addEventListener("click", () => $("#pdlg").close());
+$("#pdlgRestart").addEventListener("click", async () => {
+  const name = procsOf;
+  if (!name || !confirm(t("rebootAsk").replace("{name}", name))) return;
+  $("#pdlgRestart").disabled = true;
+  try { await post("/api/workers/reboot", {name}); say(t("rebooted") + name); $("#pdlg").close(); poll(); }
+  catch (err) { say(t("failed") + err.message, true); }
+  finally { $("#pdlgRestart").disabled = false; }
+});
 $("#ctxAdopt").addEventListener("click", async () => {
   const key = ctxKey;
   closeCtx();

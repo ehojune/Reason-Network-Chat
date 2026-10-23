@@ -16,6 +16,7 @@ and starts new agent sessions.
 | `prefs.py` | Viewer settings in `REASON_CHAT_HOME/prefs.json` (whitelisted keys), so they survive a lost localStorage. |
 | `rooms.py` | Rooms: named sets of session addresses in `REASON_CHAT_HOME/rooms.json`. |
 | `relay.py` | Group rooms: sends your message to the members it `@mentions` (or the room's default recipient) with their missed lines, passes on `@name` replies and returns a member's answer to the member who asked (one level), forwards a member's 1:1 answer into the room when you ask, queues hand-offs over the room's limits. |
+| `rnc.py` | `python rnc.py worker` `list`, `start`, `restart`, `stop`, `adopt`: the supported way for an agent (or a script) to manage workers. |
 | `index.html` | The whole UI (one file, no build). Polls `/api/state` every 3 s. Strings in ko/en/zh. |
 | `tests/` | `python -m unittest discover tests` — request validation and catalog parsing, no agent needed. |
 | `.claude/launch.json` | Lets the Claude desktop app start the server and show the page in its Browser pane. |
@@ -51,8 +52,37 @@ Do these in order. Each step has a check; stop and tell the user when a check fa
 7. **Tell the user** the URL, how to stop the server, and the "Good to know" points from the README that apply.
 
 Optional round-trip test, only with the user's OK (it starts a headless agent that takes work):
-`reason network serve codex --name chat-codex`, send it a one-line message from the page, confirm the reply appears,
-then stop the worker.
+`python rnc.py worker start chat-codex --folder <a scratch folder> --agent codex`, send it a one-line message from
+the page, confirm the reply appears, then `python rnc.py worker stop chat-codex`.
+
+## Starting and restarting workers (agents read this)
+
+Use `rnc.py`; never run `reason network serve` yourself.
+
+```
+python rnc.py worker list
+python rnc.py worker start NAME --folder ABS_DIR --agent codex|claude [--model M] [--effort E] [--full-access]
+python rnc.py worker start NAME          # a recorded worker, with its last settings
+python rnc.py worker restart NAME        # running: Ctrl+C, end what was left under it, start again with its settings
+python rnc.py worker stop NAME
+python rnc.py worker adopt NAME [--model M] [--effort E]   # manage one started elsewhere (settings for restarts)
+```
+
+It talks to the running server (it reads the page token from `/`), or, with no server on `REASON_CHAT_PORT`, runs
+the same `launcher.py` code itself over `REASON_CHAT_HOME`. Exit 0 on success, 1 on a refusal (printed), 2 on bad
+usage. Why not `serve` directly:
+
+- **Never start a worker inside your own turn.** A process started from your shell tool inherits the turn's output
+  handles, so your turn cannot end until it exits, and the new worker's turns wait on yours. On 2026-10-24 a Codex
+  lead started three workers in its own `codex exec` turn: that exec never finished, and every message to the lead
+  for 45 minutes was taken and never answered. Through the server the worker starts outside your process tree;
+  without a server, through the launcher's short-lived spawner with only a log file and no inherited handles.
+- **PATH.** `serve` finds `codex` and `claude` on PATH. A `codex.cmd` first (npm installs one) makes every Codex turn
+  fail with "contains a cmd.exe special character". The launcher puts the model shim and the real CLI first.
+- **Environment.** The launcher removes your session's markers (`CODEX_THREAD_ID`, `CLAUDECODE`, …) and adds the
+  stored user environment (`NODE_EXTRA_CA_CERTS` on a TLS-inspecting network).
+- **Managed.** A worker started this way is recorded (`spawned.jsonl`, `worker-records.json`), so the page can
+  change, restart and stop it; one you start yourself shows as *started elsewhere* until someone adopts it.
 
 ## Configuration
 
@@ -64,6 +94,7 @@ then stop the worker.
 | `NODE_EXTRA_CA_CERTS` | unset | Root CA file for TLS-inspecting corporate networks. The CLI (Bun) needs it there. On Windows, children get it from the stored user environment even if the server started before it was set. |
 | `REASON_CHAT_HOME` | `~/.reason-network-chat` | Rooms (`rooms.json`), relayed-message records (`relay.json`), settings (`prefs.json`), running wakes (`wakes.json`), auto-wake limits (`autowake.json`), worker registry (`workers.json`), last settings of every worker started here (`worker-records.json`, kept after the process dies), start proofs (`spawned.jsonl`), worker logs (`logs/`), the model shims (`codex-shim/`, `claude-shim/`) and each worker's shim arguments (`worker-settings/<name>.json`). |
 | `REASON_CHAT_CLAUDE`, `REASON_CHAT_CODEX`, `REASON_CHAT_AGY` | found automatically | Full path to an agent CLI. On Windows it must be an `.exe`. |
+| `REASON_CHAT_STUCK_MIN` | `30` | Minutes a worker may be busy with no new step and no new log line before it shows as possibly stuck. |
 | `REASON_CHAT_MAX_HOPS`, `REASON_CHAT_BUDGET`, `REASON_CHAT_BUDGET_WINDOW` | `100`, `300`, `600` | Default group-room limits: hops in one hand-off chain, hand-offs per window (seconds). A room's own setting wins. |
 
 ## HTTP API
@@ -97,6 +128,8 @@ get the new token, and a newer server also triggers a reload.
   (`<worker>-claude[-N]`, its warm `claude -p` registering itself), which the page folds away. `stale: true` marks a
   recorded worker that `who` shows busy/idle here although no serve process with its name runs (killed mid-turn);
   the page shows it as stopped (only the network's entry is left). Known after the first 30 s discovery pass.
+  A busy worker of this computer (`tier: "turn"`) also gets `quietSince` (ms: its last step change, seen by the
+  `who` poll, or log line, whichever is later) and `stuck: true` once that is `STUCK_MS` ago.
   `rooms[]` = `{id, name, members[], group, created, limits, defaultTo}`; `members` are session addresses; `limits` =
   `{hops?, budget?}` (a number, or `null` for no limit; a missing key means the default); `defaultTo` = the member
   an unmentioned message goes to, or `null`.
@@ -127,8 +160,16 @@ get the new token, and a newer server also triggers a reload.
   first; a busy worker answers 409 unless `force` is true. `{unchanged: true}` when nothing differs. While it
   restarts, its `workers.json` record stays until the new process replaces it, its name stays taken, it counts
   toward `MAX_WORKERS`, and configure or stop on it answers 409.
-- `POST /api/workers/adopt` `{name}` → manage a worker from `foreignWorkers[]` here (the user confirms it in the
-  page). Returns `{ok}`; 404 when no such worker runs.
+- `POST /api/workers/adopt` `{name, model?, effort?}` → manage a worker from `foreignWorkers[]` here (the user
+  confirms it in the page, or `rnc.py worker adopt`). `model`/`effort`: what it is known to run with (checked against
+  the catalog), kept for restarts; the process is not touched. Returns `{ok}`; 404 when no such worker runs.
+- `POST /api/workers/reboot` `{name}` → a running worker managed here: `Launcher.relaunch` (Ctrl+C, or a forced tree
+  kill for an adopted one; then every process that was under it, such as a hung agent turn; then `serve` again with
+  its recorded settings). A stopped recorded one is started as by `/api/workers/restart`. One started elsewhere: 409
+  (adopt it first). Returns `{ok, restarted}`.
+- `GET /api/workers/procs?name=N` → `{name, pid, managed, pending[], procs[{pid, ppid, name, cmd}]}`: a running
+  worker's `serve` and its descendants (a pid older than its parent is a reused pid and left out), and `pending`,
+  the messages it took but has not answered, read from Reason's `~/.reason/ask-workers/<name>.json`.
 - `POST /api/workers/restart` `{names[]}` → starts recorded workers again with their last settings (checked against
   the catalog like a launch). Refused (409): a name whose `serve` runs on this computer (process list) or that is
   online on another computer of this person (`who`). A name `who` still shows here only because its process was
@@ -201,7 +242,13 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
 - **Idle Codex app sessions** leave a message unread until their next turn: nothing outside the Codex app can start one.
   Not a Reason Network Chat bug. The page marks non-worker, non-Claude sessions *reads next turn* and offers a worker
   in the same folder (`openLaunch({folder, agent})`). Workers from `reason network serve` answer at once.
-- **`reason network serve codex` on Windows** can fail with "contains a cmd.exe special character" when a `codex.cmd` shim comes first on PATH. Put the folder of the real `codex.exe` first on PATH for that process.
+- **`reason network serve codex` on Windows** can fail with "contains a cmd.exe special character" when a `codex.cmd` shim comes first on PATH. Start workers with `rnc.py` (or the page), which puts the shim and the real `codex.exe` first.
+- **A stuck worker.** `serve` keeps a worker busy while a turn runs; a turn that hangs (an agent process waiting on a
+  child that holds its handles) keeps it busy forever, and messages to it are read and queued, never answered. The
+  page marks a worker busy for `REASON_CHAT_STUCK_MIN` with no new step (`doing` from `who`) and no new log line,
+  and its right-click menu shows the process tree with a restart. A restart re-runs what was not answered: Reason
+  keeps those requests in `~/.reason/ask-workers/<name>.json` and replays them when a worker of that name starts (the
+  dialog lists them). If one of them caused the hang it can hang again. Do not edit that file; it is Reason's.
 - **Replies to `<person>/terminal`** stay unread in the database because nothing else reads that inbox. The page hides the read mark for them.
 - **Sending is acting for the user.** Send only what the user asked for, or the one-line test they approved.
 - **Group rooms cost turns.** Each message wakes the members it names, and `@name` replies wake more. The limits in

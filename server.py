@@ -33,6 +33,8 @@ HOME = Path.home()
 DB = Path(os.environ.get("REASON_CHAT_DB", HOME / ".reason" / "network" / "network.db"))
 STATIC = Path(__file__).with_name("index.html")
 POLL_WHO = 3  # seconds between `who` refreshes
+# A worker busy this long with no new step and no new log line is shown as possibly stuck.
+STUCK_MS = int(os.environ.get("REASON_CHAT_STUCK_MIN", "30")) * 60000
 POLL_AUTO = 10  # seconds between auto-wake passes
 POLL_DISCOVER = 30  # seconds between looks for serve workers this page lost track of
 MAX_MESSAGES = 2000  # newest rows sent to the page per poll
@@ -42,7 +44,7 @@ ORIGINS = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 TOKEN = secrets.token_urlsafe(32)
 # Shape of /api/state and the POSTs. Bump together with API in index.html: a page that meets a server of another
 # version (the server kept running across an update) asks for a restart instead of breaking.
-API = 14
+API = 15
 BOOT = secrets.token_hex(8)  # new each start: an open page that sees another one reloads to get the new token
 NOWIN = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
 
@@ -63,6 +65,9 @@ if sys.platform == "win32" and REASON.lower().endswith((".cmd", ".bat")):
     sys.exit(f"Point REASON_BIN at reason.exe, not a batch shim: {REASON}")
 _who = {"data": None, "error": None}
 _lock = threading.Lock()
+# address -> {key: (status, doing), at, changed}: when a session's status or current step last changed. `serve`
+# updates `doing` with every step of a turn, so a busy worker whose step stays the same is not getting anywhere.
+_activity = {}
 CATALOG = Catalog(REASON)
 LAUNCHER = Launcher(REASON, CATALOG)
 ROOMS = Rooms(STATE)
@@ -86,12 +91,41 @@ def who_loop():
             with _lock:
                 if data:
                     _who.update(data=data, error=None)
+                    note_activity(data)
                 else:
                     _who["error"] = err or f"rc={rc}"
         except Exception as e:  # keep the last good snapshot
             with _lock:
                 _who["error"] = str(e)
         time.sleep(POLL_WHO)
+
+
+def note_activity(data):
+    """Record when each session's (status, step) changed (call with _lock held)."""
+    now = int(time.time() * 1000)
+    for s in data.get("sessions") or []:
+        cur, a = [s.get("status"), s.get("doing")], _activity.get(s.get("address"))
+        if not a or a["key"] != cur:
+            _activity[s.get("address")] = {"key": cur, "at": now, "changed": bool(a)}
+
+
+def quiet_since(activity, log_at, now):
+    """Since when a busy worker has shown no progress (ms): its last step change or log line, whichever is later.
+    A change only counts once seen happening (the first sight after a start is not one); with nothing known yet,
+    the first sight."""
+    marks = [x for x in ((activity or {}).get("at") if (activity or {}).get("changed") else None, log_at) if x]
+    return max(marks) if marks else (activity or {}).get("at", now)
+
+
+def restart_blocked(who):
+    """Names /api/workers/restart must not start: a serve with that name runs here, or the name is online on another
+    computer of this person. A name shown online here only because its process was killed is free (Reason accepts it)."""
+    me_ = who.get("person")
+    online = [s for s in who.get("sessions") or [] if s.get("status") != "offline" and s.get("person") == me_]
+    running = LAUNCHER.running_serve_names()
+    if running is None:  # processes cannot be read here: anything online blocks (fail closed)
+        return {s["name"] for s in online}
+    return running | {s["name"] for s in online if s.get("machine") != who.get("machine")}
 
 
 def discover_loop():
@@ -175,6 +209,15 @@ def state():
         # Only this person's sessions on this computer (a teammate's helper-claude is not ours to hide).
         own = s["address"].split("/", 1)[0] == person and s.get("machine") in (None, who.get("machine"))
         s["inner"] = inner_of(s["name"], workers) if own else None
+        # Possibly stuck: a worker of this computer busy for STUCK_MS with no new step and no new log line.
+        # Only a `serve` worker (recorded here, or a serve process with that name runs here), not a one-off ask.
+        serving = LAUNCHER.serving or set()
+        if own and s.get("status") == "busy" and s.get("live") and (s.get("worker") or s["name"] in serving):
+            with _lock:
+                act = dict(_activity.get(s["address"]) or {})
+            now_ = int(time.time() * 1000)
+            s["quietSince"] = quiet_since(act, LAUNCHER.log_activity(s["name"]), now_)
+            s["stuck"] = now_ - s["quietSince"] > STUCK_MS
         # The Codex app keeps the conversations it opened locked: then nothing outside the app can wake them.
         s["appOpen"] = bool(s["resumable"]) and WAKER.is_held(Waker.resumable(known[s["name"]]["key"]), s["address"])
     relays, queued, notices = RELAY.view({m["id"] for m in msgs})
@@ -290,6 +333,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(state())
             except Exception as e:
                 self.send_json({"error": str(e)}, 500)
+        elif url.path == "/api/workers/procs":
+            name = (parse_qs(url.query).get("name") or [""])[0]
+            try:
+                self.send_json(LAUNCHER.tree(name))
+            except LaunchError as e:
+                self.send_json({"error": str(e)}, e.code)
         elif url.path == "/api/catalog":
             refresh = parse_qs(url.query).get("refresh") == ["1"]
             self.send_json({"families": CATALOG.get(refresh), "folders": folders()})
@@ -331,7 +380,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         if path not in ("/api/send", "/api/launch", "/api/stop", "/api/rooms/save", "/api/rooms/delete",
-                        "/api/rooms/send", "/api/rooms/flush", "/api/rooms/forward", "/api/resend", "/api/prefs", "/api/wake", "/api/workers/configure", "/api/workers/adopt",
+                        "/api/rooms/send", "/api/rooms/flush", "/api/rooms/forward", "/api/resend", "/api/prefs", "/api/wake", "/api/workers/configure", "/api/workers/adopt", "/api/workers/reboot",
                         "/api/workers/restart"):
             return self.send_error(404)
         req = self.read_json()
@@ -379,19 +428,18 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json({"error": "Reason Network is not answering; try again."}, 503)
                 # Blocked: a serve with that name runs here, or the name is online on another computer of this
                 # person. A name shown online here only because its process was killed is free (Reason accepts it).
-                me_ = who.get("person")
-                online = [s for s in who.get("sessions") or [] if s.get("status") != "offline" and s.get("person") == me_]
-                running = LAUNCHER.running_serve_names()
-                if running is None:  # processes cannot be read here: anything online blocks (fail closed)
-                    blocked = {s["name"] for s in online}
-                else:
-                    blocked = running | {s["name"] for s in online if s.get("machine") != who.get("machine")}
+                blocked = restart_blocked(who)
                 self.send_json(LAUNCHER.restart(req.get("names"), blocked))
             elif path == "/api/workers/adopt":
                 name = req.get("name")
                 if not isinstance(name, str):
                     return self.send_json({"error": "name must be a string"}, 400)
-                self.send_json(LAUNCHER.adopt(name))
+                model, effort = req.get("model"), req.get("effort")
+                if not all(v is None or isinstance(v, str) for v in (model, effort)):
+                    return self.send_json({"error": "model and effort must be strings"}, 400)
+                self.send_json(LAUNCHER.adopt(name, model, effort))
+            elif path == "/api/workers/reboot":
+                self.reboot(req)
             elif path == "/api/workers/configure":
                 # Fresh too: restarting a worker that just took a message would lose that turn.
                 who = fresh_who()
@@ -420,6 +468,25 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "to and body are required"}, 400)
         rc, out, err = send_one(to, body + dm_note(to), fyi)
         self.send_json({"ok": rc == 0, "rc": rc, "out": out, "err": err}, 200 if rc == 0 else 502)
+
+    def reboot(self, req):
+        """Restart a worker with its recorded settings: a running one managed here is stopped first (what a stuck one
+        needs); a stopped recorded one is just started. One started elsewhere must be adopted first."""
+        name = req.get("name")
+        if not isinstance(name, str) or not name:
+            return self.send_json({"error": "name must be a worker name"}, 400)
+        where = LAUNCHER.running_here(name)
+        if where == "managed":
+            return self.send_json(LAUNCHER.relaunch(name))
+        if where == "foreign":
+            raise LaunchError("It was started outside this page: adopt it first (python rnc.py worker adopt NAME).", 409)
+        who = fresh_who()
+        if not who:
+            return self.send_json({"error": "Reason Network is not answering; try again."}, 503)
+        r = LAUNCHER.restart([name], restart_blocked(who))["results"][0]
+        if not r["ok"]:
+            raise LaunchError(r["error"], r.get("code", 400))
+        self.send_json({"ok": True, "restarted": False, "started": True})
 
     def resend(self, req):
         """Your messages a worker failed on or took without answering: send each again as it was (a relayed one

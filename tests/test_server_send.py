@@ -26,5 +26,25 @@ class DmNoteTest(unittest.TestCase):
             self.assertEqual(server.dm_note("pat/d-codex"), "")
 
 
+class StuckTest(unittest.TestCase):
+    def test_quiet_since_takes_the_latest_seen_progress(self):
+        q = server.quiet_since
+        self.assertEqual(q(None, None, 500), 500)  # nothing known: from now
+        self.assertEqual(q({"at": 100, "changed": False}, None, 500), 100)  # first sight only
+        self.assertEqual(q({"at": 100, "changed": False}, 40, 500), 40)  # its log was last written earlier
+        self.assertEqual(q({"at": 300, "changed": True}, 200, 500), 300)  # a step changed after the last log line
+        self.assertEqual(q({"at": 300, "changed": True}, 450, 500), 450)
+
+    def test_activity_notes_changes_of_status_or_step(self):
+        server._activity.clear()
+        server.note_activity({"sessions": [{"address": "p/w", "status": "busy", "doing": "step 1"}]})
+        first = dict(server._activity["p/w"])
+        self.assertFalse(first["changed"])
+        server.note_activity({"sessions": [{"address": "p/w", "status": "busy", "doing": "step 1"}]})
+        self.assertEqual(server._activity["p/w"], first)  # nothing new
+        server.note_activity({"sessions": [{"address": "p/w", "status": "busy", "doing": "step 2"}]})
+        self.assertTrue(server._activity["p/w"]["changed"])
+
+
 if __name__ == "__main__":
     unittest.main()

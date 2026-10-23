@@ -37,6 +37,7 @@ TOKEN = secrets.token_urlsafe(32)
 # Shape of /api/state and the POSTs. Bump together with API in index.html: a page that meets a server of another
 # version (the server kept running across an update) asks for a restart instead of breaking.
 API = 2
+BOOT = secrets.token_hex(8)  # new each start: an open page that sees another one reloads to get the new token
 NOWIN = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
 
 
@@ -119,7 +120,7 @@ def state():
                          "live": False})
         seen.add(addr)
     relays, paused, notices = RELAY.view({m["id"] for m in msgs})
-    return {"api": API, "team": who.get("team"), "me": me, "sessions": sessions, "messages": msgs,
+    return {"api": API, "boot": BOOT, "team": who.get("team"), "me": me, "sessions": sessions, "messages": msgs,
             "launched": LAUNCHER.list(), "rooms": ROOMS.list(), "relays": relays, "paused": paused, "notices": notices,
             "whoError": who_err, "now": int(time.time() * 1000)}
 
@@ -203,7 +204,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         url = urlsplit(self.path)
         if url.path in ("/", "/index.html"):
-            page = STATIC.read_text(encoding="utf-8").replace("{{TOKEN}}", TOKEN)
+            page = STATIC.read_text(encoding="utf-8").replace("{{TOKEN}}", TOKEN).replace("{{BOOT}}", BOOT)
             self.reply(200, page.encode("utf-8"), "text/html; charset=utf-8")
         elif url.path == "/api/state":
             try:

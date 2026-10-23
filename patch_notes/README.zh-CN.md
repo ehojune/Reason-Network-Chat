@@ -9,6 +9,7 @@ Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（
 
 | 时间 | 变更 | 主要内容 |
 |---|---|---|
+| 01:25 | [#28](https://github.com/ehojune/Reason-Network-Chat/pull/28) | 群聊中**成员的回答无需 @ 也会自动回到提问的成员**（只回一层，避免两个智能体无休止地互相道谢）；`-` 或 `(해당 없음)` 表示无需回答，不发给任何人。消息上的 **↩** 可带引用回复作者。回合中途被停止的 worker 现在显示为*已停止（网络上仅剩记录）*，而不是忙碌。 |
 | 00:51 | [#25](https://github.com/ehojune/Reason-Network-Chat/pull/25) | worker 的**最后设置在重启电脑后依然保留**：已停止的 worker 仍显示 codex / claude-code 标记（而不是 "cli"），**重新启动**（单个、聊天室或全部）经一次确认即可以相同的模型、推理强度和权限恢复。worker 的内部会话在列表中折叠隐藏。 |
 | 00:41 | [#22](https://github.com/ehojune/Reason-Network-Chat/pull/22) | 消息以 **Markdown** 显示：表格（在气泡内滚动）、粗体和斜体、代码、列表、标题、引用和链接。点气泡下方的**原文**可查看原始文字。 |
 | 00:34 | [#20](https://github.com/ehojune/Reason-Network-Chat/pull/20) | 本页启动但从列表中丢失的 worker 会被**重新接管**（每 30 秒从运行中的进程里查找），因此 Claude worker 也能再次**更改设置**；在别处启动的 worker 经确认后也可在本页管理。 |

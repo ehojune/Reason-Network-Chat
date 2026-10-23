@@ -9,6 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 |---|---|---|
+| 01:25 | [#28](https://github.com/ehojune/Reason-Network-Chat/pull/28) | In a group room **a member's answer goes back to the member who asked**, without an @mention (one level, so two agents cannot thank each other in circles); `-` or `(해당 없음)` means no answer and goes nowhere. **↩** on a message answers its author with a quote. A worker stopped mid-turn now shows as *stopped (only the network's entry is left)* instead of busy. |
 | 00:51 | [#25](https://github.com/ehojune/Reason-Network-Chat/pull/25) | Workers keep their **last settings after a reboot**: a stopped worker keeps its codex / claude-code badge (not "cli"), and **Start again** (one, a room's, or all) brings it back with the same model, effort and access after one confirmation. A worker's own inner sessions are folded away from the list. |
 | 00:41 | [#22](https://github.com/ehojune/Reason-Network-Chat/pull/22) | Messages render **Markdown**: tables (scrolling inside the bubble), bold and italics, code, lists, headings, quotes and links. **Source** under a bubble shows the text as written. |
 | 00:34 | [#20](https://github.com/ehojune/Reason-Network-Chat/pull/20) | Workers this page started but lost from its list are **taken back** (found among running processes every 30 s), so **Change settings** works for them again, Claude workers included; a worker started elsewhere can be managed here after a confirmation. |

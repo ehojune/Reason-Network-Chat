@@ -96,6 +96,11 @@ class RelayTest(unittest.TestCase):
         self.r.scan(ME)
         self.assertEqual(self.counts(), [1, 0, 0])
 
+    def test_broadcast_alias_cannot_be_a_member_post_target(self):
+        room = dict(self.room, members=["pat/all", "pat/everyone", A])
+        self.assertEqual(self.r.mentioned(room, "@all @everyone", exclude=A), [])
+        self.assertEqual(self.r.mentioned(room, "@pat/all", exclude=A), ["pat/all"])
+
     # ---------- context ----------
     def test_missed_lines_are_included_once(self):
         self.r.post(self.room, ME, "@all q1")

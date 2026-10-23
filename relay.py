@@ -396,6 +396,8 @@ class Relay:
         found = []
         for n in MENTION_RE.findall(text):
             n = n.lower().rstrip(".")
+            if not everyone and n in EVERYONE:
+                continue
             for m in (room["members"] if everyone and n in EVERYONE else [names.get(n)]):
                 if m and m != exclude and m not in found:
                     found.append(m)

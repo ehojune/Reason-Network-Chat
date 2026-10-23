@@ -621,6 +621,26 @@ class RelayTest(unittest.TestCase):
         self.assertEqual(self.r.view(set())[2][self.room["id"]], "older retries exhausted")
         self.assertEqual(self.new_relay().view(set())[2][self.room["id"]], "older retries exhausted")
 
+    def test_delivering_a_later_item_keeps_another_held_flights_warning(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.room["limits"] = {"hops": 2}
+        self.r.queue[self.room["id"]] = [
+            {"reply": "first", "to": B, "sender": A, "body": "first", "hop": 2, "at": 1},
+            {"reply": "second", "to": C, "sender": A, "body": "second", "hop": 1, "at": 2}]
+        with self.r.lock:
+            self.r.save()
+        self.r.send_one = lambda *args: (_ for _ in ()).throw(subprocess.TimeoutExpired("reason", 60))
+        self.r.scan(ME)
+        self.room["limits"] = {"hops": 1}  # the unknown first delivery is now held; the later item may proceed
+        self.r.send_one = self.send
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 0, 1])
+        self.assertEqual(self.queued(), {"waiting": 0, "held": 1})
+        self.assertIn("unknown", self.r.view(set())[2][self.room["id"]])
+        self.assertIn("unknown", self.new_relay().view(set())[2][self.room["id"]])
+        self.r.post(self.room, ME, "@a-codex new message")
+        self.assertIn("unknown", self.r.view(set())[2][self.room["id"]])
+
     def test_crash_during_manual_retry_does_not_authorize_a_second_retry(self):
         self.r.post(self.room, ME, "@a-codex go")
         self.insert(A, ME, "@b-claude question", reply_to=self.last_id_to(A))

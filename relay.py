@@ -505,7 +505,10 @@ class Relay:
 
     def clear_transient_notice(self, rid):
         """Recovery resolves temporary delivery state, never an unrelated exhausted-retry failure."""
-        self.transient_notice.pop(rid, None)
+        if any(item.get("flight") for item in self.queue.get(rid, [])):
+            self.transient_notice[rid] = AMBIGUOUS_NOTICE
+        else:
+            self.transient_notice.pop(rid, None)
 
     def dequeue(self, rid, item):
         """Take one item off a room's queue (call with self.lock held)."""
@@ -550,7 +553,7 @@ class Relay:
         with self.transaction():
             with self.lock:
                 self.notice.pop(room["id"], None)
-                self.transient_notice.pop(room["id"], None)
+                self.clear_transient_notice(room["id"])
                 self.passes[room["id"]].clear()  # you are back in the conversation: a fresh budget
             results = []
             for m in targets:

@@ -523,7 +523,7 @@ class RelayTest(unittest.TestCase):
         self.assertIn("network down", notice[self.room["id"]])
         self.assertIsNone(self.queued())
 
-    def test_send_that_raises_counts_as_a_failed_attempt(self):
+    def test_send_that_raises_holds_ambiguous_outcome_without_retrying(self):
         self.r.post(self.room, ME, "@a-codex go")
         self.insert(A, ME, "@b-claude please check", reply_to=self.last_id_to(A))
         calls = []
@@ -535,9 +535,258 @@ class RelayTest(unittest.TestCase):
         self.r.send_one = hang
         for _ in range(relay.RETRIES + 3):
             self.r.scan(ME)
-        self.assertEqual(calls, [B] * relay.RETRIES)
-        self.assertIn("TimeoutExpired", self.r.view(set())[2][self.room["id"]])
-        self.assertEqual(len(self.r.passes[self.room["id"]]), 0)  # failed attempts do not use the budget
+        self.assertEqual(calls, [B])
+        self.assertIn("unknown", self.r.view(set())[2][self.room["id"]])
+        self.assertEqual(self.queued(), {"waiting": 1, "held": 0})
+        self.r.flush(self.room["id"])
+        self.r.scan(ME)
+        self.r.scan(ME)
+        self.assertEqual(calls, [B, B])  # one manual retry, then held again
+        self.r.send_one = self.send
+        self.r.flush(self.room["id"])
+        self.r.scan(ME)
+        self.assertIsNone(self.queued())
+        self.assertNotIn(self.room["id"], self.r.view(set())[2])
+        self.assertNotIn(self.room["id"], self.new_relay().view(set())[2])
+
+    def test_restart_reconciles_a_send_before_the_dequeue_was_saved(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude inspect", reply_to=self.last_id_to(A))
+        class Crash(BaseException):
+            pass
+        def delivered_then_crashed(to, body, fyi):
+            self.send(to, body, fyi)
+            raise Crash()
+        self.r.send_one = delivered_then_crashed
+        with self.assertRaises(Crash):
+            self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 1, 0])
+        self.r = self.new_relay()
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 1, 0])
+        self.assertIsNone(self.queued())
+
+        self.assertNotIn(self.room["id"], self.r.view(set())[2])
+        self.assertNotIn(self.room["id"], self.new_relay().view(set())[2])
+        mid = self.last_id_to(B)
+        self.assertEqual(self.r.sent[mid]["speaker"], A)
+        self.insert(B, ME, "answer", reply_to=mid)
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [2, 1, 0])
+
+    def test_no_send_when_the_inflight_claim_cannot_be_persisted(self):
+        from unittest import mock
+        self.r.post(self.room, ME, "@a-codex go")
+        item = {"reply": "r", "to": B, "sender": A, "body": "question", "hop": 1, "at": 1}
+        self.r.queue[self.room["id"]] = [item]
+        with mock.patch.object(relay.os, "replace", side_effect=OSError("disk full")):
+            with self.assertRaises(relay.RelayError):
+                self.r.deliver(self.room, B, ME, A, "question", 1, item=item)
+        self.assertEqual(self.counts(), [1, 0, 0])
+        self.assertNotIn("flight", item)
+        self.r.deliver(self.room, B, ME, A, "question", 1, item=item)
+        self.assertEqual(self.counts(), [1, 1, 0])
+
+    def test_reconciliation_keeps_an_unrelated_permanent_failure_notice(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.r.notice[self.room["id"]] = "pat/b-claude → pat/c-codex: retries exhausted"
+        self.insert(A, ME, "@b-claude another hand-off", reply_to=self.last_id_to(A))
+        class Crash(BaseException):
+            pass
+        def crash(to, body, fyi):
+            self.send(to, body, fyi)
+            raise Crash()
+        self.r.send_one = crash
+        with self.assertRaises(Crash):
+            self.r.scan(ME)
+        self.r = self.new_relay()
+        self.r.scan(ME)
+        self.assertIsNone(self.queued())
+        self.assertIn("retries exhausted", self.r.view(set())[2][self.room["id"]])
+
+    def test_temporary_delivery_warning_never_overwrites_a_permanent_failure(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.r.notice[self.room["id"]] = "older retries exhausted"
+        self.insert(A, ME, "@b-claude another question", reply_to=self.last_id_to(A))
+        def delivered_but_timed_out(to, body, fyi):
+            self.send(to, body, fyi)
+            raise subprocess.TimeoutExpired("reason", 60)
+        self.r.send_one = delivered_but_timed_out
+        self.r.scan(ME)
+        note = self.r.view(set())[2][self.room["id"]]
+        self.assertIn("older retries exhausted", note)
+        self.assertIn("unknown", note)
+        self.r = self.new_relay()
+        self.r.scan(ME)
+        self.assertEqual(self.r.view(set())[2][self.room["id"]], "older retries exhausted")
+        self.assertEqual(self.new_relay().view(set())[2][self.room["id"]], "older retries exhausted")
+
+    def test_delivering_a_later_item_keeps_another_held_flights_warning(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.room["limits"] = {"hops": 2}
+        self.r.queue[self.room["id"]] = [
+            {"reply": "first", "to": B, "sender": A, "body": "first", "hop": 2, "at": 1},
+            {"reply": "second", "to": C, "sender": A, "body": "second", "hop": 1, "at": 2}]
+        with self.r.lock:
+            self.r.save()
+        self.r.send_one = lambda *args: (_ for _ in ()).throw(subprocess.TimeoutExpired("reason", 60))
+        self.r.scan(ME)
+        self.room["limits"] = {"hops": 1}  # the unknown first delivery is now held; the later item may proceed
+        self.r.send_one = self.send
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 0, 1])
+        self.assertEqual(self.queued(), {"waiting": 0, "held": 1})
+        self.assertIn("unknown", self.r.view(set())[2][self.room["id"]])
+        self.assertIn("unknown", self.new_relay().view(set())[2][self.room["id"]])
+        self.r.post(self.room, ME, "@a-codex new message")
+        self.assertIn("unknown", self.r.view(set())[2][self.room["id"]])
+
+    def test_invalidated_flights_clear_only_their_temporary_warning(self):
+        for invalidation in ("member-left", "group-disabled"):
+            with self.subTest(invalidation=invalidation):
+                home = tempfile.mkdtemp()
+                room = dict(self.room, members=list(self.room["members"]), group=True)
+                r = relay.Relay(home, FakeRooms(room), self.rows, self.send)
+                r.since = 0
+                r.post(room, ME, "@a-codex go")
+                r.forward(room, ME, self.row(self.insert(A, ME, "@b-claude question")))
+                r.notice[room["id"]] = "older retries exhausted"
+                r.send_one = lambda *args: (_ for _ in ()).throw(subprocess.TimeoutExpired("reason", 60))
+                r.scan(ME)
+                self.assertIn("unknown", r.view(set())[2][room["id"]])
+                if invalidation == "member-left":
+                    room["members"].remove(B)
+                else:
+                    room["group"] = False
+                r.scan(ME)
+                self.assertFalse(r.queue)
+                self.assertEqual(r.view(set())[2][room["id"]], "older retries exhausted")
+                restarted = relay.Relay(home, FakeRooms(room), self.rows, self.send)
+                self.assertEqual(restarted.view(set())[2][room["id"]], "older retries exhausted")
+
+    def test_changed_identity_warning_preserves_history_and_clears_with_queue(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.r.forward(self.room, ME, self.row(self.insert(A, ME, "@b-claude question")))
+        self.r.notice[self.room["id"]] = "older retries exhausted"
+        self.r.send_one = lambda *args: (_ for _ in ()).throw(subprocess.TimeoutExpired("reason", 60))
+        self.r.scan(ME)
+        self.r.scan("different/identity")
+        note = self.r.view(set())[2][self.room["id"]]
+        self.assertIn("older retries exhausted", note)
+        self.assertIn("different sender", note)
+        self.r = self.new_relay()
+        self.assertIn("different sender", self.r.view(set())[2][self.room["id"]])
+        self.room["group"] = False
+        self.r.scan("different/identity")
+        self.assertFalse(self.r.queue)
+        self.assertEqual(self.r.view(set())[2][self.room["id"]], "older retries exhausted")
+        self.assertEqual(self.new_relay().view(set())[2][self.room["id"]], "older retries exhausted")
+
+    def test_held_sender_mismatch_remains_visible_when_another_item_changes(self):
+        for outcome in ("success", "ambiguous", "member-left"):
+            with self.subTest(outcome=outcome):
+                room = dict(self.room, members=list(self.room["members"]), limits={"hops": 1})
+                r = relay.Relay(tempfile.mkdtemp(), FakeRooms(room), self.rows, self.send)
+                rid = room["id"]
+                r.queue[rid] = [
+                    {"reply": "old", "to": B, "sender": A, "body": "old", "hop": 2,
+                     "flight": {"me": "old/identity", "body": "claimed", "newest": 0}},
+                    {"reply": "new", "to": C, "sender": A, "body": "new", "hop": 1}]
+                r.notice[rid] = "older retries exhausted"
+                r.transient_notice[rid] = relay.SENDER_NOTICE
+                if outcome == "ambiguous":
+                    r.send_one = lambda *args: (_ for _ in ()).throw(subprocess.TimeoutExpired("reason", 60))
+                elif outcome == "member-left":
+                    room["members"].remove(C)
+                r.save()
+                r.scan(ME)
+                self.assertIn("older retries exhausted", r.view(set())[2][rid])
+                self.assertEqual(r.transient_notice[rid], relay.SENDER_NOTICE)
+                restarted = relay.Relay(r.path.parent, FakeRooms(room), self.rows, self.send)
+                self.assertEqual(restarted.transient_notice[rid], relay.SENDER_NOTICE)
+
+    def test_crash_during_manual_retry_does_not_authorize_a_second_retry(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude question", reply_to=self.last_id_to(A))
+        self.r.send_one = lambda *args: (_ for _ in ()).throw(subprocess.TimeoutExpired("reason", 60))
+        self.r.scan(ME)
+        self.r.flush(self.room["id"])
+        class Crash(BaseException):
+            pass
+        self.r.send_one = lambda *args: (_ for _ in ()).throw(Crash())
+        with self.assertRaises(Crash):
+            self.r.scan(ME)
+        self.r = self.new_relay()
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 0, 0])
+        self.assertEqual(self.queued(), {"waiting": 1, "held": 0})
+
+    def test_storage_failure_releases_an_unused_rate_slot(self):
+        from unittest import mock
+        self.room["limits"] = {"budget": 1}
+        self.r.post(self.room, ME, "@a-codex go")
+        self.r.forward(self.room, ME, self.row(self.insert(A, ME, "@b-claude question")))
+        with mock.patch.object(relay, "atomic_json", side_effect=OSError("disk full")):
+            with self.assertRaises(relay.NotSentError):
+                self.r.scan(ME)
+        self.assertEqual(list(self.r.passes[self.room["id"]]), [])
+        self.assertEqual(self.counts(), [1, 0, 0])
+        self.r.scan(ME)  # storage recovered: no full-window wait for an attempt that never happened
+        self.assertEqual(self.counts(), [1, 1, 0])
+        self.assertIsNone(self.queued())
+        self.assertNotIn(self.room["id"], self.r.view(set())[2])
+        self.assertNotIn(self.room["id"], self.new_relay().view(set())[2])
+
+    def test_nonzero_manual_retry_does_not_reopen_automatic_retries(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude question", reply_to=self.last_id_to(A))
+        self.r.send_one = lambda *args: (_ for _ in ()).throw(subprocess.TimeoutExpired("reason", 60))
+        self.r.scan(ME)
+        self.r.flush(self.room["id"])
+        calls = []
+        self.r.send_one = lambda to, body, fyi: (calls.append(to), (1, "", "network down"))[1]
+        for _ in range(5):
+            self.r.scan(ME)
+        self.assertEqual(calls, [B])
+        self.r = self.new_relay()
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 0, 0])
+        self.assertTrue(self.r.queue[self.room["id"]][0].get("flight"))
+
+    def test_recovered_storage_notice_is_not_left_after_a_known_network_failure(self):
+        from unittest import mock
+        self.r.post(self.room, ME, "@a-codex go")
+        self.r.forward(self.room, ME, self.row(self.insert(A, ME, "@b-claude question")))
+        with mock.patch.object(relay, "atomic_json", side_effect=OSError("disk full")):
+            with self.assertRaises(relay.NotSentError):
+                self.r.scan(ME)
+        self.r.send_one = lambda *args: (1, "", "network down")
+        for _ in range(relay.RETRIES):
+            self.r.scan(ME)
+        self.assertIsNone(self.queued())
+        note = self.r.view(set())[2][self.room["id"]]
+        self.assertIn("network down", note)
+        self.assertNotIn("storage recovery", note)
+
+    def test_endpoint_resend_reloads_another_servers_relay_record(self):
+        import server
+        from unittest import mock
+        writer = self.new_relay()
+        writer.post(self.room, ME, "@a-codex question")
+        mid = self.last_id_to(A)
+        self.assertNotIn(mid, self.r.sent)  # the serving instance predates the other writer's message
+        h = server.Handler.__new__(server.Handler)
+        h.send_json = mock.Mock()
+        with mock.patch.object(server, "RELAY", self.r), mock.patch.object(server, "db_rows", self.rows), \
+                mock.patch.object(server, "my_address", return_value=ME), \
+                mock.patch.dict(server._who, {"data": {"sessions": [{"address": A, "status": "idle"}]}}), \
+                mock.patch.object(server.LAUNCHER, "stale_names", return_value=set()):
+            h.resend({"ids": [mid]})
+        self.assertEqual(h.send_json.call_args.args[0]["done"], 1)
+        resent = self.last_id_to(A)
+        self.assertNotEqual(resent, mid)
+        self.assertEqual(self.r.sent[resent]["core"], "@a-codex question")
+        self.assertEqual(self.r.sent[resent]["room"], self.room["id"])
 
     # ---------- restarts ----------
     def test_cursor_moves_past_queued_hand_offs(self):
@@ -573,7 +822,11 @@ class RelayTest(unittest.TestCase):
         self.insert(A, ME, "@b-claude @c-codex look", reply_to=self.last_id_to(A))
         self.r.scan(ME)
         self.assertEqual(self.queued(), {"waiting": 1, "held": 0})
-        again = self.new_relay()  # a fresh window after the restart
+        again = self.new_relay()  # a restart must not reset the room's rate window
+        again.scan(ME)
+        self.assertEqual(len(self.sent_to(B)) + len(self.sent_to(C)), 1)
+        self.assertTrue(again.queue[self.room["id"]])
+        again.flush(self.room["id"])
         again.scan(ME)
         self.assertEqual(len(self.sent_to(B)) + len(self.sent_to(C)), 2)
 

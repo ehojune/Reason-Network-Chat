@@ -42,6 +42,12 @@ let html=troubleListHtml(troublesInView());
 assert.ok(html.includes('&lt;script&gt;')); assert.ok(!html.includes('<script>'));
 assert.ok(html.includes('session limit')); assert.ok(html.includes('data-action="resend" disabled'));
 assert.equal((html.match(/class="troubleItem"/g)||[]).length,2);
+renderTroubleList();
+const expanded = nodes['#troubleItems'].innerHTML.replace('<details>', '<details open>');
+nodes['#troubleItems'].innerHTML = expanded;
+renderTroubleList(); assert.equal(nodes['#troubleItems'].innerHTML, expanded); // polling keeps failure details open
+S.messages[0].body = 'updated message'; renderTroubleList();
+assert.ok(nodes['#troubleItems'].innerHTML.includes('updated message')); // actual data changes still refresh
 sel='p/a'; assert.equal(troublesInView().length,1);
 S.settled.m={how:'dismissed',at:S.now}; TR=troubles(); assert.equal(troublesInView().length,0);
 S=base(); sel='';

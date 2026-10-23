@@ -10,6 +10,8 @@ Codex `models_cache.json`, `claude --help` (+ `~/.claude.json` extras), `agy mod
 Arguments always go to subprocess as a list; nothing is built into a shell string.
 """
 import io
+import contextlib
+import functools
 import json
 import os
 import re
@@ -22,6 +24,7 @@ import threading
 import time
 import zipfile
 from pathlib import Path
+from storage import atomic_json, file_lock
 
 HOME = Path.home()
 WIN = sys.platform == "win32"
@@ -759,21 +762,60 @@ def parse_serve(argv):
 
 def model_from_args(family, argv):
     """(model, effort) a worker's agent runs with, read from its command line (or its shim's arguments)."""
-    model = effort = None
-    for k, a in enumerate(argv[:-1]):
-        nxt = argv[k + 1]
-        if family == "claude" and a == "--model":
-            model = nxt
+    model = effort = explicit_model = None
+    for k, a in enumerate(argv):
+        if a == "--":
+            break
+        nxt = argv[k + 1] if k + 1 < len(argv) else ""
+        if a.startswith("--model="):
+            explicit_model = a.split("=", 1)[1]
+        elif a == "--model" or family == "codex" and a == "-m":
+            explicit_model = nxt
+        elif family == "codex" and a.startswith("-m") and not a.startswith("--"):
+            explicit_model = a[2:].lstrip("=")
         elif family == "claude" and a == "--effort":
             effort = nxt
-        elif family == "codex" and a == "-c":
-            key, _, val = nxt.partition("=")
-            val = val.strip('"')
+        elif family == "claude" and a.startswith("--effort="):
+            effort = a.split("=", 1)[1]
+        elif family == "codex" and (a in ("-c", "--config") or a.startswith("--config=")
+                                    or a.startswith("-c") and not a.startswith("--")):
+            value = nxt if a in ("-c", "--config") else a[len("--config="):] if a.startswith("--config=") else a[2:].lstrip("=")
+            key, _, val = value.partition("=")
+            key, val = key.strip(), val.strip().strip("\"'")
             if key == "model":
                 model = val
             elif key == "model_reasoning_effort":
                 effort = val
+    model = explicit_model if explicit_model is not None else model
     return (model if model and MODEL_RE.match(model) else None, effort if effort and EFFORT_RE.match(effort) else None)
+
+
+def agent_argv(family, argv):
+    """The CLI argv of a native agent or an interpreter running its CLI script; None for ordinary tools."""
+    if not argv:
+        return None
+    basename = lambda s: re.split(r"[\\/]", s)[-1].lower()
+    program = basename(argv[0])
+    if program in (family, family + ".exe"):
+        return argv
+    if not re.fullmatch(r"(node(js)?|python(\d+(\.\d+)*)?)(\.exe)?", program):
+        return None
+    takes_value = {"-r", "--require", "--loader", "--import", "--conditions", "--inspect-port", "-W", "-X"}
+    i = 1
+    while i < len(argv):
+        arg = argv[i]
+        option = arg.split("=", 1)[0]
+        if option in ("-e", "--eval", "-c", "-m", "--print", "-p"):
+            return None  # inline code/module names cannot masquerade as a script path
+        if arg.startswith("-"):
+            i += 2 if option in takes_value and "=" not in arg else 1
+            continue
+        path = arg.replace("\\", "/").lower()
+        name = basename(arg)
+        direct = name in (family, family + ".js", family + ".mjs", family + ".cjs", family + ".py")
+        package = "/@anthropic-ai/claude-code/" if family == "claude" else "/@openai/codex/"
+        return argv[i:] if direct or name == "cli.js" and package in path else None
+    return None
 
 
 def found_workers(procs):
@@ -797,9 +839,16 @@ def found_workers(procs):
             if c in seen:
                 continue
             seen.add(c)
-            m, e = model_from_args(s["family"], argv_of.get(c) or [])
+            argv = agent_argv(s["family"], argv_of.get(c) or [])
+            agent = argv is not None and (any(a in argv[1:] for a in ("-p", "--print"))
+                    if s["family"] == "claude" else "exec" in argv[1:])
+            if not agent:
+                todo += kids.get(c, [])
+                continue
+            m, e = model_from_args(s["family"], argv)
             model, effort = model or m, effort or e
-            todo += kids.get(c, [])
+            # A model-less shim can wrap the real agent; never inspect tools launched by an agent.
+            todo += [k for k in kids.get(c, []) if agent_argv(s["family"], argv_of.get(k) or []) is not None]
         out.append(dict(s, pid=pid, model=model, effort=effort))
     return out
 
@@ -930,11 +979,21 @@ class LaunchError(Exception):
         self.code = code
 
 
+def worker_operation(method):
+    @functools.wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self.operation():
+            return method(self, *args, **kwargs)
+    return wrapped
+
+
 class Launcher:
     def __init__(self, reason, catalog):
         self.reason = reason
         self.catalog = catalog
         self.lock = threading.Lock()
+        self.operation_lock = threading.RLock()
+        self.operation_depth = 0
         self.reg = STATE / "workers.json"
         # name -> {name, pid, started, family, model, effort, cwd, log, fullAccess, settings}; `settings` is the
         # shim's per-worker file (absent for workers started before it existed: those restart to change)
@@ -952,6 +1011,27 @@ class Launcher:
         self.load()
         self.load_records()
 
+    @contextlib.contextmanager
+    def operation(self):
+        """Reserve names across processes before validating/spawning, through the final registry write."""
+        with self.operation_lock:
+            if self.operation_depth:
+                yield
+                return
+            try:
+                with file_lock(self.reg.with_suffix(".operations.lock")):
+                    with self.lock:
+                        self.workers = {n: w for n, w in self.workers.items() if self.alive(w)}
+                        self.load()
+                    self.load_records()
+                    self.operation_depth = 1
+                    try:
+                        yield
+                    finally:
+                        self.operation_depth = 0
+            except TimeoutError as exc:
+                raise LaunchError("Another server is changing workers; try again shortly.", 409) from exc
+
     # Registry on disk, so a restarted server can still stop the workers it started.
     def load(self):
         try:
@@ -966,6 +1046,10 @@ class Launcher:
 
     def save(self):
         """Read, merge, write (call with self.lock held): a live worker another writer recorded is kept, not lost."""
+        with file_lock(self.reg.with_suffix(".lock")):
+            self._save_locked()
+
+    def _save_locked(self):
         try:
             disk = json.loads(self.reg.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -977,9 +1061,7 @@ class Launcher:
                 self.workers[w["name"]] = w
         try:
             STATE.mkdir(parents=True, exist_ok=True)
-            tmp = self.reg.with_suffix(".tmp")
-            tmp.write_text(json.dumps(list(self.workers.values()), ensure_ascii=False, indent=1), encoding="utf-8")
-            os.replace(tmp, self.reg)
+            atomic_json(self.reg, list(self.workers.values()))
         except OSError:
             pass
 
@@ -988,18 +1070,24 @@ class Launcher:
         user's shell), so no console-wide Ctrl+C and no group kill: SIGINT to the process itself on POSIX; on Windows,
         where Ctrl+C can only go to a whole console, a forced kill of its tree (the network may then show it idle)."""
         if not WIN:
+            procs = list_processes()
+            children = [(p, started_at(p)) for p, _, _, _ in descendants(procs or [], w["pid"])]
             try:
                 os.kill(w["pid"], signal.SIGINT)
             except OSError:
-                return
+                pass
             for _ in range(100):
                 if not self.alive(w):
-                    return
+                    break
                 time.sleep(0.1)
-            try:
-                os.kill(w["pid"], signal.SIGKILL)
-            except OSError:
-                pass
+            if self.alive(w):
+                try:
+                    os.kill(w["pid"], signal.SIGKILL)
+                except OSError:
+                    pass
+            for pid, born in reversed(children):
+                if born and started_at(pid) == born:
+                    kill_pid(pid)  # individual verified pids; never signal the user's shared process group
             return
         subprocess.run(["taskkill", "/PID", str(w["pid"]), "/T", "/F"], capture_output=True, creationflags=NOWIN)
 
@@ -1030,6 +1118,10 @@ class Launcher:
             self.save_records()
 
     def save_records(self):
+        with file_lock(self.records_path.with_suffix(".lock")):
+            self._save_records_locked()
+
+    def _save_records_locked(self):
         try:
             disk = json.loads(self.records_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -1041,9 +1133,7 @@ class Launcher:
         self.records = merged
         try:
             STATE.mkdir(parents=True, exist_ok=True)
-            tmp = self.records_path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(merged, ensure_ascii=False, indent=1), encoding="utf-8")
-            os.replace(tmp, self.records_path)
+            atomic_json(self.records_path, merged)
         except OSError:
             pass
 
@@ -1064,6 +1154,7 @@ class Launcher:
         procs = list_processes() if procs is None else procs
         return None if procs is None else {f["name"] for f in found_workers(procs)}
 
+    @worker_operation
     def restart(self, names, blocked):
         """Start recorded workers again with their last settings. `blocked`: names whose serve runs on this computer or
         that are online on another one. A name the network still shows only because its process was killed is free:
@@ -1105,6 +1196,7 @@ class Launcher:
         # The request itself succeeded; each name's outcome is in results (the page shows the failures).
         return {"ok": True, "started": sum(r["ok"] for r in results), "results": results}
 
+    @worker_operation
     def discover(self, procs=None):
         """Take back `serve` workers this page started (recorded in spawned.jsonl) that workers.json lost; note the others.
 
@@ -1143,6 +1235,7 @@ class Launcher:
                     foreign[f["name"]] = w
             self.foreign = foreign
 
+    @worker_operation
     def adopt(self, name, model=None, effort=None):
         """Manage a worker started outside this page (the user asked to, in the page or with rnc.py). `model` and
         `effort`: what it is known to run with, when its processes cannot tell (checked against the catalog); they are
@@ -1193,6 +1286,7 @@ class Launcher:
         """A Codex worker started with a settings file takes a new model or effort with its next message."""
         return w.get("family") == "codex" and bool(w.get("settings"))
 
+    @worker_operation
     def stop(self, name):
         with self.lock:
             if name in self.restarting:
@@ -1273,6 +1367,7 @@ class Launcher:
                 "procs": [{"pid": pid, "ppid": ppid, "name": pname, "cmd": " ".join(argv)[:400]}
                           for pid, ppid, pname, argv in rows]}
 
+    @worker_operation
     def relaunch(self, name):
         """Stop a running worker managed here and start it again with its recorded settings: the cure for a stuck
         one. Ctrl+C first (a forced tree kill for one started elsewhere), then whatever was left under it (an agent
@@ -1376,6 +1471,7 @@ class Launcher:
                 raise LaunchError("That model is not in the agent's catalog.")
         return entry, model, effort
 
+    @worker_operation
     def launch(self, req, live_names):
         with self.lock:
             fam, mode, cwd, entry, model, effort, name, full = self.check(req, live_names)
@@ -1414,6 +1510,7 @@ class Launcher:
         running = self.running_serve_names(procs)
         return running is not None and name not in running  # only on proof that the old process is gone
 
+    @worker_operation
     def configure(self, req, busy):
         """Change a running worker's model, effort or permission. `busy`: the worker is in a turn right now.
 

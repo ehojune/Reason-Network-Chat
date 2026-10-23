@@ -28,13 +28,17 @@ out as the window frees up. Nothing is dropped: queued hand-offs, the scan curso
 relay.json, so a restart neither loses nor repeats a hand-off.
 """
 import collections
+import contextlib
+import functools
 import json
 import os
 import re
 import secrets
 import threading
 import time
+import uuid
 from pathlib import Path
+from storage import atomic_json, file_lock
 
 
 def _env_int(name, default):
@@ -55,6 +59,10 @@ CONTEXT_CHARS = 4000
 LINE_CHARS = 600
 KEEP = 3000  # records of sent messages kept on disk
 RETRIES = 3  # attempts at one hand-off before it is reported as failed
+STORAGE_NOTICE = "Could not save the hand-off; no message was sent. Waiting for storage recovery."
+AMBIGUOUS_NOTICE = "Delivery outcome unknown; Send all now explicitly retries it."
+RECEIPT_NOTICE = "Delivery accepted; waiting for its database receipt."
+SENDER_NOTICE = "Queued delivery belongs to a different sender; it was not retried."
 # @name or @person/name (ASCII, so "@codex-worker1에게" still names codex-worker1), or @모두 / @전체
 # The same pattern as MENTION_RE in index.html, so the page shows who the server will send to ("안녕@b-claude" names
 # b-claude; "pat@b-claude" does not).
@@ -132,6 +140,18 @@ class RelayError(Exception):
         self.code = code
 
 
+class NotSentError(RelayError):
+    """The pre-send claim failed; no external send was attempted."""
+
+
+def serialized(method):
+    @functools.wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self.transaction():
+            return method(self, *args, **kwargs)
+    return wrapped
+
+
 class Relay:
     def __init__(self, home, rooms, db_rows, send_one):
         self.path = Path(home) / "relay.json"
@@ -147,9 +167,11 @@ class Relay:
         self.passes = collections.defaultdict(collections.deque)  # room -> times a hand-off went out
         self.queue = {}  # room -> [{reply, to, sender, body, hop, at, held, force}] in arrival order
         self.notice = {}  # room -> the last hand-off that failed for good, shown to you
+        self.transient_notice = {}  # temporary delivery/storage state, never overwrites a permanent failure
         self.forwarded = {}  # message id -> {room, to, at}: 1:1 answers you forwarded into a room (once each)
         self.settled = {}  # message id -> {how: resent|dismissed, at}: unanswered or failed messages you dealt with
         self.since = None  # scan cursor (ms): replies before it are settled
+        self.revision = None
         self.load()
         now = int(time.time() * 1000)
         # Resume where the last run stopped, so replies that came in while the server was down are passed on.
@@ -165,6 +187,7 @@ class Relay:
 
     def load(self):
         data = self.read()
+        self.revision = data.get("revision")
         try:
             self.sent = {k: v for k, v in (data.get("sent") or {}).items() if isinstance(v, dict)}
             self.seen = {k: int(v) for k, v in (data.get("seen") or {}).items()}
@@ -176,10 +199,39 @@ class Relay:
             self.queue = {rid: items for rid, items in self.queue.items() if items}
             self.forwarded = {k: v for k, v in (data.get("forwarded") or {}).items() if isinstance(v, dict)}
             self.settled = {k: v for k, v in (data.get("settled") or {}).items() if isinstance(v, dict)}
+            self.passes = collections.defaultdict(collections.deque,
+                {rid: collections.deque(t for t in times if isinstance(t, (int, float)) and time.time() - t < BUDGET_WINDOW)
+                 for rid, times in (data.get("passes") or {}).items() if isinstance(times, list)})
+            self.tries = collections.Counter({tuple(k.split("\t", 1)): int(v)
+                for k, v in (data.get("tries") or {}).items() if "\t" in k})
+            self.notice = {k: str(v) for k, v in (data.get("notice") or {}).items()}
+            self.transient_notice = {k: str(v) for k, v in (data.get("transientNotice") or {}).items()}
+            for rid, text in list(self.notice.items()):
+                if text in (STORAGE_NOTICE, AMBIGUOUS_NOTICE, RECEIPT_NOTICE, SENDER_NOTICE):
+                    self.transient_notice.setdefault(rid, self.notice.pop(rid))
         except (ValueError, TypeError, AttributeError):
             pass
 
-    def save(self, unsettle=()):
+    @contextlib.contextmanager
+    def transaction(self):
+        """One writer/delivery batch per home, across ports and processes. Polling stays read-only."""
+        with self.send_lock:
+            try:
+                with file_lock(self.path.with_suffix(".delivery.lock")):
+                    with self.lock:
+                        if self.read().get("revision") != self.revision:
+                            previous = self.since
+                            self.load()
+                            self.since = self.since if self.since is not None else previous
+                    yield
+            except TimeoutError as exc:
+                raise RelayError("Another server is delivering; try again shortly.", 409) from exc
+
+    def save(self, unsettle=(), strict=False):
+        with file_lock(self.path.with_suffix(".state.lock")):
+            self._save_locked(unsettle, strict)
+
+    def _save_locked(self, unsettle=(), strict=False):
         """Read, merge, write: records another writer added since are kept (call with self.lock held). `unsettle`:
         settled records to remove, which the merge would otherwise bring back from the file."""
         disk = self.read()
@@ -211,16 +263,19 @@ class Relay:
             for k in sorted(settled, key=lambda k: settled[k].get("at", 0))[: len(settled) - KEEP]:
                 del settled[k]
         self.sent, self.seen, self.forwarded, self.settled = sent, seen, fwd, settled
-        data = {"sent": sent, "seen": seen, "since": self.since,
+        revision = uuid.uuid4().hex
+        data = {"revision": revision, "sent": sent, "seen": seen, "since": self.since,
                 "done": {f"{a}\t{b}": at for (a, b), at in self.done.items()}, "queue": self.queue, "forwarded": fwd,
-                "settled": settled}
+                "settled": settled, "passes": {rid: list(times) for rid, times in self.passes.items()},
+                "tries": {f"{a}\t{b}": count for (a, b), count in self.tries.items()}, "notice": self.notice,
+                "transientNotice": self.transient_notice}
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-            os.replace(tmp, self.path)
-        except OSError:
-            pass
+            atomic_json(self.path, data)
+            self.revision = revision
+        except OSError as exc:
+            if strict:
+                raise RelayError(f"Could not save hand-off before sending: {exc}", 500)
 
     def view(self, ids):
         """For the page: the relay record of each listed message, queued hand-offs per room, failed hand-offs."""
@@ -233,7 +288,10 @@ class Relay:
                 n = sum(1 for i in items if room and held(room, i))
                 if items:
                     queued[rid] = {"waiting": len(items) - n, "held": n}
-            return rel, queued, dict(self.notice)
+            notices = dict(self.notice)
+            for rid, text in self.transient_notice.items():
+                notices[rid] = " · ".join(filter(None, (notices.get(rid), text)))
+            return rel, queued, notices
 
     def forwarded_view(self, ids):
         """For the page: {message id: {room, to}} for the listed 1:1 answers you forwarded into a room."""
@@ -246,6 +304,7 @@ class Relay:
         with self.lock:
             return {i: dict(self.settled[i]) for i in ids if i in self.settled}
 
+    @serialized
     def claim(self, mid, how):
         """Mark a message dealt with, unless it already is: one "Send again" per message, even from two clicks."""
         with self.lock:
@@ -255,6 +314,7 @@ class Relay:
             self.save()
             return True
 
+    @serialized
     def unclaim(self, mid):
         with self.lock:
             self.settled.pop(mid, None)
@@ -265,6 +325,7 @@ class Relay:
         with self.lock:
             return (self.sent.get(mid) or {}).get("to")
 
+    @serialized
     def redeliver(self, mid, me):
         """Send a relayed message again as it was (same room, member, speaker, text and hop): your "Send again" after
         a worker failed on it or took it without answering. None when `mid` is not a message this page relayed."""
@@ -277,9 +338,8 @@ class Relay:
         room = self.rooms.get(rec.get("room"))
         if not room or not room.get("group") or rec.get("to") not in room["members"]:
             raise RelayError("That room is gone, or the member left it.", 409)
-        with self.send_lock:
-            ok, err = self.deliver(room, rec["to"], me, rec["speaker"], rec["core"], rec.get("hop", 0),
-                                implicit=bool(rec.get("implicit")), post=rec.get("post"))
+        ok, err = self.deliver(room, rec["to"], me, rec["speaker"], rec["core"], rec.get("hop", 0),
+                               implicit=bool(rec.get("implicit")), post=rec.get("post"))
         if not ok:
             raise RelayError(err or "The message could not be sent.", 502)
         return rec["to"]
@@ -357,16 +417,58 @@ class Relay:
         A queued `item` leaves the queue in the same save that records the message as sent: a restart in between
         cannot send it twice."""
         with self.lock:
-            body, newest = self.compose(room, member, me, speaker, core, skip, implicit)
+            flight = item.get("flight") if item is not None else None
+            created = not flight
+            if flight:
+                body, newest = flight["body"], flight["newest"]
+            else:
+                body, newest = self.compose(room, member, me, speaker, core, skip, implicit)
+                if item is not None:
+                    # A unique envelope identifies this exact delivery in the daemon's read-only database.
+                    body = body.replace("\nMembers:", f"\nDelivery: {uuid.uuid4().hex}\nMembers:", 1)
+                    item["flight"] = {"body": body, "newest": newest, "me": me}
+            if item is not None:
+                forced = item.pop("force", None)  # consume one explicit retry durably before the side effect
+                storage_notice = self.transient_notice.get(room["id"]) == STORAGE_NOTICE
+                if storage_notice:
+                    self.transient_notice.pop(room["id"], None)
+                try:
+                    self.save(strict=True)
+                except Exception as exc:
+                    if storage_notice:
+                        self.transient_notice[room["id"]] = STORAGE_NOTICE
+                    if created:
+                        item.pop("flight", None)  # no send was attempted; storage recovery can retry normally
+                    if forced is not None:
+                        item["force"] = forced
+                    raise NotSentError(str(exc), 500) from exc
         try:
             rc, out, err = self.send_one(member, body, False)
         except Exception as e:  # e.g. the CLI timed out: a failed attempt like any other, so retries stay bounded
+            with self.lock:
+                if item is not None:
+                    # An exception may have happened after delivery: retain the claim for reconciliation.
+                    item.pop("force", None)  # one explicit retry is not permission to retry forever
+                    self.refresh_transient_notice(room["id"], me, AMBIGUOUS_NOTICE)
+                    self.save()
             return False, f"{type(e).__name__}: {e}"
         if rc != 0:
+            with self.lock:
+                if item is not None:
+                    if created:
+                        item.pop("flight", None)
+                    else:
+                        self.refresh_transient_notice(room["id"], me, AMBIGUOUS_NOTICE)
+                    self.save()
             return False, err or out or f"rc={rc}"
         rows = self.db_rows("select id, sent_at from messages where sender = ? and recipient = ? and body = ?"
                             " order by sent_at desc limit 1", (me, member, body))
         with self.lock:
+            if item is not None and not rows:
+                item.pop("force", None)
+                self.refresh_transient_notice(room["id"], me, RECEIPT_NOTICE)
+                self.save()
+                return False, "Waiting for delivery receipt"
             if rows:
                 self.sent[rows[0]["id"]] = {"room": room["id"], "hop": hop, "core": core, "speaker": speaker,
                                             "to": member, "at": rows[0]["sent_at"], "implicit": implicit, "post": post}
@@ -375,17 +477,51 @@ class Relay:
             # plus the handed-off reply itself, which it just got as the message.
             self.seen[key] = max(self.seen.get(key, 0), newest, skip_at)
             if item is not None:
-                self.dequeue(room["id"], item)
+                self.dequeue(room["id"], item, me)
             self.save()
         return True, ""
 
-    def dequeue(self, rid, item):
+    def reconcile(self, room, me, item):
+        """Recover a delivery whose process ended between the CLI send and saving the dequeue. Lock held."""
+        flight = item.get("flight")
+        if not flight:
+            return False
+        if flight.get("me") != me:
+            return False
+        rows = self.db_rows("select id, sent_at from messages where sender = ? and recipient = ? and body = ?"
+                            " order by sent_at desc limit 1", (me, item["to"], flight["body"]))
+        if not rows:
+            return False
+        row = rows[0]
+        self.sent[row["id"]] = {"room": room["id"], "hop": item["hop"], "core": item["body"],
+                                "speaker": item["sender"], "to": item["to"], "at": row["sent_at"],
+                                "implicit": bool(item.get("implicit")), "post": item.get("post")}
+        key = f'{room["id"]}|{item["to"]}'
+        self.seen[key] = max(self.seen.get(key, 0), flight.get("newest", 0), item.get("at", 0))
+        self.dequeue(room["id"], item, me)
+        self.save()
+        return True
+
+    def refresh_transient_notice(self, rid, me, pending=None):
+        """Recovery resolves temporary delivery state, never an unrelated exhausted-retry failure."""
+        flights = [item["flight"] for item in self.queue.get(rid, []) if item.get("flight")]
+        if any(flight.get("me") != me for flight in flights):
+            self.transient_notice[rid] = SENDER_NOTICE
+        elif pending:
+            self.transient_notice[rid] = pending
+        elif flights:
+            self.transient_notice[rid] = AMBIGUOUS_NOTICE
+        else:
+            self.transient_notice.pop(rid, None)
+
+    def dequeue(self, rid, item, me):
         """Take one item off a room's queue (call with self.lock held)."""
         items = self.queue.get(rid) or []
         if item in items:
             items.remove(item)
         if not items:
             self.queue.pop(rid, None)
+        self.refresh_transient_notice(rid, me)
 
     @staticmethod
     def mentioned(room, text, exclude=None, everyone=False):
@@ -419,9 +555,10 @@ class Relay:
         if not targets:
             raise RelayError("Mention who should receive it (@name, or @all for everyone), "
                              "or set a default recipient for this room.")
-        with self.send_lock:
+        with self.transaction():
             with self.lock:
                 self.notice.pop(room["id"], None)
+                self.refresh_transient_notice(room["id"], me)
                 self.passes[room["id"]].clear()  # you are back in the conversation: a fresh budget
             results = []
             for m in targets:
@@ -429,6 +566,7 @@ class Relay:
                 results.append({"to": m, "ok": ok, "err": err})
         return results
 
+    @serialized
     def flush(self, rid):
         """Send everything queued in a room now, past its budget and hop limit (your explicit go-ahead)."""
         with self.lock:
@@ -440,6 +578,7 @@ class Relay:
             return len(items)
 
     # ---------- a member starts a message ----------
+    @serialized
     def post_as(self, room, member, body, via):
         """A member's own message to the room (rnc.py room send), queued like a member's answer: to the members it
         @mentions (an @all is not honoured: only you message everyone), hop 1, within the room's limits; answers come
@@ -464,6 +603,7 @@ class Relay:
         return targets
 
     # ---------- a 1:1 answer, forwarded by you ----------
+    @serialized
     def forward(self, room, me, msg):
         """Pass a member's answer to a 1:1 message of yours on to the members it @mentions, as if it had answered a
         room message: queued like any hand-off (hop 1, the member as speaker) and sent within the room's limits.
@@ -506,7 +646,7 @@ class Relay:
         """Queue member replies that @mention another member, then send what the room's limits allow."""
         if not me:
             return
-        with self.send_lock:
+        with self.transaction():
             with self.lock:
                 if not self.sent and not self.queue:
                     return
@@ -556,6 +696,7 @@ class Relay:
                     items = self.queue.get(rid) or []
                     if not room or not room.get("group"):  # the room is gone or no longer a group: nothing to pass
                         self.queue.pop(rid, None)
+                        self.refresh_transient_notice(rid, me)
                         self.save()
                         break
                     # Someone who left the room gets nothing more from it, and a reply of someone who left is not passed on.
@@ -563,13 +704,29 @@ class Relay:
                     gone = [i for i in items if i["to"] not in room["members"] or i["sender"] not in room["members"]
                             or worker_failure(i["body"])]
                     for i in gone:
-                        self.dequeue(rid, i)
+                        self.dequeue(rid, i, me)
                     if gone:
                         self.save()
+                    # A held flight still belongs to its original identity. Keep its warning accurate
+                    # even while another item is delivered/removed or the hop limit changes.
+                    if self.transient_notice.get(rid) == SENDER_NOTICE or any(
+                            i.get("flight") and i["flight"].get("me") != me for i in items):
+                        previous = self.transient_notice.get(rid)
+                        self.refresh_transient_notice(rid, me)
+                        if previous != self.transient_notice.get(rid):
+                            self.save()
                     # Held items (past the room's current hop limit) wait for you; the others go out in order.
                     item = next((i for i in self.queue.get(rid) or [] if not held(room, i)), None)
                     if not item:
                         break
+                    if item.get("flight"):
+                        if item["flight"].get("me") != me:
+                            break
+                        if self.reconcile(room, me, item):
+                            continue
+                        if not item.get("force"):
+                            self.refresh_transient_notice(rid, me)
+                            break  # keep an ambiguous send; a restart must never guess and spend another turn
                     slot = self.take(room) if not item.get("force") else time.time()
                     if slot is None:
                         break  # the window is full: the rest wait for it to free up
@@ -580,20 +737,33 @@ class Relay:
 
     def send_item(self, room, me, item, slot):
         rid, key = room["id"], (item["reply"], item["to"])
-        ok, err = self.deliver(room, item["to"], me, item["sender"], item["body"], item["hop"],
-                               skip=item["reply"], skip_at=item.get("at", 0), item=item, implicit=bool(item.get("implicit")),
-                               post=item.get("post"))
+        try:
+            ok, err = self.deliver(room, item["to"], me, item["sender"], item["body"], item["hop"],
+                                  skip=item["reply"], skip_at=item.get("at", 0), item=item,
+                                  implicit=bool(item.get("implicit")), post=item.get("post"))
+        except NotSentError:
+            with self.lock:
+                if slot in self.passes[rid]:
+                    self.passes[rid].remove(slot)
+                self.refresh_transient_notice(rid, me, STORAGE_NOTICE)
+                self.save()
+            raise
         with self.lock:
             if ok:
                 self.tries.pop(key, None)
+                self.save()
                 return True
+            if item.get("flight"):
+                return False  # ambiguous, not a failed attempt: retain it until reconciled or explicitly retried
             if slot in self.passes[rid]:
                 self.passes[rid].remove(slot)  # a failed send does not use up the budget
             self.tries[key] += 1
             if self.tries[key] >= RETRIES:
-                self.dequeue(rid, item)
+                self.dequeue(rid, item, me)
                 self.notice[rid] = f"{short(item['sender'])} → {short(item['to'])}: {err}"
                 self.tries.pop(key, None)
+                self.save()
+            else:
                 self.save()
             return False
 

@@ -358,6 +358,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(e)}, e.code)
         elif url.path == "/api/catalog":
             refresh = parse_qs(url.query).get("refresh") == ["1"]
+            if refresh and not hmac.compare_digest(self.headers.get("X-Reason-Chat-Token", ""), TOKEN):
+                return self.send_json({"error": "bad token: reload the page"}, 403)
             self.send_json({"families": CATALOG.get(refresh), "folders": folders()})
         else:
             self.send_error(404)
@@ -416,6 +418,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(LAUNCHER.launch(req, names))
             elif path == "/api/rooms/save":
                 me, known = me_and_known()
+                if not me:
+                    return self.send_json({"error": "Own address is not known yet; wait for Reason Network."}, 503)
                 self.send_json({"ok": True, "room": ROOMS.upsert(req, known, me)})
             elif path == "/api/rooms/delete":
                 ROOMS.delete(req.get("id"))
@@ -564,8 +568,12 @@ class Handler(BaseHTTPRequestHandler):
                 results.append({"id": mid, "ok": False, "to": to, "err": "Already sent again or put aside."})
                 continue
             try:
-                if row is None:
-                    RELAY.redeliver(mid, me)
+                # claim() reloaded shared relay state. Choose the path now, not from the stale pre-claim cache.
+                if RELAY.recipient_of(mid) is not None:
+                    if RELAY.redeliver(mid, me) is None:
+                        raise RelayError("The relay record is no longer available; reload the history.", 409)
+                elif row is None:
+                    raise RelayError("The relay record is no longer available; reload the history.", 409)
                 else:
                     rc, out, err = send_one(to, row["body"], False)
                     if rc != 0:

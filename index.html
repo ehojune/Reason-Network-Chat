@@ -1159,17 +1159,19 @@ function troubleListHtml(list) {
     if (!m) return "";
     const rel = relayOf(m), body = (rel ? rel.core : m.body).split(DM_MARK)[0];
     const failures = S.messages.filter(x => x.reply_to === id && x.sender === m.recipient && isFailure(x.body));
-    return `<article class="troubleItem" data-id="${esc(id)}"><strong>${esc(t(v.kind === "failed" ? "tFailed" : "tNoAnswer"))}</strong> · ${esc(m.recipient)}
+    return `<article class="troubleItem" data-id="${esc(id)}"><strong>${esc(t(v.kind === "failed" ? "tFailed" : "tNoAnswer"))}</strong> · ${esc(rel ? rel.speaker : m.sender)} → ${esc(m.recipient)}
       <div>${esc(fmtD(m.sent_at))} ${fmtT(m.sent_at)}${rel ? ` · # ${esc((S.rooms.find(r => r.id === rel.room) || {}).name || rel.room)}` : ""}</div>
       <pre class="troubleText">${esc(body)}</pre>${failures.length ? `<details><summary>${esc(t("failureDetail"))}</summary>${failures.map(x => `<pre class="troubleText">${esc(x.body)}</pre>`).join("")}</details>` : ""}
       <div class="dbtn"><button type="button" data-action="jump">${esc(t("goOriginal"))}</button><button type="button" data-action="resend"${running(v.to) ? "" : ` disabled title="${esc(t("notRunning"))}"`}>${esc(t("resend"))}</button><button type="button" data-action="dismiss">${esc(t("dismissOne"))}</button></div></article>`;
   }).join("") || `<p>${esc(t("troubleEmpty"))}</p>`;
 }
+let troubleListSig = null;
 function renderTroubleList() {
   $("#troubleTitle").textContent = t("troubleTitle");
   $("#troubleHelp").textContent = t("troubleHelp");
   const html = troubleListHtml(troublesInView());
-  if ($("#troubleItems").innerHTML !== html) $("#troubleItems").innerHTML = html;
+  // Native details/focus change the DOM. Compare data renders, so polling keeps the reader's place.
+  if (troubleListSig !== html) { $("#troubleItems").innerHTML = html; troubleListSig = html; }
 }
 $("#troubleClose").addEventListener("click", () => $("#troubleDlg").close());
 $("#troubleItems").addEventListener("click", e => {
@@ -1196,6 +1198,7 @@ async function resend(ids, dismiss) {
       (bad.length ? ` · ${t("failed")}${bad.map(r => r.err).join("; ")}` : ""), !!bad.length);
   } finally {
     lastSig = "";  // redraw even if nothing changed, so a button disabled by the click comes back
+    troubleListSig = null;
     poll();
   }
 }
@@ -1770,7 +1773,7 @@ function openRoom(room) {
   // or saving (even a rename) would drop them.
   const extra = [...chosen].filter(a => !S.sessions.some(s => s.address === a))
     .map(a => ({address: a, name: short(a), agent: "?", live: false, status: "gone"}));
-  const ss = S.sessions.filter(s => s.address !== S.me).concat(extra)
+  const ss = S.sessions.filter(s => s.address !== S.me && (S.me || !s.address.endsWith("/terminal"))).concat(extra.filter(s => S.me || !s.address.endsWith("/terminal")))
     .sort((a, b) => (chosen.has(b.address) - chosen.has(a.address)) || (up(b) - up(a)) || a.name.localeCompare(b.name));
   $("#rfMembers").innerHTML = ss.map(s => `<label class="${up(s) ? "" : "gone"}"><input type="checkbox" value="${esc(s.address)}"
     ${chosen.has(s.address) ? "checked" : ""}><span class="tag ${esc(s.agent)}">${esc(s.agent)}</span>${esc(s.name)}</label>`).join("");

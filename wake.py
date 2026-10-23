@@ -96,7 +96,8 @@ class Waker:
         error = ""
         try:
             p = subprocess.Popen(args, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                 stderr=subprocess.PIPE, creationflags=NOWIN)
+                                 stderr=subprocess.PIPE, creationflags=NOWIN,
+                                 start_new_session=os.name != "nt")  # its own group, so kill_tree reaches it all
             try:
                 out, err = p.communicate(timeout=TIMEOUT)
                 if p.returncode != 0:

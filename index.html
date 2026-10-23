@@ -563,7 +563,7 @@ function render(force) {
   renderSide(); renderTo(); renderTl(); renderNoWake();
 }
 
-const unreadTo = a => S.messages.some(m => m.recipient === a && !m.read_at);
+const unreadTo = a => (S.sessions.find(x => x.address === a) || {}).unread > 0;  // counted by the server
 const waking = a => (S.wakes[a] || {}).status === "running";
 function renderNoWake() {
   const s = S.sessions.find(x => x.address === $("#to").value);

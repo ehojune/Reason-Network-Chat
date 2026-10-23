@@ -113,6 +113,9 @@ def state():
     mine = lambda person_, machine: person_ == person and machine in (None, who.get("machine"))
     can_wake = lambda name, person_, machine: mine(person_, machine) and bool(Waker.resumable(known.get(name, {}).get("key")))
     sessions = [dict(s, live=True, resumable=can_wake(s["name"], s.get("person"), s.get("machine"))) for s in live]
+    # Unread counts straight from the database: the page only gets the newest MAX_MESSAGES rows.
+    unread = {r["recipient"]: r["n"] for r in db_rows(
+        "select recipient, count(*) as n from messages where read_at is null group by recipient")}
     # Sessions that now exist only in history: finished CLI asks, departed agents.
     for addr in sorted({m["sender"] for m in msgs} | {m["recipient"] for m in msgs}):
         if addr in seen or addr == me:
@@ -125,6 +128,8 @@ def state():
                          "doing": k.get("doing"), "cwd": k.get("cwd"), "tier": k.get("tier"),
                          "live": False, "resumable": can_wake(name, addr.split("/", 1)[0], None)})
         seen.add(addr)
+    for s in sessions:
+        s["unread"] = unread.get(s["address"], 0)
     relays, paused, notices = RELAY.view({m["id"] for m in msgs})
     return {"api": API, "boot": BOOT, "team": who.get("team"), "me": me, "sessions": sessions, "messages": msgs,
             "launched": LAUNCHER.list(), "rooms": ROOMS.list(), "relays": relays, "paused": paused, "notices": notices,
@@ -281,10 +286,14 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/prefs":
                 self.send_json({"ok": True, "prefs": PREFS.set(req.get("key"), req.get("value"))})
             elif path == "/api/wake":
-                with _lock:
-                    who = _who["data"]
+                # A fresh status, not the cached one: a session that turned busy must not get a second turn.
+                rc, out, err = run_reason("who", "--all", "--json", timeout=20)
+                try:
+                    who = json.loads(out) if rc == 0 else None
+                except ValueError:
+                    who = None
                 if not who:
-                    return self.send_json({"error": "Reason Network is not answering yet; try again."}, 503)
+                    return self.send_json({"error": "Reason Network is not answering; try again."}, 503)
                 self.send_json(WAKER.wake(req.get("address"), who))
             else:
                 name = req.get("name")

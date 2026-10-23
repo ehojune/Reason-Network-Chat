@@ -250,6 +250,14 @@ def agy_catalog(exe):
             "efforts": sort_efforts(e for m in models for e in m["efforts"]), "note": note}
 
 
+# Each CLI's own "run without asking" flag, for a terminal window (checked in each --help: claude 2.x, codex 0.163,
+# agy). A worker gets `reason network serve --full-access`, which passes the same to the agent it runs.
+FULL_ACCESS = {
+    "claude": ["--permission-mode", "bypassPermissions"],
+    "codex": ["--dangerously-bypass-approvals-and-sandbox"],
+    "antigravity": ["--dangerously-skip-permissions"],
+}
+
 FAMILIES = [  # id, label, finder, catalog, Reason `serve` agent name or None
     ("claude", "Claude Code", find_claude, claude_catalog, "claude"),
     ("codex", "Codex", find_codex, codex_catalog, "codex"),
@@ -257,25 +265,81 @@ FAMILIES = [  # id, label, finder, catalog, Reason `serve` agent name or None
 ]
 
 
-# ---------- Codex model shim ----------
-# `reason network serve codex` runs `codex exec …` with no way to pass a model. A worker that should use a
-# different model or effort gets a PATH entry whose `codex` adds `-c model=… -c model_reasoning_effort=…`
-# (from REASON_CHAT_CODEX_ARGS) and runs the real CLI (REASON_CHAT_CODEX_REAL). On Windows it is an .exe made
-# from pip's script launcher, because Bun refuses to pass message text to a .cmd file.
+# ---------- model shim ----------
+# `reason network serve` has no model or effort flag: it runs `codex exec …` per message and keeps warm
+# `claude -p …` processes, both found through PATH. (An effort in CLAUDE_CODE_EFFORT_LEVEL does not reach a
+# `claude -p` stream-json child.) So a worker's PATH starts with a shim folder whose `codex` / `claude` adds the
+# model and effort arguments and runs the real CLI (REASON_CHAT_SHIM_REAL). The arguments come from the worker's
+# settings file (REASON_CHAT_SHIM_SETTINGS, read on every run, so a Codex worker picks up a change with its next
+# message), else from REASON_CHAT_SHIM_ARGS. The REASON_CHAT_CODEX_* names are read too, for workers started
+# before the shim was shared. On Windows it is an .exe made from pip's script launcher, because Bun refuses to
+# pass message text to a .cmd file.
 
 SHIM_MAIN = b'''import json, os, subprocess, sys
-real = os.environ.get("REASON_CHAT_CODEX_REAL")
+env = os.environ
+real = env.get("REASON_CHAT_SHIM_REAL") or env.get("REASON_CHAT_CODEX_REAL")
 if not real:
-    sys.exit("REASON_CHAT_CODEX_REAL is not set")
-extra = json.loads(os.environ.get("REASON_CHAT_CODEX_ARGS") or "[]")
-sys.exit(subprocess.call([real] + extra + sys.argv[1:]))
+    sys.exit("REASON_CHAT_SHIM_REAL is not set")
+extra = None
+if env.get("REASON_CHAT_SHIM_SETTINGS"):
+    try:
+        with open(env["REASON_CHAT_SHIM_SETTINGS"], encoding="utf-8") as f:
+            extra = json.load(f).get("args")
+    except (OSError, ValueError, AttributeError):
+        extra = None
+if not isinstance(extra, list):
+    extra = json.loads(env.get("REASON_CHAT_SHIM_ARGS") or env.get("REASON_CHAT_CODEX_ARGS") or "[]")
+sys.exit(subprocess.call([real] + [str(a) for a in extra] + sys.argv[1:]))
 '''
+SHIM_AGENTS = ("codex", "claude")  # the CLI names `serve` looks up on PATH
 
 
-def shim_dir():
-    """Folder holding the Codex shim, built on first use; None when it cannot be built."""
-    d = STATE / "codex-shim"
-    target = d / ("codex.exe" if WIN else "codex")
+def _shim_zip():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:  # fixed timestamp: the same Python gives the same bytes
+        z.writestr(zipfile.ZipInfo("__main__.py", date_time=(1980, 1, 1, 0, 0, 0)), SHIM_MAIN)
+    return buf.getvalue()
+
+
+SHIM_ZIP = _shim_zip()  # the end of the Windows shim .exe
+
+
+def model_args(fid, model, effort):
+    """CLI arguments that pick a model and effort for one agent family."""
+    if fid == "claude":
+        return (["--model", model] if model else []) + (["--effort", effort] if effort else [])
+    return (["-c", f"model={model}"] if model else []) + (["-c", f"model_reasoning_effort={effort}"] if effort else [])
+
+
+def write_settings(path, args):
+    """The per-worker file the shim reads its model arguments from (written first, then swapped in)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"args": args}), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def shim_current(kind):
+    """The shim on disk is this version (it can stay older while a running turn holds the old .exe open)."""
+    target = STATE / f"{kind}-shim" / (f"{kind}.exe" if WIN else kind)
+    if not WIN:
+        target = STATE / f"{kind}-shim" / f"{kind}_shim.py"
+        try:
+            return target.read_bytes() == SHIM_MAIN
+        except OSError:
+            return False
+    try:
+        return target.read_bytes().endswith(SHIM_ZIP)
+    except OSError:
+        return False
+
+
+def shim_dir(kind="codex"):
+    """Folder holding the `codex` or `claude` shim, built on first use; None when it cannot be built."""
+    if kind not in SHIM_AGENTS:
+        raise ValueError(kind)
+    d = STATE / f"{kind}-shim"
+    target = d / (f"{kind}.exe" if WIN else kind)
     exe = sys.executable.encode("utf-8")
     extra = []  # (path, bytes) written next to the shim
     if WIN:
@@ -284,13 +348,10 @@ def shim_dir():
             launcher = ScriptMaker(None, None)._get_launcher("t")
         except Exception:
             return None
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w") as z:  # fixed timestamp: the same Python gives the same bytes
-            z.writestr(zipfile.ZipInfo("__main__.py", date_time=(1980, 1, 1, 0, 0, 0)), SHIM_MAIN)
-        data = launcher + b"#!" + (b'"' + exe + b'"' if b" " in exe else exe) + b"\n" + buf.getvalue()
+        data = launcher + b"#!" + (b'"' + exe + b'"' if b" " in exe else exe) + b"\n" + SHIM_ZIP
     else:  # a shebang cannot hold a path with spaces; sh can, quoted
         q = lambda b: b"'" + b.replace(b"'", b"'\\''") + b"'"
-        main = d / "codex_shim.py"
+        main = d / f"{kind}_shim.py"
         extra.append((main, SHIM_MAIN))
         data = b"#!/bin/sh\nexec " + q(exe) + b" " + q(str(main).encode("utf-8")) + b' "$@"\n'
     try:
@@ -324,7 +385,7 @@ class Catalog:
             return self.data
 
     def build(self):
-        shim = shim_dir() is not None
+        shims = {k: shim_dir(k) is not None for k in SHIM_AGENTS}
         out = []
         for fid, label, finder, catalog, serve in FAMILIES:
             exe = finder()
@@ -333,16 +394,19 @@ class Catalog:
             if exe:
                 fam.update(catalog(exe))
             missing = None if exe else f"{label} is not installed on this computer."
+            shim = shims.get(serve or "", False)
             fam["modes"]["worker"] = {
                 "ok": bool(exe and serve and self.reason),
                 "why": missing or (None if serve else "`reason network serve` runs only Claude Code and Codex."),
-                # A Codex worker can only use another model through the shim.
-                "models": bool(serve) and (fid != "codex" or shim),
-                "modelsWhy": None if fid != "codex" or shim else
-                "This Python has no pip launcher, so a Codex worker uses your Codex default model.",
+                # A worker can only use another model through the shim (`serve` has no model flag).
+                "models": bool(serve) and shim,
+                "modelsWhy": None if not serve or shim else
+                "This Python has no pip launcher, so a worker uses the agent's default model.",
+                "fullAccess": bool(serve),  # `serve --full-access`
             }
             fam["modes"]["window"] = {"ok": bool(exe and WIN), "models": True, "modelsWhy": None,
-                                      "why": missing or (None if WIN else "Terminal windows open on Windows only.")}
+                                      "why": missing or (None if WIN else "Terminal windows open on Windows only."),
+                                      "fullAccess": fid in FULL_ACCESS}
             out.append(fam)
         return out
 
@@ -482,7 +546,10 @@ class Launcher:
         self.catalog = catalog
         self.lock = threading.Lock()
         self.reg = STATE / "workers.json"
-        self.workers = {}  # name -> {name, pid, started, family, model, effort, cwd, log}
+        # name -> {name, pid, started, family, model, effort, cwd, log, fullAccess, settings}; `settings` is the
+        # shim's per-worker file (absent for workers started before it existed: those restart to change)
+        self.workers = {}
+        self.restarting = set()  # names of workers being restarted by configure(): still taken
         self.load()
 
     # Registry on disk, so a restarted server can still stop the workers it started.
@@ -517,14 +584,27 @@ class Launcher:
                 del self.workers[n]
             if gone:
                 self.save()
-            return [{k: w[k] for k in ("name", "family", "model", "effort", "cwd")} for w in self.workers.values()]
+            return [dict({k: w.get(k) for k in ("name", "family", "model", "effort", "cwd")},
+                         fullAccess=bool(w.get("fullAccess")), liveSettings=self.live_settings(w))
+                    for w in self.workers.values()]
+
+    @staticmethod
+    def live_settings(w):
+        """A Codex worker started with a settings file takes a new model or effort with its next message."""
+        return w.get("family") == "codex" and bool(w.get("settings"))
 
     def stop(self, name):
         with self.lock:
+            if name in self.restarting:
+                raise LaunchError("It is restarting; try again in a moment.", 409)
             w = self.workers.pop(name, None)
             if not w:
                 raise LaunchError("Not a worker started here.", 404)
             self.save()
+        self.halt(w)
+
+    def halt(self, w):
+        """Stop a worker's process: Ctrl+C so the network shows it stopped, a kill after 10 s."""
         if not self.alive(w):
             return
         try:
@@ -543,6 +623,9 @@ class Launcher:
         folder, model, effort, name = req.get("folder"), req.get("model") or "", req.get("effort") or "", req.get("name") or ""
         if not all(isinstance(v, str) for v in (fid, mode, folder, model, effort, name)):
             raise LaunchError("agent, mode, folder, model, effort and name must be strings.")
+        full = req.get("fullAccess", False)
+        if not isinstance(full, bool):
+            raise LaunchError("fullAccess must be true or false.")
         fam = self.catalog.family(fid)
         if not fam:
             raise LaunchError("Unknown agent.")
@@ -551,6 +634,29 @@ class Launcher:
             raise LaunchError("mode must be worker or window.")
         if not m["ok"]:
             raise LaunchError(m["why"] or "Not available.")
+        if full and not m.get("fullAccess"):
+            raise LaunchError("This agent cannot run with full access here.")
+        entry, model, effort = self.check_model(fam, m, model, effort)
+        if not folder or len(folder) > 1024 or any(c in folder for c in "\r\n\0"):
+            raise LaunchError("Pick a folder.")
+        path = Path(os.path.expandvars(folder.strip())).expanduser()
+        if not path.is_absolute():
+            raise LaunchError("Use a full folder path.")
+        if str(path).startswith(("\\\\", "//")):
+            raise LaunchError("Network folders are not supported.")
+        if not path.is_dir():
+            raise LaunchError("That folder does not exist.")
+        if mode == "worker":
+            if not NAME_RE.match(name):
+                raise LaunchError("Name: lowercase letters, digits and dashes, up to 48.")
+            if name in live_names or name in self.workers or name in self.restarting:
+                raise LaunchError("A session with that name is already on the network.", 409)
+        return fam, mode, str(path.resolve()), entry, model, effort, name, full
+
+    @staticmethod
+    def check_model(fam, m, model, effort):
+        """Validate a model and effort against one agent's catalog for one mode; returns (entry, model, effort)."""
+        fid = fam["id"]
         if (model or effort) and not m["models"]:
             raise LaunchError(m["modelsWhy"] or "This agent cannot pick a model here.")
         entry = None
@@ -568,81 +674,132 @@ class Launcher:
                 effort = entry.get("defaultEffort") or entry["efforts"][0]
             if entry and (f"{model}-{effort}" if effort else model) not in entry["ids"]:
                 raise LaunchError("That model is not in the agent's catalog.")
-        if not folder or len(folder) > 1024 or any(c in folder for c in "\r\n\0"):
-            raise LaunchError("Pick a folder.")
-        path = Path(os.path.expandvars(folder.strip())).expanduser()
-        if not path.is_absolute():
-            raise LaunchError("Use a full folder path.")
-        if str(path).startswith(("\\\\", "//")):
-            raise LaunchError("Network folders are not supported.")
-        if not path.is_dir():
-            raise LaunchError("That folder does not exist.")
-        if mode == "worker":
-            if not NAME_RE.match(name):
-                raise LaunchError("Name: lowercase letters, digits and dashes, up to 48.")
-            if name in live_names or name in self.workers:
-                raise LaunchError("A session with that name is already on the network.", 409)
-        return fam, mode, str(path.resolve()), entry, model, effort, name
+        return entry, model, effort
 
     def launch(self, req, live_names):
         with self.lock:
-            fam, mode, cwd, entry, model, effort, name = self.check(req, live_names)
+            fam, mode, cwd, entry, model, effort, name, full = self.check(req, live_names)
             if mode == "window":
-                return self.open_window(fam, cwd, model, effort)
-            if len([w for w in self.workers.values() if self.alive(w)]) >= MAX_WORKERS:
+                return self.open_window(fam, cwd, model, effort, full)
+            if len({n for n, w in self.workers.items() if self.alive(w)} | self.restarting) >= MAX_WORKERS:
                 raise LaunchError(f"Already {MAX_WORKERS} workers started here; stop one first.", 429)
-            w = self.start_worker(fam, cwd, model, effort, name)
+            w = self.start_worker(fam, cwd, model, effort, name, full)
             self.workers[name] = w
             self.save()
-        for _ in range(30):  # a bad setup fails within a few seconds
+        self.settle(w)
+        return {"ok": True, "mode": "worker", "name": name}
+
+    def settle(self, w):
+        """A bad setup fails within a few seconds: then drop it and say why."""
+        for _ in range(30):
             if not self.alive(w):
                 with self.lock:
-                    self.workers.pop(name, None)
-                    self.save()
+                    if self.workers.get(w["name"]) is w:
+                        del self.workers[w["name"]]
+                        self.save()
                 tail = Path(w["log"]).read_bytes()[-600:].decode("utf-8", "replace").strip()
                 raise LaunchError(f"The worker exited: {tail}", 502)
             time.sleep(0.1)
-        return {"ok": True, "mode": "worker", "name": name}
 
-    def start_worker(self, fam, cwd, model, effort, name):
+    def configure(self, req, busy):
+        """Change a running worker's model, effort or permission. `busy`: the worker is in a turn right now.
+
+        A Codex worker with a settings file takes a new model or effort with its next message, without a restart.
+        Anything else (permission, any Claude change, a worker from before settings files) restarts the worker
+        under the same name: Ctrl+C, then `serve` again. A busy worker is restarted only with `force`.
+        """
+        name, model, effort = req.get("name"), req.get("model") or "", req.get("effort") or ""
+        full, force = req.get("fullAccess", False), req.get("force", False)
+        if not all(isinstance(v, str) for v in (name, model, effort)):
+            raise LaunchError("name, model and effort must be strings.")
+        if not isinstance(full, bool) or not isinstance(force, bool):
+            raise LaunchError("fullAccess and force must be true or false.")
+        with self.lock:
+            if name in self.restarting:
+                raise LaunchError("It is restarting; try again in a moment.", 409)
+            w = self.workers.get(name)
+            if not w or not self.alive(w):
+                raise LaunchError("Not a worker started here.", 404)
+            fam = self.catalog.family(w["family"])
+            if not fam:
+                raise LaunchError("Unknown agent.")
+            m = fam["modes"]["worker"]
+            if full and not m.get("fullAccess"):
+                raise LaunchError("This agent cannot run with full access here.")
+            entry, model, effort = self.check_model(fam, m, model, effort)
+            same_perm = bool(w.get("fullAccess")) == full
+            if same_perm and (w.get("model") or "") == model and (w.get("effort") or "") == effort:
+                return {"ok": True, "restarted": False, "unchanged": True}
+            if same_perm and self.live_settings(w):
+                try:
+                    write_settings(Path(w["settings"]), model_args(w["family"], model, effort))
+                except OSError as e:
+                    raise LaunchError(f"Could not save the worker's settings: {e}", 500)
+                w.update(model=model or None, effort=effort or None)
+                self.save()
+                return {"ok": True, "restarted": False}
+            if busy and not force:
+                raise LaunchError("It is busy: restarting it now loses the turn it is in.", 409)
+            # Its record stays in workers.json until the new process replaces it, so a server that stops midway
+            # still knows the worker; `restarting` keeps the name taken and its place counted meanwhile.
+            self.restarting.add(name)
+        try:
+            self.halt(w)
+            time.sleep(1)  # let the network take in "stopped" before the same name comes back
+            with self.lock:
+                nw = self.start_worker(fam, w["cwd"], model, effort, name, full)
+                self.workers[name] = nw
+                self.save()
+        finally:
+            self.restarting.discard(name)
+        self.settle(nw)
+        return {"ok": True, "restarted": True}
+
+    def start_worker(self, fam, cwd, model, effort, name, full=False):
         env = base_env()
         fid = fam["id"]
-        if fid == "claude":
-            exe = find_claude()
-            env["PATH"] = os.pathsep.join([str(Path(exe).parent), env.get("PATH", "")])
-            if model:
-                env["ANTHROPIC_MODEL"] = model
-            if effort:
-                env["CLAUDE_CODE_EFFORT_LEVEL"] = effort
-        else:
-            real = find_codex()
-            dirs = [str(Path(real).parent)]  # ahead of any codex.cmd shim on PATH
-            if model or effort:
-                shim = shim_dir()
-                if not shim:
-                    raise LaunchError("Could not build the Codex model shim.", 500)
-                dirs.insert(0, shim)
-                env["REASON_CHAT_CODEX_REAL"] = real
-                env["REASON_CHAT_CODEX_ARGS"] = json.dumps(
-                    (["-c", f"model={model}"] if model else []) + (["-c", f"model_reasoning_effort={effort}"] if effort else []))
-            env["PATH"] = os.pathsep.join(dirs + [env.get("PATH", "")])
+        real = find_claude() if fid == "claude" else find_codex()
+        dirs = [str(Path(real).parent)]  # the real CLI ahead of any .cmd shim on PATH
+        extra = model_args(fid, model, effort)
+        settings = None
+        shim = shim_dir(fid)
+        if shim:  # always, so a Codex worker can change model later without a restart
+            dirs.insert(0, shim)
+            # The old names too: a shim from before (still held open by a running turn) reads only those.
+            env.update(REASON_CHAT_SHIM_REAL=real, REASON_CHAT_SHIM_ARGS=json.dumps(extra),
+                       REASON_CHAT_CODEX_REAL=real, REASON_CHAT_CODEX_ARGS=json.dumps(extra))
+            if shim_current(fid):  # an older shim ignores the settings file: then changes restart the worker
+                settings = STATE / "worker-settings" / f"{name}.json"
+                write_settings(settings, extra)
+                env["REASON_CHAT_SHIM_SETTINGS"] = str(settings)
+        elif extra:
+            raise LaunchError("Could not build the model shim.", 500)
+        env["PATH"] = os.pathsep.join(dirs + [env.get("PATH", "")])
         logs = STATE / "logs"
         logs.mkdir(parents=True, exist_ok=True)
         log_path = logs / f"{name}.log"
-        args = [self.reason, "network", "serve", fid, "--name", name, "--cwd", cwd]
-        pid = spawn(args, cwd, env, NOWIN, str(log_path))
+        pid = spawn(serve_args(self.reason, fid, name, cwd, full), cwd, env, NOWIN, str(log_path))
         return {"name": name, "pid": pid, "started": started_at(pid) or "", "family": fid,
-                "model": model or None, "effort": effort or None, "cwd": cwd, "log": str(log_path)}
+                "model": model or None, "effort": effort or None, "cwd": cwd, "log": str(log_path),
+                "fullAccess": full, "settings": str(settings) if settings else None}
 
-    def open_window(self, fam, cwd, model, effort):
-        fid = fam["id"]
-        if fid == "claude":
-            args = [find_claude()] + (["--model", model] if model else []) + (["--effort", effort] if effort else [])
-        elif fid == "codex":
-            args = [find_codex()] + (["-m", model] if model else []) + \
-                   (["-c", f"model_reasoning_effort={effort}"] if effort else [])
-        else:
-            mid = f"{model}-{effort}" if model and effort else model
-            args = [find_agy()] + (["--model", mid] if mid else [])
-        spawn(args, cwd, base_env(), NEW_CONSOLE)
+    def open_window(self, fam, cwd, model, effort, full=False):
+        spawn(window_args(fam["id"], model, effort, full), cwd, base_env(), NEW_CONSOLE)
         return {"ok": True, "mode": "window"}
+
+
+def serve_args(reason, fid, name, cwd, full):
+    return [reason, "network", "serve", fid, "--name", name, "--cwd", cwd] + (["--full-access"] if full else [])
+
+
+def window_args(fid, model, effort, full):
+    """The command line for an agent in a terminal window."""
+    if fid == "claude":
+        args = [find_claude()] + (["--model", model] if model else []) + (["--effort", effort] if effort else [])
+    elif fid == "codex":
+        args = [find_codex()] + (["-m", model] if model else []) + \
+               (["-c", f"model_reasoning_effort={effort}"] if effort else [])
+    else:
+        mid = f"{model}-{effort}" if model and effort else model
+        args = [find_agy()] + (["--model", mid] if mid else [])
+    return args + (FULL_ACCESS[fid] if full else [])

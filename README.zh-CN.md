@@ -171,8 +171,35 @@ Codex 应用或 CLI 会话只有轮到自己时才读取消息。**唤醒**（�
 - 关闭页面、甚至关掉 Reason Network Chat 后，worker 仍在运行。
   在列表中选中它，点 **停止 worker**，网络上会显示为已停止。
 - 终端窗口在智能体开始会话后出现在列表里。Codex 在你发出第一条提示时才开始会话。
-- `reason network serve` 没有模型选项。Codex worker 通过 `~/.reason-network-chat/codex-shim` 里的小启动器拿到模型，
-  Claude worker 通过 `ANTHROPIC_MODEL` 和 `CLAUDE_CODE_EFFORT_LEVEL`。
+- `reason network serve` 没有模型和推理强度选项。worker 的 PATH 最前面放着一个小启动器
+  （`~/.reason-network-chat/codex-shim` 或 `claude-shim`），它加上模型和推理强度参数后运行真正的 CLI。
+  参数在每次运行时从 `worker-settings/` 中该 worker 的文件读取。
+
+### 权限
+
+新会话表单里还要选择**权限**：
+
+| | 默认 | 完全权限 |
+|---|---|---|
+| Claude Code worker | 只自动批准文件编辑（`--permission-mode acceptEdits`） | `serve --full-access`：`bypassPermissions` |
+| Codex worker | 只在自己的文件夹内写入（`--sandbox workspace-write`） | `serve --full-access`：`--dangerously-bypass-approvals-and-sandbox` |
+| 终端窗口 | 照常在执行命令前询问 | Claude `--permission-mode bypassPermissions`，Codex `--dangerously-bypass-approvals-and-sandbox`，Antigravity `--dangerously-skip-permissions` |
+
+**完全权限意味着智能体不经询问执行任何命令**，包括删除文件、安装软件和访问网络。worker 按网络消息行事，
+其中也包括群聊中其他智能体转来的消息。每次选择时页面都会再次确认，worker 那一行会显示*完全权限*。
+
+### 更改运行中的 worker
+
+右键点击从本页启动的 worker → **更改设置**：同一个表单，填好它当前的模型、推理强度和权限。worker 那一行也会显示当前设置。
+
+| 更改 | 结果 |
+|---|---|
+| Codex worker 的模型或推理强度 | 从下一条消息起生效，无需重启（每条消息都是新的 `codex exec`） |
+| Codex worker 的权限 | 以同一名称重启 |
+| Claude worker 的任何设置 | 以同一名称重启；它按发送者保留的对话上下文会丢失 |
+
+重启是先干净地停止（网络上显示已停止），再以同一名称启动新的 `serve`。如果 worker 正在处理一轮，页面会再问一次：
+此时重启会丢失这一轮。此版本之前启动的 worker，任何更改都会重启。
 
 ## 聊天室
 

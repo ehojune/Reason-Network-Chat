@@ -1,5 +1,7 @@
 """Launcher checks that need no agent installed: python -m unittest discover tests"""
+import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -19,8 +21,9 @@ def family(fid, models, worker=True, worker_models=True, default=None):
     return {"id": fid, "label": fid, "installed": True, "models": models, "efforts": ["low", "high", "xhigh"],
             "defaultModel": default, "defaultEffort": None, "note": None,
             "modes": {"worker": {"ok": worker, "why": None if worker else "no serve", "models": worker_models,
-                                 "modelsWhy": None if worker_models else "no shim"},
-                      "window": {"ok": True, "why": None, "models": True, "modelsWhy": None}}}
+                                 "modelsWhy": None if worker_models else "no shim", "fullAccess": worker},
+                      "window": {"ok": True, "why": None, "models": True, "modelsWhy": None,
+                                 "fullAccess": fid != "antigravity"}}}
 
 
 class FakeCatalog:
@@ -47,9 +50,16 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(e.exception.code, code, str(e.exception))
 
     def test_ok(self):
-        fam, mode, cwd, entry, model, effort, name = self.l.check(self.req(model="gpt-6.1-sol", effort="high"), set())
-        self.assertEqual((mode, model, effort, name), ("worker", "gpt-6.1-sol", "high", "t-codex"))
+        fam, mode, cwd, entry, model, effort, name, full = self.l.check(self.req(model="gpt-6.1-sol", effort="high"), set())
+        self.assertEqual((mode, model, effort, name, full), ("worker", "gpt-6.1-sol", "high", "t-codex", False))
         self.assertEqual(Path(cwd), Path(FOLDER).resolve())
+
+    def test_full_access(self):
+        self.assertTrue(self.l.check(self.req(fullAccess=True), set())[-1])
+        self.assertTrue(self.l.check(self.req(mode="window", fullAccess=True), set())[-1])
+        self.bad(fullAccess="yes")
+        self.bad(fullAccess=1)
+        self.bad(agent="antigravity", mode="window", fullAccess=True)  # this fake agy has no such flag
 
     def test_catalog_whitelist(self):
         self.bad(model="gpt-6.1-sol; calc")
@@ -133,13 +143,184 @@ class CatalogParsingTest(unittest.TestCase):
             self.assertFalse(launcher.is_session_var(keep, in_claude=True), keep)
 
     def test_shim_is_stable(self):
-        a = launcher.shim_dir()
-        if a is None:
+        for kind in launcher.SHIM_AGENTS:
+            a = launcher.shim_dir(kind)
+            if a is None:
+                self.skipTest("no pip launcher in this Python")
+            self.assertTrue(launcher.shim_current(kind))
+            exe = Path(a) / (f"{kind}.exe" if launcher.WIN else kind)
+            first = exe.read_bytes()
+            launcher.shim_dir(kind)
+            self.assertEqual(exe.read_bytes(), first)
+
+
+SHOW = ["-c", "import sys; print(sys.argv[1:])"]  # this Python stands in for the agent CLI
+
+
+class ShimTest(unittest.TestCase):
+    """The shim's own script, run with this Python as the "real" CLI."""
+    def run_shim(self, **env):
+        e = {k: v for k, v in os.environ.items() if not k.startswith("REASON_CHAT_")}
+        e.update(env)
+        out = subprocess.run([sys.executable, "-c", launcher.SHIM_MAIN.decode(), "tail"], env=e,
+                             capture_output=True, text=True, timeout=30)
+        return out.stdout.strip()
+
+    def test_arguments_come_from_the_settings_file(self):
+        settings = Path(tempfile.mkdtemp()) / "w.json"
+        launcher.write_settings(settings, SHOW + ["from-file"])
+        env = dict(REASON_CHAT_SHIM_REAL=sys.executable, REASON_CHAT_SHIM_SETTINGS=str(settings),
+                   REASON_CHAT_SHIM_ARGS=json.dumps(SHOW + ["from-env"]))
+        self.assertEqual(self.run_shim(**env), str(["from-file", "tail"]))
+        settings.unlink()  # unreadable file: the arguments given at start
+        self.assertEqual(self.run_shim(**env), str(["from-env", "tail"]))
+
+    def test_workers_from_before_keep_working(self):
+        self.assertEqual(self.run_shim(REASON_CHAT_CODEX_REAL=sys.executable,
+                                       REASON_CHAT_CODEX_ARGS=json.dumps(SHOW + ["old"])), str(["old", "tail"]))
+
+    def test_arguments_per_agent(self):
+        self.assertEqual(launcher.model_args("claude", "claude-opus-5-5", "high"),
+                         ["--model", "claude-opus-5-5", "--effort", "high"])
+        self.assertEqual(launcher.model_args("codex", "gpt-6.1-sol", "high"),
+                         ["-c", "model=gpt-6.1-sol", "-c", "model_reasoning_effort=high"])
+        self.assertEqual(launcher.model_args("codex", "", ""), [])
+        self.assertEqual(launcher.serve_args("reason", "codex", "w", "C:/x", True)[-1], "--full-access")
+        self.assertNotIn("--full-access", launcher.serve_args("reason", "codex", "w", "C:/x", False))
+        for fid, flag in (("claude", "bypassPermissions"), ("codex", "--dangerously-bypass-approvals-and-sandbox"),
+                          ("antigravity", "--dangerously-skip-permissions")):
+            self.assertEqual(launcher.window_args(fid, "", "", True)[-1], flag)
+            self.assertNotIn(flag, launcher.window_args(fid, "", "", False))
+
+
+class ConfigureTest(unittest.TestCase):
+    """Changing a running worker, with its processes faked."""
+    def setUp(self):
+        self.l = launcher.Launcher("reason", FakeCatalog())
+        self.restarts = []
+        self.alive = launcher.Launcher.alive
+        launcher.Launcher.alive = staticmethod(lambda w: True)
+        self.l.halt = lambda w: None
+        self.l.settle = lambda w: None
+
+        def start(fam, cwd, model, effort, name, full):
+            self.restarts.append((fam["id"], model, effort, full))
+            return {"name": name, "pid": 1, "started": "x", "family": fam["id"], "model": model or None,
+                    "effort": effort or None, "cwd": cwd, "log": "", "fullAccess": full, "settings": None}
+        self.l.start_worker = start
+        self.settings = Path(tempfile.mkdtemp()) / "c.json"
+        launcher.write_settings(self.settings, [])
+        self.l.workers = {
+            "live-codex": {"name": "live-codex", "pid": 1, "started": "x", "family": "codex", "model": None,
+                           "effort": None, "cwd": FOLDER, "log": "", "fullAccess": False,
+                           "settings": str(self.settings)},
+            "old-codex": {"name": "old-codex", "pid": 2, "started": "y", "family": "codex", "model": "gpt-6.1-sol",
+                          "effort": "high", "cwd": FOLDER, "log": "", "fullAccess": True},  # before settings files
+            "a-claude": {"name": "a-claude", "pid": 3, "started": "z", "family": "claude", "model": None,
+                         "effort": None, "cwd": FOLDER, "log": ""},
+        }
+
+    def tearDown(self):
+        launcher.Launcher.alive = self.alive
+
+    def conf(self, busy=False, **req):
+        return self.l.configure(req, busy)
+
+    def bad(self, code, busy=False, **req):
+        with self.assertRaises(launcher.LaunchError) as e:
+            self.conf(busy, **req)
+        self.assertEqual(e.exception.code, code, str(e.exception))
+
+    def test_codex_model_changes_without_a_restart(self):
+        r = self.conf(name="live-codex", model="gpt-6.1-sol", effort="high", busy=True)
+        self.assertEqual(r, {"ok": True, "restarted": False})
+        self.assertEqual(json.loads(self.settings.read_text(encoding="utf-8"))["args"],
+                         ["-c", "model=gpt-6.1-sol", "-c", "model_reasoning_effort=high"])
+        self.assertEqual(self.l.workers["live-codex"]["effort"], "high")
+        self.assertEqual(self.restarts, [])
+
+    def test_permission_change_restarts_and_waits_for_a_busy_worker(self):
+        self.bad(409, busy=True, name="live-codex", fullAccess=True)
+        self.assertEqual(self.restarts, [])
+        self.assertTrue(self.conf(busy=True, name="live-codex", fullAccess=True, force=True)["restarted"])
+        self.assertEqual(self.restarts, [("codex", "", "", True)])
+        self.assertTrue(self.l.workers["live-codex"]["fullAccess"])
+
+    def test_workers_without_a_settings_file_restart(self):
+        self.assertTrue(self.conf(name="old-codex", model="gpt-6.1-sol", effort="low", fullAccess=True)["restarted"])
+        self.assertEqual(self.restarts, [("codex", "gpt-6.1-sol", "low", True)])
+
+    def test_unchanged_and_refusals(self):
+        self.assertTrue(self.conf(name="old-codex", model="gpt-6.1-sol", effort="high", fullAccess=True)["unchanged"])
+        self.bad(404, name="someone-else")
+        self.bad(400, name="live-codex", model="gpt-6.1-sol; calc")
+        self.bad(400, name="live-codex", effort="ultra")
+        self.bad(400, name="a-claude", model="x")  # this fake Claude has no worker model choice
+        self.bad(400, name="live-codex", fullAccess="yes")
+        self.bad(400, name="live-codex", force="yes")
+        self.assertEqual(self.restarts, [])
+
+    def test_claude_restarts(self):
+        self.assertTrue(self.conf(name="a-claude", fullAccess=True)["restarted"])
+        self.assertEqual(self.restarts, [("claude", "", "", True)])
+
+    def test_during_a_restart(self):
+        seen = {}
+
+        def halt(w):  # what the rest of the server sees while the worker is down
+            seen["record kept"] = "a-claude" in self.l.workers
+            for call in (lambda: self.conf(name="a-claude", fullAccess=False), lambda: self.l.stop("a-claude")):
+                try:
+                    call()
+                except launcher.LaunchError as e:
+                    seen.setdefault("refused", []).append(e.code)
+            self.l.workers.update({f"w{i}": dict(self.l.workers["live-codex"], name=f"w{i}") for i in range(5)})
+            try:  # 3 + 5 = 8 workers, one of them restarting: no room for a ninth
+                self.l.launch({"agent": "codex", "mode": "worker", "folder": FOLDER, "name": "ninth"}, set())
+            except launcher.LaunchError as e:
+                seen["ninth"] = e.code
+            for i in range(5):
+                del self.l.workers[f"w{i}"]
+        self.l.halt = halt
+        self.assertTrue(self.conf(name="a-claude", fullAccess=True)["restarted"])
+        self.assertEqual(seen, {"record kept": True, "refused": [409, 409], "ninth": 429})
+        self.assertNotIn("a-claude", self.l.restarting)
+
+
+class StartWorkerTest(unittest.TestCase):
+    """What a worker process is given, with spawning faked."""
+    def setUp(self):
+        self.saved = launcher.spawn, launcher.find_codex, launcher.started_at, launcher.shim_current
+        self.spawned = []
+        launcher.spawn = lambda args, cwd, env, flags, log=None: self.spawned.append((args, env)) or 4242
+        launcher.find_codex = lambda: sys.executable
+        launcher.started_at = lambda pid: "t"
+        self.l = launcher.Launcher("reason", FakeCatalog())
+        if launcher.shim_dir("codex") is None:
             self.skipTest("no pip launcher in this Python")
-        exe = Path(a) / ("codex.exe" if launcher.WIN else "codex")
-        first = exe.read_bytes()
-        launcher.shim_dir()
-        self.assertEqual(exe.read_bytes(), first)
+
+    def tearDown(self):
+        launcher.spawn, launcher.find_codex, launcher.started_at, launcher.shim_current = self.saved
+
+    def test_current_shim_gets_a_settings_file(self):
+        w = self.l.start_worker(FakeCatalog().family("codex"), FOLDER, "gpt-6.1-sol", "high", "s-codex", True)
+        args, env = self.spawned[-1]
+        self.assertEqual(args[-1], "--full-access")
+        self.assertTrue(w["settings"] and env["REASON_CHAT_SHIM_SETTINGS"] == w["settings"])
+        self.assertEqual(json.loads(Path(w["settings"]).read_text(encoding="utf-8"))["args"],
+                         ["-c", "model=gpt-6.1-sol", "-c", "model_reasoning_effort=high"])
+        self.assertEqual(env["REASON_CHAT_CODEX_REAL"], env["REASON_CHAT_SHIM_REAL"])  # an older shim works too
+        self.assertTrue(env["PATH"].startswith(launcher.shim_dir("codex")))
+        self.assertTrue(launcher.Launcher.live_settings(w))
+
+    def test_an_older_shim_still_runs_but_changes_restart(self):
+        launcher.shim_current = lambda kind: False  # the old .exe is held open by a running turn
+        w = self.l.start_worker(FakeCatalog().family("codex"), FOLDER, "gpt-6.1-sol", "", "o-codex", False)
+        args, env = self.spawned[-1]
+        self.assertIsNone(w["settings"])
+        self.assertNotIn("REASON_CHAT_SHIM_SETTINGS", env)
+        self.assertEqual(json.loads(env["REASON_CHAT_CODEX_ARGS"]), ["-c", "model=gpt-6.1-sol"])
+        self.assertFalse(launcher.Launcher.live_settings(w))
 
 
 if __name__ == "__main__":

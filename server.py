@@ -39,7 +39,7 @@ ORIGINS = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 TOKEN = secrets.token_urlsafe(32)
 # Shape of /api/state and the POSTs. Bump together with API in index.html: a page that meets a server of another
 # version (the server kept running across an update) asks for a restart instead of breaking.
-API = 7
+API = 8
 BOOT = secrets.token_hex(8)  # new each start: an open page that sees another one reloads to get the new token
 NOWIN = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
 
@@ -178,6 +178,15 @@ def send_one(to, body, fyi):
     return run_reason("send", to, body, *(["--fyi"] if fyi else []), timeout=60)
 
 
+def fresh_who():
+    """`who --all --json` now, or None."""
+    rc, out, err = run_reason("who", "--all", "--json", timeout=20)
+    try:
+        return json.loads(out) if rc == 0 else None
+    except ValueError:
+        return None
+
+
 def live_names():
     with _lock:
         who = _who["data"] or {}
@@ -282,7 +291,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         if path not in ("/api/send", "/api/launch", "/api/stop", "/api/rooms/save", "/api/rooms/delete",
-                        "/api/rooms/send", "/api/prefs", "/api/wake"):
+                        "/api/rooms/send", "/api/prefs", "/api/wake", "/api/workers/configure"):
             return self.send_error(404)
         req = self.read_json()
         if req is None:
@@ -304,14 +313,18 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True, "prefs": PREFS.set(req.get("key"), req.get("value"))})
             elif path == "/api/wake":
                 # A fresh status, not the cached one: a session that turned busy must not get a second turn.
-                rc, out, err = run_reason("who", "--all", "--json", timeout=20)
-                try:
-                    who = json.loads(out) if rc == 0 else None
-                except ValueError:
-                    who = None
+                who = fresh_who()
                 if not who:
                     return self.send_json({"error": "Reason Network is not answering; try again."}, 503)
                 self.send_json(WAKER.wake(req.get("address"), who))
+            elif path == "/api/workers/configure":
+                # Fresh too: restarting a worker that just took a message would lose that turn.
+                who = fresh_who()
+                if not who:
+                    return self.send_json({"error": "Reason Network is not answering; try again."}, 503)
+                me = (who.get("person") or "") + "/" + str(req.get("name"))
+                busy = any(x.get("address") == me and x.get("status") == "busy" for x in who.get("sessions") or [])
+                self.send_json(LAUNCHER.configure(req, busy))
             else:
                 name = req.get("name")
                 if not isinstance(name, str):

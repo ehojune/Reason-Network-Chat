@@ -256,7 +256,8 @@ Reason agents only answer whoever messaged them, so this page acts as the relay:
    sends nothing. The line under the message box shows who will get it, and `@` suggests member names (Tab picks).
    Each copy carries the room lines that member has not seen yet.
 2. Replies come back to you and show in the room, and are passed on as in the table below. Each agent is told where
-   its answer goes.
+   its answer goes. A passed-on reply shows as a ↪ line with its first lines, in the room and in the 1:1 view of the
+   member who got it; click it to read it as that member received it.
 3. Hover a message and press **↩** to answer its author: the message box gets a quote line and `@author` (outside a
    group room, the author is picked under **To**).
 

@@ -14,6 +14,11 @@ A 1:1 message (sent to one session, outside the room) is not relayed, and neithe
 answer @mentions members of a group room the agent is in, you can forward it there (`forward`): it is then passed on
 as if it had answered a room message, once, within the room's limits.
 
+A worker's failure ("The Codex worker failed: …", which `serve` sends when it could not run the turn) is not an
+answer: it is passed on to nobody, and never comes back to an asker. Passing failures on once made workers whose
+own turns failed answer each other's failures, 36 hand-offs in half a minute (2026-10-24). You can send the
+original message again (`redeliver`); `settled` remembers what you sent again or put aside.
+
 Loop guards, per room (env defaults, each room can set its own or none): a chain of passed-on replies holds after
 MAX_HOPS until you continue it; at most BUDGET hand-offs per BUDGET_WINDOW seconds, the rest wait in a queue and go
 out as the window frees up. Nothing is dropped: queued hand-offs, the scan cursor and what was passed on are kept in
@@ -72,6 +77,17 @@ def dm_note(person):
             f"@mentions in it are not passed on to other members unless {person} forwards it to the room.)")
 
 
+# What `reason network serve` (checked in 0.12.10) replies when it could not run the turn: a thrown error becomes
+# "The <Codex|Claude Code|Grok> worker failed: …"; a Codex turn that failed, "Codex failed: …"; an exit with no
+# output, "<codex|grok> exited with N".
+FAILURE_RE = re.compile(r"^(The [A-Za-z][A-Za-z ]{0,30} worker failed: |Codex failed: |(codex|grok) exited with -?\d+\s*$)")
+
+
+def worker_failure(text):
+    """A worker's reply saying it could not run the turn, not an answer."""
+    return bool(FAILURE_RE.match(str(text or "").lstrip()))
+
+
 def short(addr):
     return addr.split("/", 1)[-1]
 
@@ -126,6 +142,7 @@ class Relay:
         self.queue = {}  # room -> [{reply, to, sender, body, hop, at, held, force}] in arrival order
         self.notice = {}  # room -> the last hand-off that failed for good, shown to you
         self.forwarded = {}  # message id -> {room, to, at}: 1:1 answers you forwarded into a room (once each)
+        self.settled = {}  # message id -> {how: resent|dismissed, at}: unanswered or failed messages you dealt with
         self.since = None  # scan cursor (ms): replies before it are settled
         self.load()
         now = int(time.time() * 1000)
@@ -152,11 +169,13 @@ class Relay:
                           for rid, items in (data.get("queue") or {}).items() if isinstance(items, list)}
             self.queue = {rid: items for rid, items in self.queue.items() if items}
             self.forwarded = {k: v for k, v in (data.get("forwarded") or {}).items() if isinstance(v, dict)}
+            self.settled = {k: v for k, v in (data.get("settled") or {}).items() if isinstance(v, dict)}
         except (ValueError, TypeError, AttributeError):
             pass
 
-    def save(self):
-        """Read, merge, write: records another writer added since are kept (call with self.lock held)."""
+    def save(self, unsettle=()):
+        """Read, merge, write: records another writer added since are kept (call with self.lock held). `unsettle`:
+        settled records to remove, which the merge would otherwise bring back from the file."""
         disk = self.read()
         sent = {k: v for k, v in (disk.get("sent") or {}).items() if isinstance(v, dict)} if isinstance(disk.get("sent"), dict) else {}
         sent.update(self.sent)
@@ -177,9 +196,18 @@ class Relay:
         if len(fwd) > KEEP:
             for k in sorted(fwd, key=lambda k: fwd[k].get("at", 0))[: len(fwd) - KEEP]:
                 del fwd[k]
-        self.sent, self.seen, self.forwarded = sent, seen, fwd
+        settled = {k: v for k, v in (disk.get("settled") or {}).items() if isinstance(v, dict)} \
+            if isinstance(disk.get("settled"), dict) else {}
+        settled.update(self.settled)
+        for k in unsettle:
+            settled.pop(k, None)
+        if len(settled) > KEEP:
+            for k in sorted(settled, key=lambda k: settled[k].get("at", 0))[: len(settled) - KEEP]:
+                del settled[k]
+        self.sent, self.seen, self.forwarded, self.settled = sent, seen, fwd, settled
         data = {"sent": sent, "seen": seen, "since": self.since,
-                "done": {f"{a}\t{b}": at for (a, b), at in self.done.items()}, "queue": self.queue, "forwarded": fwd}
+                "done": {f"{a}\t{b}": at for (a, b), at in self.done.items()}, "queue": self.queue, "forwarded": fwd,
+                "settled": settled}
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.path.with_suffix(".tmp")
@@ -206,6 +234,49 @@ class Relay:
             return {i: {"room": self.forwarded[i].get("room"), "to": self.forwarded[i].get("to") or []}
                     for i in ids if i in self.forwarded}
 
+    def settled_view(self, ids):
+        """For the page: {message id: {how, at}} for the listed messages you sent again or put aside."""
+        with self.lock:
+            return {i: dict(self.settled[i]) for i in ids if i in self.settled}
+
+    def claim(self, mid, how):
+        """Mark a message dealt with, unless it already is: one "Send again" per message, even from two clicks."""
+        with self.lock:
+            if mid in self.settled:
+                return False
+            self.settled[mid] = {"how": how, "at": int(time.time() * 1000)}
+            self.save()
+            return True
+
+    def unclaim(self, mid):
+        with self.lock:
+            self.settled.pop(mid, None)
+            self.save(unsettle=(mid,))
+
+    def recipient_of(self, mid):
+        """The member a relayed message went to, or None when this page did not relay it."""
+        with self.lock:
+            return (self.sent.get(mid) or {}).get("to")
+
+    def redeliver(self, mid, me):
+        """Send a relayed message again as it was (same room, member, speaker, text and hop): your "Send again" after
+        a worker failed on it or took it without answering. None when `mid` is not a message this page relayed."""
+        with self.lock:
+            rec = dict(self.sent.get(mid) or {})
+        if not rec:
+            return None
+        if rec.get("hop", 0) > 0 and worker_failure(rec.get("core")):  # a member's failure an older version passed on
+            raise RelayError("That was a worker's failure passed on, not a message to send again.", 409)
+        room = self.rooms.get(rec.get("room"))
+        if not room or not room.get("group") or rec.get("to") not in room["members"]:
+            raise RelayError("That room is gone, or the member left it.", 409)
+        with self.send_lock:
+            ok, err = self.deliver(room, rec["to"], me, rec["speaker"], rec["core"], rec.get("hop", 0),
+                                   implicit=bool(rec.get("implicit")))
+        if not ok:
+            raise RelayError(err or "The message could not be sent.", 502)
+        return rec["to"]
+
     # ---------- composing ----------
     def lines_for(self, room, member, me, skip=None, current=None):
         """Room lines the member has not seen yet, oldest first: (sent_at, label, text). Left out because they
@@ -222,7 +293,7 @@ class Relay:
         got = {(v["speaker"], v["core"]) for v in self.sent.values() if v.get("room") == room["id"] and v.get("to") == member}
         out, keys = [], set()
         for r in rows:
-            if r["id"] == skip:
+            if r["id"] == skip or (r["sender"] != me and worker_failure(r["body"])):  # your own text is kept
                 continue
             if r["sender"] not in everyone or r["recipient"] not in everyone or member in (r["sender"], r["recipient"]):
                 continue  # not room traffic, or traffic the member took part in
@@ -365,6 +436,8 @@ class Relay:
             raise RelayError("Only a group room passes answers on.")
         if msg["recipient"] != me or msg["sender"] not in room["members"]:
             raise RelayError("Only a room member's message to you can be forwarded.")
+        if worker_failure(msg["body"]):
+            raise RelayError("That is the worker's failure, not an answer: send your message again instead.")
         targets = self.mentioned(room, msg["body"], exclude=msg["sender"])
         if not targets:
             raise RelayError("It mentions no other member of this room.")
@@ -428,8 +501,8 @@ class Relay:
     def answer_targets(self, room, rec, reply):
         """Where a member's answer goes: [(member, implicit)]. The members it @mentions, and the member whose message
         it answers (`rec`'s speaker) without being named, one level only: an answer that itself came back this way
-        does not come back again. An empty answer goes nowhere."""
-        if no_answer(reply["body"]):
+        does not come back again. An empty answer, or a worker's failure, goes nowhere."""
+        if no_answer(reply["body"]) or worker_failure(reply["body"]):
             return []
         out = [(m, False) for m in self.mentioned(room, reply["body"], exclude=reply["sender"])]
         asker = rec.get("speaker")
@@ -450,7 +523,9 @@ class Relay:
                         self.save()
                         break
                     # Someone who left the room gets nothing more from it, and a reply of someone who left is not passed on.
-                    gone = [i for i in items if i["to"] not in room["members"] or i["sender"] not in room["members"]]
+                    # A failure queued by an older version is no answer either.
+                    gone = [i for i in items if i["to"] not in room["members"] or i["sender"] not in room["members"]
+                            or worker_failure(i["body"])]
                     for i in gone:
                         self.dequeue(rid, i)
                     if gone:

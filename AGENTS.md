@@ -79,7 +79,7 @@ written into the page) tells an open page that the server restarted: it reloads 
 get the new token, and a newer server also triggers a reload.
 
 - `GET /api/state` →
-  `{api, boot, team, me, sessions[], messages[], launched[], rooms[], relays{}, queued{}, notices{}, forwarded{}, relayDefaults{}, prefs{}, wakes{}, whoError, now}`.
+  `{api, boot, team, me, sessions[], messages[], launched[], rooms[], relays{}, queued{}, notices{}, forwarded{}, settled{}, relayDefaults{}, prefs{}, wakes{}, whoError, now}`.
   Each session also has `resumable` (a Codex session of yours on this computer) and `appOpen` (another Codex process,
   usually the desktop app, holds the thread's writer lock, so it cannot be woken); `wakes{}` = address →
   `{status: running|done|failed, at, error, auto, limitUntil?}` (`limitUntil`: auto-wake rests until then).
@@ -106,6 +106,7 @@ get the new token, and a newer server also triggers a reload.
   `relayDefaults` = `{hops, budget, window}` from the environment.
   `notices{}` = room → the last hand-off that still failed after 3 tries.
   `forwarded{}` = message id → `{room, to[]}` for 1:1 answers you forwarded into a group room.
+  `settled{}` = message id → `{how: resent|dismissed, at}` for your messages sent again or put aside.
 - `POST /api/send` `{to, body, fyi}` → runs `reason network send <to> <body> [--fyi]`. When `to` is a member of a
   group room, `relay.dm_note()` is added to the body (also for each member of a plain room).
   Returns `{ok, rc, out, err}`; HTTP 502 when the CLI fails.
@@ -146,6 +147,10 @@ get the new token, and a newer server also triggers a reload.
   the members of group room `id` it `@mentions`, as a hand-off with that member as speaker (hop 1, queued within the
   room's limits). Once per message (409 after that, or when it answers a relayed room message: the room passes those
   on itself); 400 when it mentions no other member or its sender is not a member. Returns `{ok, to[]}`.
+- `POST /api/resend` `{ids[], dismiss}` → for each of your messages (1–100): send it again as it was (a relayed one
+  through `Relay.redeliver`, same room, member, speaker and text; a 1:1 one with `reason network send`), or with
+  `dismiss` put it aside. Once per message (`claim`, kept in `settled` in `relay.json`; a send that fails is
+  released again). Refused per message when its recipient is offline. Returns `{ok, done, results[{id, ok, to?, err?}]}`.
 - `POST /api/rooms/flush` `{id}` → marks every queued hand-off of the room to go out now, past its budget and hop
   limit ("Send all now"); the relay loop sends them within a few seconds. Returns `{ok, released}`.
 - `POST /api/prefs` `{key, value}` → saves one whitelisted setting: `hideOffline` (bool), `favorites` (up to 100
@@ -223,8 +228,17 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
   bubble, and `lines_for` cuts it from "Earlier in the room" lines at `DM_MARK`); and **Forward to room**
   (`Relay.forward`) passes such an answer on once, recorded in `forwarded` in `relay.json`. Keep `DM_MARK` the same
   in `relay.py` and `index.html`.
+- **A worker's failure is not an answer.** When `serve` cannot run a turn it still replies (to the message, with
+  `reply_to`): "The Codex worker failed: …" for a thrown error (a `codex.cmd` first on PATH gives "contains a cmd.exe
+  special character"), "Codex failed: …" for a failed turn, "codex exited with N". `relay.FAILURE_RE` (the same in
+  `index.html`) matches these, checked against Reason 0.12.10. Such a reply is passed on to nobody, never returned to
+  an asker, dropped from the queue and from "Earlier in the room", and cannot be forwarded. On 2026-10-24 the answer
+  return passed failures between workers whose own turns failed: 36 hand-offs in 34 s, bodies growing to 18 KB.
+  The page shows a failure as a red notice and marks the message it answers *failed*; a message a `tier: "turn"`
+  session read without answering for `NOANS_MS` (10 min) while not busy is *taken without an answer*. Both offer
+  **Send again** (`/api/resend`) only while the recipient runs, and a bar per view lists them.
 - **Relay state survives restarts.** `relay.json` keeps `sent` (relayed messages), `seen`, the scan cursor `since`,
-  `done` (hand-offs already queued), `queue` and `forwarded`. A restarted server resumes from `since` (at most `RESUME_MS`, 24 h,
+  `done` (hand-offs already queued), `queue`, `forwarded` and `settled`. A restarted server resumes from `since` (at most `RESUME_MS`, 24 h,
   back), so replies that arrived while it was down are passed on once. Saves read the file and merge `sent` / `seen`
   first. Do not reset `since` to the start time: every live refresh restarts the server.
 - **Agents may also use their own Reason tools.** A Codex or Claude member with the Reason Network MCP server can

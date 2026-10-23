@@ -73,6 +73,16 @@ body.resizing { cursor: col-resize; user-select: none; }
 .relay.open .bub { cursor: auto; }
 .relay:not(.open) .bub { max-height: 3.1em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 55%, transparent); }
 #paused { color: var(--err); }
+#trouble { color: var(--err); font-size: 12px; }
+#trouble[hidden] { display: none; }
+#trouble button, .resendBtn { font: inherit; font-size: 12px; color: var(--accent); background: none;
+  border: 1px solid var(--line); border-radius: 6px; padding: 1px 8px; margin-left: 6px; cursor: pointer; }
+.resendBtn { font-size: 11px; padding: 0 6px; }
+.resendBtn:disabled { color: var(--muted); cursor: not-allowed; }
+.trouble { color: var(--err); margin-left: 6px; }
+.sysErr { align-self: center; max-width: min(720px, 90%); margin: 6px auto; padding: 4px 10px; font-size: 12px;
+  color: var(--err); border: 1px solid var(--err); border-radius: 8px; text-align: center; }
+.sysErr .errText { color: var(--muted); white-space: pre-wrap; word-break: break-word; text-align: left; margin-top: 2px; }
 #paused button { font: inherit; font-size: 12px; color: var(--accent); background: none; border: 1px solid var(--line);
   border-radius: 6px; padding: 1px 8px; margin-left: 6px; cursor: pointer; }
 #rcpt { font-size: 12px; color: var(--muted); min-height: 1em; }
@@ -210,6 +220,7 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
   <div id="tl"></div>
   <form id="comp">
     <div id="paused"></div>
+    <div id="trouble" hidden></div>
     <div id="nowake" hidden><span id="nowakeText"></span> <button type="button" id="wakeBtn" data-t="wake"></button>
       <button type="button" id="toWorker" data-t="toWorker"></button> <span id="wakeNote"></span></div>
     <div id="row">
@@ -339,7 +350,13 @@ const T = {
     memberCount: "명", groupChat: "단체 대화: 참여 세션끼리도 서로의 말을 듣는다", grp: "단체",
     groupHint: "메시지는 @로 부른 멤버에게만 갑니다(@모두: 전체, 부르지 않으면 기본 받는 멤버). 받는 멤버는 놓친 대화도 함께 받고, "
       + "답에 @이름이 있으면 그 멤버에게 넘어갑니다.\n한도를 넘은 넘겨주기는 버리지 않고 대기열에 넣어 순서대로 보냅니다. 받는 멤버마다 에이전트 한 턴씩 씁니다.",
-    passed: "의 답을 넘김 →", fold: "접기", unfold: "펼쳐서 넘긴 내용 보기", qWaiting: "대기 중 {n}건: 넘겨주기 한도에 걸려 순서대로 나갑니다.",
+    passed: "의 답을 넘김 →", fold: "접기", unfold: "펼쳐서 넘긴 내용 보기",
+    wFailed: "워커가 이 메시지를 처리하지 못했습니다. 답이 아니라서 넘기지 않습니다.",
+    tFailed: "처리 실패", tNoAnswer: "응답 없이 처리됨", resend: "다시 보내기", resent: "다시 보냄", dismissed: "덮어 둠",
+    notRunning: "워커가 꺼져 있습니다. 먼저 다시 시작하세요.",
+    troubleBar: "답을 못 받은 내 메시지 {n}건 (실패 {f} · 응답 없음 {a})", resendAll: "모두 다시 보내기", dismissAll: "덮어 두기",
+    resendAsk: "{n}건을 다시 보냅니다: {names}. 받는 워커마다 한 턴씩 씁니다.", skipOff: "꺼진 워커에 간 {k}건은 빼고 보냅니다.",
+    resendDone: "다시 보냄 {n}건", dismissAsk: "{n}건을 덮어 둡니다. 다시 보내지 않고 이 목록에서 뺍니다.", qWaiting: "대기 중 {n}건: 넘겨주기 한도에 걸려 순서대로 나갑니다.",
     qHeld: "멈춤 {n}건: @로 이어진 답이 한도를 넘었습니다. 계속하려면 누르세요.", flushAll: "지금 모두 보내기",
     flushed: "보내는 중: {n}건", groupPh: "메시지 (@이름으로 받을 멤버 지정, @모두: 전체)", handoffFailed: "넘겨주기 실패: ",
     rcptNone: "@이름으로 받을 멤버를 지정하세요 (@모두: 전체)", rcptTo: "받는 멤버: {names}", rcptAll: "받는 멤버: 모두 ({n}명)",
@@ -413,7 +430,13 @@ const T = {
     groupHint: "A message goes only to the members you @mention (@all: everyone; no mention: the default recipient). "
       + "They also get the room lines they missed, and a reply that @mentions a member is passed on to it.\n"
       + "Hand-offs over the room's limits are queued and sent in order, never dropped. Each recipient costs one agent turn.",
-    passed: "'s reply passed to", fold: "Fold", unfold: "Show what was passed on", qWaiting: "{n} waiting: over the hand-off limit, they go out in order.",
+    passed: "'s reply passed to", fold: "Fold", unfold: "Show what was passed on",
+    wFailed: "the worker could not run this message. It is not an answer, so it is not passed on.",
+    tFailed: "Failed", tNoAnswer: "Taken without an answer", resend: "Send again", resent: "Sent again", dismissed: "Put aside",
+    notRunning: "The worker is not running; start it first.",
+    troubleBar: "{n} of your messages got no answer ({f} failed · {a} taken without an answer)", resendAll: "Send all again", dismissAll: "Put aside",
+    resendAsk: "Send {n} messages again to {names}? Each spends a turn of its worker.", skipOff: "{k} to stopped workers are left out.",
+    resendDone: "Sent again: {n}", dismissAsk: "Put {n} messages aside? They are not sent again and leave this list.", qWaiting: "{n} waiting: over the hand-off limit, they go out in order.",
     qHeld: "{n} held: a chain of @mentions passed the hop limit. Press to continue.", flushAll: "Send all now",
     flushed: "Sending {n}", groupPh: "Message (@name picks who gets it, @all for everyone)", handoffFailed: "Hand-off failed: ",
     rcptNone: "Mention who should get it: @name (@all for everyone)", rcptTo: "To: {names}", rcptAll: "To: everyone ({n})",
@@ -485,7 +508,13 @@ const T = {
     memberCount: "", groupChat: "群聊：成员之间也能听到彼此", grp: "群聊",
     groupHint: "消息只发给你 @ 的成员（@all：全体；未 @ 时发给默认接收成员）。接收的成员还会收到错过的聊天内容，"
       + "回复里 @某成员 时会转给该成员。\n超过房间上限的转发不会丢弃，而是排队按顺序发出。每个接收成员消耗一次智能体回合。",
-    passed: " 的回复已转给", fold: "收起", unfold: "展开查看转发的内容", qWaiting: "{n} 条排队：超过转发上限，将按顺序发出。",
+    passed: " 的回复已转给", fold: "收起", unfold: "展开查看转发的内容",
+    wFailed: "worker 未能处理这条消息。这不是回答，所以不转发。",
+    tFailed: "处理失败", tNoAnswer: "已读但未回答", resend: "再次发送", resent: "已再次发送", dismissed: "已搁置",
+    notRunning: "worker 未运行，请先重新启动。",
+    troubleBar: "你的 {n} 条消息没有得到回答（失败 {f} · 未回答 {a}）", resendAll: "全部再次发送", dismissAll: "搁置",
+    resendAsk: "将 {n} 条消息再次发送给 {names}？每条消耗其 worker 一次回合。", skipOff: "发给已停止 worker 的 {k} 条不发送。",
+    resendDone: "已再次发送 {n} 条", dismissAsk: "搁置 {n} 条消息？它们不会再次发送，并从此列表中移除。", qWaiting: "{n} 条排队：超过转发上限，将按顺序发出。",
     qHeld: "{n} 条暂停：@ 接力超过跳数上限，点击继续。", flushAll: "全部立即发送",
     flushed: "正在发送 {n} 条", groupPh: "输入消息（用 @名称 指定接收成员，@all 发给全体）", handoffFailed: "转发失败：",
     rcptNone: "请用 @名称 指定接收成员（@all 发给全体）", rcptTo: "接收：{names}", rcptAll: "接收：全体（{n}）",
@@ -503,7 +532,7 @@ let lang = new URLSearchParams(location.search).get("lang") || store.get("reason
 if (!T[lang]) lang = "en";
 const t = k => T[lang][k];
 const TOKEN = document.querySelector('meta[name="reason-chat-token"]').content;
-const API = 13;  // must match API in server.py
+const API = 14;  // must match API in server.py
 const BOOT = document.querySelector('meta[name="reason-chat-boot"]').content;  // which server start served this page
 // Reload to pick up a restarted or newer server, at most once a minute so a broken setup cannot loop.
 function reloadOnce() {
@@ -910,6 +939,13 @@ function renderTl() {
   for (const m of ms) {
     const d = fmtD(m.sent_at);
     if (d !== day) { h += `<div class="day">${esc(d)}</div>`; day = d; }
+    // A worker's reply saying it could not run the message: a notice, not an answer. Only a reply from someone
+    // else: your own text quoting such an error stays a bubble.
+    if (!m.rel && m.reply_to && m.sender !== S.me && isFailure(m.body)) {
+      h += `<div class="sysErr" role="note">⚠ ${esc(short(m.sender))} · ${fmtT(m.sent_at)} · ${esc(t("wFailed"))}<div class="errText">${
+        esc(m.body.replace(/^The [A-Za-z ]+ worker failed: /, "").slice(0, 400))}</div></div>`;
+      continue;
+    }
     if (m.rel && m.rel.hop > 0) {
       // A member's reply passed on: a header, then the reply as the members got it (core, not the envelope with its
       // "Earlier in the room" lines). Folded to its first lines; a click opens it. In a member's 1:1 view this is the
@@ -920,7 +956,8 @@ function renderTl() {
         <button type="button" class="relayHead" aria-expanded="${open}" title="${esc(t(open ? "fold" : "unfold"))}">${open ? "▾" : "▸"} ↪ ${
           esc(short(m.rel.speaker))}${esc(t("passed"))} ${esc(m.to.map(short).join(", "))} · ${fmtT(m.sent_at)}</button>
         <div class="bub ${raw ? "raw" : "md"}"${open ? "" : " inert"}>${raw ? esc(m.body) : html}</div>${
-          open && rich ? `<div class="foot"><button type="button" class="rawBtn" data-id="${esc(m.id)}">${t(raw ? "formatted" : "raw")}</button></div>` : ""}</div>`;
+          (open && rich) || troubleHtml(m) ? `<div class="foot">${open && rich ? `<button type="button" class="rawBtn" data-id="${
+            esc(m.id)}">${t(raw ? "formatted" : "raw")}</button>` : ""}${troubleHtml(m)}</div>` : ""}</div>`;
       continue;
     }
     const me = m.sender === S.me;
@@ -941,7 +978,7 @@ function renderTl() {
         → ${m.to.map(a => `${agentTag(a, null, true)}<span class="who" data-a="${esc(a)}">${esc(short(a))}</span>`).join(", ")} · ${fmtT(m.sent_at)}${
         me ? "" : `<button type="button" class="replyBtn" data-id="${esc(m.id)}" title="${esc(t("reply"))}" aria-label="${esc(t("reply"))}">↩</button>`}</div>
       <div class="bub ${raw ? "raw" : "md"}">${q ? `<div class="quote">↪ ${esc(short(qr ? qr.speaker : q.sender))}: ${esc((qr ? qr.core : q.body).split(DM_MARK)[0].slice(0, 160))}</div>` : ""}${raw ? esc(text) : html}</div>
-      <div class="foot">${esc(flags)}${rich ? `<button type="button" class="rawBtn" data-id="${esc(m.id)}">${t(raw ? "formatted" : "raw")}</button>` : ""}${fwdHtml(m)}</div></div>`;
+      <div class="foot">${esc(flags)}${me ? troubleHtml(m) : ""}${rich ? `<button type="button" class="rawBtn" data-id="${esc(m.id)}">${t(raw ? "formatted" : "raw")}</button>` : ""}${fwdHtml(m)}</div></div>`;
   }
   tl.innerHTML = h;
   if (atBottom || tl.dataset.first !== "0") { tl.scrollTop = tl.scrollHeight; tl.dataset.first = "0"; }
@@ -953,6 +990,88 @@ function fwdHtml(m) {
   const rooms = forwardRooms(m);
   return rooms.map(r => `<button type="button" class="fwdBtn" data-id="${esc(m.id)}" data-room="${esc(r.id)}">${
     esc(t("forward"))}${rooms.length > 1 ? ` # ${esc(r.name)}` : ""}</button>`).join("");
+}
+
+// A worker's failure (`serve` could not run the turn) is not an answer; = relay.FAILURE_RE.
+const FAILURE_RE = /^(The [A-Za-z][A-Za-z ]{0,30} worker failed: |Codex failed: |(codex|grok) exited with -?\d+\s*$)/;
+const isFailure = b => FAILURE_RE.test(String(b || "").trimStart());
+const NOANS_MS = 10 * 60 * 1000, RECENT_MS = 24 * 3600 * 1000;
+// Your messages to a worker (`serve`, tier "turn") from the last day that came to nothing: only failures came back
+// ("failed"), or it took the message (read) and nothing came back for NOANS_MS while it is not working ("noanswer").
+// Each can be sent again once, or put aside (`settled`).
+function troubles() {
+  const replies = {}, ses = new Map(S.sessions.map(x => [x.address, x])), out = new Map();
+  for (const x of S.messages) if (x.reply_to) (replies[x.reply_to] ||= []).push(x);
+  for (const m of S.messages) {
+    if (m.sender !== S.me || S.now - m.sent_at > RECENT_MS || (S.settled || {})[m.id]) continue;
+    const rel = S.relays[m.id];
+    if (rel && rel.hop > 0 && isFailure(rel.core)) continue;  // a member's failure an older version passed on
+    const s = ses.get(m.recipient);
+    if (!s || s.tier !== "turn") continue;
+    const rs = (replies[m.id] || []).filter(x => x.sender === m.recipient);
+    if (rs.length) {
+      if (rs.every(x => isFailure(x.body))) out.set(m.id, {kind: "failed", to: m.recipient});
+    } else if (m.read_at && S.now - m.read_at > NOANS_MS && (s.status !== "busy" || s.stale)) {
+      out.set(m.id, {kind: "noanswer", to: m.recipient});
+    }
+  }
+  return out;
+}
+const running = a => !["offline", "stale", "gone"].includes(reach(S.sessions.find(x => x.address === a) || {live: false}));
+let TR = new Map();  // troubles() of the last render
+// The ones in the current view: a room's relayed messages, one session's messages, or all.
+function troublesInView() {
+  const room = roomOf(sel);
+  return [...TR.entries()].filter(([id, v]) => room ? (S.relays[id] || {}).room === room.id || room.members.includes(v.to) && !S.relays[id]
+    : sel ? v.to === sel : true);
+}
+function renderTrouble() {
+  const list = troublesInView(), f = list.filter(([, v]) => v.kind === "failed").length;
+  $("#trouble").hidden = !list.length;
+  if (!list.length) return;
+  $("#trouble").innerHTML = esc(t("troubleBar").replace("{n}", list.length).replace("{f}", f).replace("{a}", list.length - f)) +
+    `<button type="button" class="resendAll">${esc(t("resendAll"))}</button><button type="button" class="dismissAll">${esc(t("dismissAll"))}</button>`;
+}
+async function resend(ids, dismiss) {
+  let done = 0;
+  const bad = [];
+  try {
+    for (let i = 0; i < ids.length; i += 100) {  // the server takes up to 100 per request
+      const j = await post("/api/resend", {ids: ids.slice(i, i + 100), dismiss: !!dismiss}).catch(err => ({done: 0, results: [{ok: false, err: err.message}]}));
+      done += j.done;
+      bad.push(...j.results.filter(r => !r.ok));
+    }
+    say((dismiss ? t("dismissed") + " " + done : t("resendDone").replace("{n}", done)) +
+      (bad.length ? ` · ${t("failed")}${bad.map(r => r.err).join("; ")}` : ""), !!bad.length);
+  } finally {
+    lastSig = "";  // redraw even if nothing changed, so a button disabled by the click comes back
+    poll();
+  }
+}
+$("#trouble").addEventListener("click", e => {
+  const list = troublesInView();
+  if (e.target.closest(".dismissAll")) {
+    if (confirm(t("dismissAsk").replace("{n}", list.length))) resend(list.map(([id]) => id), true);
+    return;
+  }
+  if (!e.target.closest(".resendAll")) return;
+  const go = list.filter(([, v]) => running(v.to)), off = list.length - go.length;
+  if (!go.length) { say(t("notRunning"), true); return; }
+  const names = [...new Set(go.map(([, v]) => short(v.to)))].join(", ");
+  if (confirm(t("resendAsk").replace("{n}", go.length).replace("{names}", names) + (off ? "\n" + t("skipOff").replace("{k}", off) : "")))
+    resend(go.map(([id]) => id));
+});
+
+// Under your message: what came of each copy that got no answer, with "Send again" (off while its worker is stopped).
+function troubleHtml(m) {
+  return m.all.map(x => {
+    const v = TR.get(x.id), st = (S.settled || {})[x.id], who = m.all.length > 1 ? ` ${short(x.recipient)}` : "";
+    if (st) return `<span class="trouble" style="color:var(--muted)">${esc(t(st.how === "resent" ? "resent" : "dismissed"))}${esc(who)} · ${fmtT(st.at)}</span>`;
+    if (!v) return "";
+    const ok = running(x.recipient);
+    return `<span class="trouble">⚠ ${esc(t(v.kind === "failed" ? "tFailed" : "tNoAnswer"))}${esc(who)}</span><button type="button" class="resendBtn" data-id="${
+      esc(x.id)}"${ok ? "" : ` disabled title="${esc(t("notRunning"))}"`}>${esc(t("resend"))}</button>`;
+  }).join("");
 }
 
 function render(force) {
@@ -979,8 +1098,10 @@ function render(force) {
   $("#wakeHead").hidden = !(ss && ss.resumable && !ss.appOpen && sleepy(ss) && unreadTo(sel));
   $("#wakeHead").disabled = !!(ss && waking(sel));
   $("#wakeHead").textContent = t(ss && waking(sel) ? "waking" : "wake");
+  TR = troubles();
+  renderTrouble();
   const sig = JSON.stringify([S.sessions, S.launched, S.rooms, S.queued, S.notices, S.prefs, S.wakes, Object.keys(S.relays).length,
-    S.messages.map(m => [m.id, m.read_at, m.held]), sel, lang]);
+    S.messages.map(m => [m.id, m.read_at, m.held]), sel, lang, S.settled, [...TR.keys()]]);
   if (!force && sig === lastSig) return;
   lastSig = sig;
   renderSide(); renderTo(); renderTl(); renderNoWake();
@@ -1124,6 +1245,8 @@ $("#replyX").addEventListener("click", () => { endReply(true); renderRcpt(); });
 $("#tl").addEventListener("click", e => {
   const rb = e.target.closest(".replyBtn");
   if (rb) return startReply(rb.dataset.id);
+  const sb = e.target.closest(".resendBtn");
+  if (sb) { sb.disabled = true; return resend([sb.dataset.id]); }
   const fb = e.target.closest(".fwdBtn");
   if (fb) return forwardToRoom(fb.dataset.id, fb.dataset.room);
   const r = e.target.closest(".rawBtn");

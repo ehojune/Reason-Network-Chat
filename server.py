@@ -42,7 +42,7 @@ ORIGINS = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 TOKEN = secrets.token_urlsafe(32)
 # Shape of /api/state and the POSTs. Bump together with API in index.html: a page that meets a server of another
 # version (the server kept running across an update) asks for a restart instead of breaking.
-API = 13
+API = 14
 BOOT = secrets.token_hex(8)  # new each start: an open page that sees another one reloads to get the new token
 NOWIN = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
 
@@ -179,8 +179,9 @@ def state():
         s["appOpen"] = bool(s["resumable"]) and WAKER.is_held(Waker.resumable(known[s["name"]]["key"]), s["address"])
     relays, queued, notices = RELAY.view({m["id"] for m in msgs})
     forwarded = RELAY.forwarded_view({m["id"] for m in msgs})
+    settled = RELAY.settled_view({m["id"] for m in msgs})
     return {"api": API, "boot": BOOT, "team": who.get("team"), "me": me, "sessions": sessions, "messages": msgs,
-            "launched": LAUNCHER.list(), "foreignWorkers": LAUNCHER.list_foreign(), "workerRecords": list(records.values()), "rooms": ROOMS.list(), "relays": relays, "queued": queued, "notices": notices, "forwarded": forwarded,
+            "launched": LAUNCHER.list(), "foreignWorkers": LAUNCHER.list_foreign(), "workerRecords": list(records.values()), "rooms": ROOMS.list(), "relays": relays, "queued": queued, "notices": notices, "forwarded": forwarded, "settled": settled,
             "relayDefaults": {"hops": relay_mod.MAX_HOPS, "budget": relay_mod.BUDGET, "window": relay_mod.BUDGET_WINDOW},
             "prefs": PREFS.get(), "wakes": WAKER.view(),
             "whoError": who_err, "now": int(time.time() * 1000)}
@@ -330,7 +331,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         if path not in ("/api/send", "/api/launch", "/api/stop", "/api/rooms/save", "/api/rooms/delete",
-                        "/api/rooms/send", "/api/rooms/flush", "/api/rooms/forward", "/api/prefs", "/api/wake", "/api/workers/configure", "/api/workers/adopt",
+                        "/api/rooms/send", "/api/rooms/flush", "/api/rooms/forward", "/api/resend", "/api/prefs", "/api/wake", "/api/workers/configure", "/api/workers/adopt",
                         "/api/workers/restart"):
             return self.send_error(404)
         req = self.read_json()
@@ -355,6 +356,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True})
             elif path == "/api/rooms/send":
                 self.send_room(req)
+            elif path == "/api/resend":
+                self.resend(req)
             elif path == "/api/rooms/forward":
                 self.forward_room(req)
             elif path == "/api/rooms/flush":
@@ -417,6 +420,56 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "to and body are required"}, 400)
         rc, out, err = send_one(to, body + dm_note(to), fyi)
         self.send_json({"ok": rc == 0, "rc": rc, "out": out, "err": err}, 200 if rc == 0 else 502)
+
+    def resend(self, req):
+        """Your messages a worker failed on or took without answering: send each again as it was (a relayed one
+        through the relay, a 1:1 one as is), or put them aside with `dismiss`. Once per message."""
+        ids, dismiss = req.get("ids"), req.get("dismiss", False)
+        if not (isinstance(ids, list) and 0 < len(ids) <= 100 and all(isinstance(i, str) and i for i in ids)
+                and isinstance(dismiss, bool)):
+            return self.send_json({"error": "ids must be 1-100 message ids, dismiss a boolean"}, 400)
+        me = my_address()
+        if not me:
+            return self.send_json({"error": "Reason Network is not answering yet; try again."}, 503)
+        with _lock:
+            status = {s["address"]: s.get("status") for s in (_who["data"] or {}).get("sessions") or []}
+        results = []
+        for mid in dict.fromkeys(ids):
+            if dismiss:
+                ok = RELAY.claim(mid, "dismissed")
+                results.append({"id": mid, "ok": ok, **({} if ok else {"err": "Already dealt with."})})
+                continue
+            to = RELAY.recipient_of(mid)
+            row = None
+            if not to:
+                rows = db_rows("select sender, recipient, body from messages where id = ?", (mid,))
+                if not rows or rows[0]["sender"] != me:
+                    results.append({"id": mid, "ok": False, "err": "Only your own messages can be sent again."})
+                    continue
+                row, to = rows[0], rows[0]["recipient"]
+            # Nothing would take it: offline, or a worker of ours the network still shows although its process is gone.
+            if status.get(to) in (None, "offline") or (to.split("/", 1)[0] == me.split("/", 1)[0]
+                                                       and to.split("/", 1)[-1] in LAUNCHER.stale_names()):
+                results.append({"id": mid, "ok": False, "to": to, "err": f"{to} is not running; start it first."})
+                continue
+            if not RELAY.claim(mid, "resent"):
+                results.append({"id": mid, "ok": False, "to": to, "err": "Already sent again or put aside."})
+                continue
+            try:
+                if row is None:
+                    RELAY.redeliver(mid, me)
+                else:
+                    rc, out, err = send_one(to, row["body"], False)
+                    if rc != 0:
+                        raise RelayError(err or out or f"rc={rc}", 502)
+                results.append({"id": mid, "ok": True, "to": to})
+            except Exception as e:  # RelayError, or the CLI missing or timing out: it did not go out
+                RELAY.unclaim(mid)  # so it can be sent again later
+                results.append({"id": mid, "ok": False, "to": to,
+                                "err": str(e) if isinstance(e, RelayError) else f"{type(e).__name__}: {e}"})
+        done = sum(r["ok"] for r in results)
+        self.send_json({"ok": done > 0, "done": done, "results": results,
+                        **({} if done else {"error": "; ".join(r["err"] for r in results)})}, 200 if done else 409)
 
     def forward_room(self, req):
         """A member's answer to your 1:1 message, passed into a group room it @mentions members of."""

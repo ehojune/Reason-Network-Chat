@@ -65,7 +65,13 @@ body.resizing { cursor: col-resize; user-select: none; }
 .mem label.gone { opacity: .55; }
 .chk { flex-direction: row; align-items: center; gap: 8px; color: var(--text); font-size: 13px; }
 .tag.grp { background: none; color: var(--accent); border: 1px solid var(--accent); font-weight: 600; }
-.relay { text-align: center; color: var(--muted); font-size: 12px; margin: 4px 0; }
+.relay { display: flex; flex-direction: column; align-items: center; color: var(--muted); font-size: 12px; margin: 6px 0; }
+.relayHead { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
+.relayHead:hover { color: var(--text); }
+.relay .bub { font-size: 13px; color: var(--text); background: var(--hover); border-style: dashed; margin-top: 3px;
+  cursor: pointer; }
+.relay.open .bub { cursor: auto; }
+.relay:not(.open) .bub { max-height: 3.1em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 55%, transparent); }
 #paused { color: var(--err); }
 #paused button { font: inherit; font-size: 12px; color: var(--accent); background: none; border: 1px solid var(--line);
   border-radius: 6px; padding: 1px 8px; margin-left: 6px; cursor: pointer; }
@@ -333,7 +339,7 @@ const T = {
     memberCount: "명", groupChat: "단체 대화: 참여 세션끼리도 서로의 말을 듣는다", grp: "단체",
     groupHint: "메시지는 @로 부른 멤버에게만 갑니다(@모두: 전체, 부르지 않으면 기본 받는 멤버). 받는 멤버는 놓친 대화도 함께 받고, "
       + "답에 @이름이 있으면 그 멤버에게 넘어갑니다.\n한도를 넘은 넘겨주기는 버리지 않고 대기열에 넣어 순서대로 보냅니다. 받는 멤버마다 에이전트 한 턴씩 씁니다.",
-    passed: "의 답을 넘김 →", qWaiting: "대기 중 {n}건: 넘겨주기 한도에 걸려 순서대로 나갑니다.",
+    passed: "의 답을 넘김 →", fold: "접기", unfold: "펼쳐서 넘긴 내용 보기", qWaiting: "대기 중 {n}건: 넘겨주기 한도에 걸려 순서대로 나갑니다.",
     qHeld: "멈춤 {n}건: @로 이어진 답이 한도를 넘었습니다. 계속하려면 누르세요.", flushAll: "지금 모두 보내기",
     flushed: "보내는 중: {n}건", groupPh: "메시지 (@이름으로 받을 멤버 지정, @모두: 전체)", handoffFailed: "넘겨주기 실패: ",
     rcptNone: "@이름으로 받을 멤버를 지정하세요 (@모두: 전체)", rcptTo: "받는 멤버: {names}", rcptAll: "받는 멤버: 모두 ({n}명)",
@@ -407,7 +413,7 @@ const T = {
     groupHint: "A message goes only to the members you @mention (@all: everyone; no mention: the default recipient). "
       + "They also get the room lines they missed, and a reply that @mentions a member is passed on to it.\n"
       + "Hand-offs over the room's limits are queued and sent in order, never dropped. Each recipient costs one agent turn.",
-    passed: "'s reply passed to", qWaiting: "{n} waiting: over the hand-off limit, they go out in order.",
+    passed: "'s reply passed to", fold: "Fold", unfold: "Show what was passed on", qWaiting: "{n} waiting: over the hand-off limit, they go out in order.",
     qHeld: "{n} held: a chain of @mentions passed the hop limit. Press to continue.", flushAll: "Send all now",
     flushed: "Sending {n}", groupPh: "Message (@name picks who gets it, @all for everyone)", handoffFailed: "Hand-off failed: ",
     rcptNone: "Mention who should get it: @name (@all for everyone)", rcptTo: "To: {names}", rcptAll: "To: everyone ({n})",
@@ -479,7 +485,7 @@ const T = {
     memberCount: "", groupChat: "群聊：成员之间也能听到彼此", grp: "群聊",
     groupHint: "消息只发给你 @ 的成员（@all：全体；未 @ 时发给默认接收成员）。接收的成员还会收到错过的聊天内容，"
       + "回复里 @某成员 时会转给该成员。\n超过房间上限的转发不会丢弃，而是排队按顺序发出。每个接收成员消耗一次智能体回合。",
-    passed: " 的回复已转给", qWaiting: "{n} 条排队：超过转发上限，将按顺序发出。",
+    passed: " 的回复已转给", fold: "收起", unfold: "展开查看转发的内容", qWaiting: "{n} 条排队：超过转发上限，将按顺序发出。",
     qHeld: "{n} 条暂停：@ 接力超过跳数上限，点击继续。", flushAll: "全部立即发送",
     flushed: "正在发送 {n} 条", groupPh: "输入消息（用 @名称 指定接收成员，@all 发给全体）", handoffFailed: "转发失败：",
     rcptNone: "请用 @名称 指定接收成员（@all 发给全体）", rcptTo: "接收：{names}", rcptAll: "接收：全体（{n}）",
@@ -880,6 +886,7 @@ function mdList(items) {
 }
 const md = text => mdBlocks(esc(String(text ?? "").replace(/\u0000/g, "")).split("\n"));
 const rawIds = new Set();  // messages shown as written (the per-bubble toggle)
+const openRelays = new Set();  // passed-on replies unfolded by a click
 
 function renderTl() {
   const tl = $("#tl");
@@ -903,8 +910,17 @@ function renderTl() {
   for (const m of ms) {
     const d = fmtD(m.sent_at);
     if (d !== day) { h += `<div class="day">${esc(d)}</div>`; day = d; }
-    if (m.rel && m.rel.hop > 0) {  // a member's reply passed on to the members it @mentioned
-      h += `<div class="relay">↪ ${esc(short(m.rel.speaker))}${esc(t("passed"))} ${esc(m.to.map(short).join(", "))} · ${fmtT(m.sent_at)}</div>`;
+    if (m.rel && m.rel.hop > 0) {
+      // A member's reply passed on: a header, then the reply as the members got it (core, not the envelope with its
+      // "Earlier in the room" lines). Folded to its first lines; a click opens it. In a member's 1:1 view this is the
+      // only place the hand-off's text shows.
+      const open = openRelays.has(m.id), html = md(m.body), rich = /<(?!\/?(p|br)>)/.test(html);
+      const raw = !rich || rawIds.has(m.id);
+      h += `<div class="relay ${open ? "open" : ""}" data-id="${esc(m.id)}">
+        <button type="button" class="relayHead" aria-expanded="${open}" title="${esc(t(open ? "fold" : "unfold"))}">${open ? "▾" : "▸"} ↪ ${
+          esc(short(m.rel.speaker))}${esc(t("passed"))} ${esc(m.to.map(short).join(", "))} · ${fmtT(m.sent_at)}</button>
+        <div class="bub ${raw ? "raw" : "md"}"${open ? "" : " inert"}>${raw ? esc(m.body) : html}</div>${
+          open && rich ? `<div class="foot"><button type="button" class="rawBtn" data-id="${esc(m.id)}">${t(raw ? "formatted" : "raw")}</button></div>` : ""}</div>`;
       continue;
     }
     const me = m.sender === S.me;
@@ -1111,9 +1127,26 @@ $("#tl").addEventListener("click", e => {
   const fb = e.target.closest(".fwdBtn");
   if (fb) return forwardToRoom(fb.dataset.id, fb.dataset.room);
   const r = e.target.closest(".rawBtn");
-  if (r) { rawIds.has(r.dataset.id) ? rawIds.delete(r.dataset.id) : rawIds.add(r.dataset.id); render(true); return; }
-  const x = e.target.closest(".who"); if (x) pick(x.dataset.a);
+  if (r) {
+    rawIds.has(r.dataset.id) ? rawIds.delete(r.dataset.id) : rawIds.add(r.dataset.id);
+    return rerenderKeeping(`.rawBtn[data-id="${CSS.escape(r.dataset.id)}"]`);
+  }
+  const x = e.target.closest(".who"); if (x) return pick(x.dataset.a);
+  // A passed-on reply: the header folds and unfolds it; a folded one also opens from its text (not from a link).
+  const v = e.target.closest(".relay");
+  if (v && !e.target.closest("a") && (e.target.closest(".relayHead") || !v.classList.contains("open"))) {
+    openRelays.has(v.dataset.id) ? openRelays.delete(v.dataset.id) : openRelays.add(v.dataset.id);
+    rerenderKeeping(`.relay[data-id="${CSS.escape(v.dataset.id)}"]`);
+  }
 });
+// Re-render after a fold or format toggle with the clicked item kept where it was on screen: at the bottom of the
+// timeline, following the bottom would otherwise jump past the start of what was just unfolded.
+function rerenderKeeping(selector) {
+  const tl = $("#tl"), el = tl.querySelector(selector), top = el ? el.getBoundingClientRect().top : null;
+  render(true);
+  const now = tl.querySelector(selector);
+  if (top !== null && now) tl.scrollTop += now.getBoundingClientRect().top - top;
+}
 $("#list").addEventListener("keydown", e => {
   const x = e.target.closest(".ses"); if (!x) return;
   if (e.key === "Enter") pick(x.dataset.a);

@@ -44,6 +44,18 @@ class EndpointTest(unittest.TestCase):
 
 
 class RegistryTest(unittest.TestCase):
+    def wait_ready(self, children, paths):
+        import time
+        deadline = time.monotonic() + 30
+        while not all(p.exists() for p in paths):
+            for child in children:
+                if child.poll() is not None:
+                    out, err = child.communicate(timeout=1)
+                    self.fail(f"Writer exited before readiness ({child.returncode}): " + err.decode('utf-8', 'replace'))
+            if time.monotonic() > deadline:
+                self.fail(f"Writers did not become ready; process states: {[p.poll() for p in children]}")
+            time.sleep(.02)
+
     def test_two_servers_reserve_the_same_worker_name_before_spawning(self):
         with tempfile.TemporaryDirectory() as home:
             code = '''import json,sys,time
@@ -70,11 +82,7 @@ Path(sys.argv[1],sys.argv[2]+'.result').write_text(str(result))
 '''
             children=[subprocess.Popen([sys.executable,'-c',code,home,pid],cwd=Path(__file__).resolve().parents[1],stdout=subprocess.PIPE,stderr=subprocess.PIPE) for pid in ('101','202')]
             try:
-                import time
-                deadline=time.monotonic()+10
-                while not all(Path(home,p+'.ready').exists() for p in ('101','202')):
-                    if time.monotonic()>deadline: self.fail('launch writers did not start')
-                    time.sleep(.02)
+                self.wait_ready(children, [Path(home,p+'.ready') for p in ('101','202')])
                 Path(home,'go').touch()
                 for p in children:
                     out,err=p.communicate(timeout=20)
@@ -103,11 +111,7 @@ Path(sys.argv[1],sys.argv[2]+'.result').write_text(json.dumps(won))
 '''
             children=[subprocess.Popen([sys.executable,'-c',code,home,name],cwd=Path(__file__).resolve().parents[1],stdout=subprocess.PIPE,stderr=subprocess.PIPE) for name in ('one','two')]
             try:
-                import time
-                deadline=time.monotonic()+10
-                while not all(Path(home,n+'.ready').exists() for n in ('one','two')):
-                    if time.monotonic()>deadline: self.fail('relay writers did not start')
-                    time.sleep(.02)
+                self.wait_ready(children, [Path(home,n+'.ready') for n in ('one','two')])
                 Path(home,'go').touch()
                 for p in children:
                     out,err=p.communicate(timeout=20)
@@ -141,11 +145,7 @@ for i in range(20):
 '''
             children = [subprocess.Popen([sys.executable, '-c', code, home, name, pid], cwd=Path(__file__).resolve().parents[1], stdout=subprocess.PIPE, stderr=subprocess.PIPE) for name,pid in [('one','11'),('two','22')]]
             try:
-                import time
-                deadline=time.monotonic()+10
-                while not all(Path(home,n+'.ready').exists() for n in ('one','two')):
-                    if time.monotonic() > deadline: self.fail('registry writers did not start')
-                    time.sleep(.02)
+                self.wait_ready(children, [Path(home,n+'.ready') for n in ('one','two')])
                 Path(home,'go').touch()
                 for p in children:
                     out,err=p.communicate(timeout=20)

@@ -54,12 +54,12 @@ class Relay:
         self.send_lock = threading.Lock()  # one delivery batch at a time (your message, or a scan)
         self.sent = {}  # message id -> {room, hop, core, speaker, to, at}
         self.seen = {}  # "room|member" -> sent_at of the newest room line that member has been given
-        self.done = set()  # (reply id, member): passed on, or given up
+        self.done = {}  # (reply id, member) -> reply sent_at: passed on, or given up
         self.tries = collections.Counter()  # (reply id, member) -> failed attempts
         self.passes = collections.defaultdict(collections.deque)  # room -> times a reply was passed on
         self.paused = {}  # room -> "budget" | "hops"
         self.notice = {}  # room -> the last hand-off that failed for good, shown to you
-        self.since = int(time.time() * 1000)  # replies from before this server started are not passed on
+        self.since = int(time.time() * 1000)  # scan cursor; replies from before this server started are not passed on
         self.load()
 
     # ---------- what this page sent, kept so its bubbles still show the plain message after a restart ----------
@@ -119,7 +119,7 @@ class Relay:
             if (who, text) in keys:
                 continue  # one line for a message sent to several members
             keys.add((who, text))
-            out.append((r["sent_at"], who, text))
+            out.append((r["sent_at"], who, clip(text, LINE_CHARS)))
             if len(out) >= CONTEXT_LINES:
                 break
         out.reverse()
@@ -135,7 +135,7 @@ class Relay:
                 "Answer here only. To ask a member, write @name in your reply and the room passes it on; "
                 "do not message members with Reason Network tools. Mention nobody when no answer is needed.")
         lines = self.lines_for(room, member, me, skip, (speaker, core))
-        earlier = ("\nEarlier in the room:\n" + "\n".join(f"{who}: {clip(t, LINE_CHARS)}" for _, who, t in lines)) \
+        earlier = ("\nEarlier in the room:\n" + "\n".join(f"{who}: {t}" for _, who, t in lines)) \
             if lines else ""
         return f"{head}{earlier}\n---\n{label(speaker, me, room)}: {core}", (lines[-1][0] if lines else 0)
 
@@ -195,41 +195,50 @@ class Relay:
                 if not self.sent:
                     return
                 rows = self.db_rows("select id, sender, reply_to, body, sent_at from messages where recipient = ?"
-                                    " and reply_to is not null and sent_at > ? order by sent_at", (me, self.since))
-                todo = []
+                                    " and reply_to is not null and sent_at >= ? order by sent_at", (me, self.since))
+                todo, keys = [], []  # keys: (sent_at, that reply's hand-offs) in reply order, for the cursor
                 for r in rows:
                     rec = self.sent.get(r["reply_to"])
                     room = self.rooms.get(rec["room"]) if rec else None
-                    if not room or not room.get("group") or r["sender"] not in room["members"]:
-                        continue
-                    todo += [(room, r, rec, m) for m in self.mentioned(room, r["body"], exclude=r["sender"])
-                             if (r["id"], m) not in self.done]
+                    targets = [] if not room or not room.get("group") or r["sender"] not in room["members"] \
+                        else self.mentioned(room, r["body"], exclude=r["sender"])
+                    keys.append((r["sent_at"], [(r["id"], m) for m in targets]))
+                    todo += [(room, r, rec, m) for m in targets if (r["id"], m) not in self.done]
             for room, r, rec, m in todo:
                 key, rid = (r["id"], m), room["id"]
                 with self.lock:
                     if rec["hop"] >= MAX_HOPS:
                         self.paused[rid] = "hops"  # shown to you; your next message clears it
-                        self.done.add(key)
+                        self.done[key] = r["sent_at"]
                         continue
                     q, now = self.passes[rid], time.time()
                     while q and now - q[0] > BUDGET_WINDOW:
                         q.popleft()
                     if self.paused.get(rid) == "budget" or len(q) >= BUDGET:
                         self.paused[rid] = "budget"
-                        self.done.add(key)  # dropped, not queued: your next message starts afresh
+                        self.done[key] = r["sent_at"]  # dropped, not queued: your next message starts afresh
                         continue
                     q.append(now)
                 ok, err = self.deliver(room, m, me, r["sender"], r["body"], rec["hop"] + 1, skip=r["id"])
                 with self.lock:
                     if ok:
-                        self.done.add(key)
+                        self.done[key] = r["sent_at"]
                         continue
                     if now in q:
                         q.remove(now)  # a failed send does not use up the budget
                     self.tries[key] += 1
                     if self.tries[key] >= RETRIES:
-                        self.done.add(key)
+                        self.done[key] = r["sent_at"]
                         self.notice[rid] = f"{short(r['sender'])} → {short(m)}: {err}"
+            # Move the cursor past every reply whose hand-offs are all settled; a hand-off still being retried
+            # holds it there. Records behind the cursor are no longer needed.
+            with self.lock:
+                for at, ks in keys:
+                    if any(k not in self.done for k in ks):
+                        break
+                    self.since = max(self.since, at)
+                self.done = {k: at for k, at in self.done.items() if at >= self.since}
+                self.tries = collections.Counter({k: n for k, n in self.tries.items() if k not in self.done})
 
     def run(self, me_fn, every=2):
         while True:

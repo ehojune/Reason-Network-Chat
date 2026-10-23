@@ -149,6 +149,29 @@ class RelayTest(unittest.TestCase):
         _, _, notice = self.r.view(set())
         self.assertIn("network down", notice[self.room["id"]])
 
+    def test_long_missed_reply_is_clipped_not_dropped(self):
+        self.r.post(self.room, ME, "q1")
+        self.insert(A, ME, "x" * 5000, reply_to=self.last_id_to(A))
+        self.r.post(self.room, ME, "@b-claude your view?")
+        self.assertIn("a-codex: " + "x" * (relay.LINE_CHARS - 1) + "…", self.sent_to(B)[-1])
+
+    def test_scan_cursor_moves_and_waits_for_retries(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        quiet = self.insert(A, ME, "done, no mention", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        at = self.rows("select sent_at from messages where id = ?", (quiet,))[0]["sent_at"]
+        self.assertEqual(self.r.since, at)
+        self.r.post(self.room, ME, "@a-codex again")
+        self.insert(A, ME, "@b-claude look", reply_to=self.last_id_to(A))
+        real = self.r.send_one
+        self.r.send_one = lambda to, body, fyi: (1, "", "down")
+        self.r.scan(ME)
+        self.assertEqual(self.r.since, at)  # a pending retry holds the cursor
+        self.r.send_one = real
+        self.r.scan(ME)
+        self.assertGreater(self.r.since, at)
+        self.assertEqual(self.r.done and min(self.r.done.values()) >= self.r.since, True)
+
     def test_plain_rooms_are_not_relayed(self):
         self.room["group"] = False
         self.r.post(self.room, ME, "@a-codex hi")

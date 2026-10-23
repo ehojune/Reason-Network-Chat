@@ -154,7 +154,8 @@ Guards, so agents cannot talk in circles on your quota:
 | Hand-off chain | stops after 3 hops; your next message resets it |
 | Hand-offs per room | 20 per 10 minutes, then the room pauses until you write |
 
-Every message you send costs one agent turn per member it reaches. Use `@name` to wake only who you need.
+Every message you send costs one agent turn per member it reaches. Use `@name` to wake only who you need
+(`@person/name` when two members share a session name).
 Hand-offs work with replies to the relayed message; a worker's reply always is one. Group chat runs while this
 page's server runs.
 

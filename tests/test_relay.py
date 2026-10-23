@@ -87,6 +87,20 @@ class RelayTest(unittest.TestCase):
         self.assertEqual(body.count("please check retry.ts"), 1, body)
         self.assertTrue(body.endswith("---\na-codex: @b-claude please check retry.ts"))
 
+    def test_broadcast_is_not_repeated_as_context(self):
+        self.r.post(self.room, ME, "hello all")
+        for m in (A, B, C):
+            self.assertEqual(self.sent_to(m)[-1].count("hello all"), 1, m)
+
+    def test_same_session_name_needs_the_full_address(self):
+        twin = "kim/a-codex"
+        self.room["members"] = [A, twin, B]
+        self.r.post(self.room, ME, "@a-codex who am I?")  # ambiguous: wakes nobody in particular, so everyone
+        self.assertEqual(len(self.sent_to(twin)), 1)
+        self.r.post(self.room, ME, "@kim/a-codex only you")
+        self.assertEqual((len(self.sent_to(A)), len(self.sent_to(twin)), len(self.sent_to(B))), (1, 2, 1))
+        self.assertIn("Members: pat (person), pat/a-codex, kim/a-codex, b-claude.", self.sent_to(twin)[-1])
+
     def test_no_mention_no_wake_and_self_mention_ignored(self):
         self.r.post(self.room, ME, "@a-codex hi")
         self.insert(A, ME, "done, nothing for @a-codex or @pat", reply_to=self.last_id_to(A))

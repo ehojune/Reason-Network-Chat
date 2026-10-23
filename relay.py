@@ -23,16 +23,22 @@ CONTEXT_CHARS = 4000
 LINE_CHARS = 600
 KEEP = 3000  # records of sent messages kept on disk
 RETRIES = 3  # attempts at one hand-off before it is reported as failed
-MENTION_RE = re.compile(r"(?<![\w@/])@([A-Za-z0-9._-]+)")
+MENTION_RE = re.compile(r"(?<![\w@/])@([A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)?)")  # @name or @person/name
 
 
 def short(addr):
     return addr.split("/", 1)[-1]
 
 
-def label(addr, me):
-    """How a speaker is named inside the room: the person by name, sessions by session name."""
-    return addr.split("/", 1)[0] if addr == me else short(addr)
+def handle(addr, room):
+    """A member's name in the room: its session name, or person/name when two members share that name."""
+    name = short(addr)
+    return name if sum(short(m) == name for m in room["members"]) == 1 else addr
+
+
+def label(addr, me, room):
+    """How a speaker is named inside the room: the person by name, members by their handle."""
+    return addr.split("/", 1)[0] if addr == me else handle(addr, room)
 
 
 def clip(text, n):
@@ -84,9 +90,10 @@ class Relay:
             return rel, dict(self.paused), dict(self.notice)
 
     # ---------- composing ----------
-    def lines_for(self, room, member, me, skip=None):
-        """Room lines the member has not seen yet, oldest first: (sent_at, label, text). `skip`: the reply being
-        handed off, which follows as the message itself."""
+    def lines_for(self, room, member, me, skip=None, current=None):
+        """Room lines the member has not seen yet, oldest first: (sent_at, label, text). Left out because they
+        follow as the message itself: `skip`, the reply being handed off, and `current`, the (speaker, text) being
+        sent, whose copies to other members may already be in the database."""
         everyone = set(room["members"]) | {me}
         since = self.seen.get(f'{room["id"]}|{member}', 0)
         rows = self.db_rows("select id, sender, recipient, body, sent_at from messages where sent_at > ?"
@@ -100,14 +107,15 @@ class Relay:
             if r["sender"] not in everyone or r["recipient"] not in everyone or member in (r["sender"], r["recipient"]):
                 continue  # not room traffic, or traffic the member took part in
             rec = self.sent.get(r["id"])
-            if rec and (rec.get("hop", 0) > 0 or (rec["speaker"], rec["core"]) in got):
-                continue  # a passed-on reply (the reply itself is a line), or this member's copy went to it
+            if rec and (rec.get("hop", 0) > 0 or (rec["speaker"], rec["core"]) in got
+                        or (rec["speaker"], rec["core"]) == current):
+                continue  # a passed-on reply (the reply itself is a line), a copy this member got, or this message
             if rec:
-                who, text = label(rec["speaker"], me), rec["core"]
+                who, text = label(rec["speaker"], me, room), rec["core"]
             elif r["sender"] == me:
-                who, text = f'{label(me, me)} → {short(r["recipient"])}', r["body"]
+                who, text = f'{label(me, me, room)} → {handle(r["recipient"], room)}', r["body"]
             else:
-                who, text = short(r["sender"]), r["body"]
+                who, text = handle(r["sender"], room), r["body"]
             if (who, text) in keys:
                 continue  # one line for a message sent to several members
             keys.add((who, text))
@@ -121,15 +129,15 @@ class Relay:
 
     def compose(self, room, member, me, speaker, core, skip=None):
         """The message for one member, and the timestamp of the newest room line it includes (0 if none)."""
-        names = ", ".join([f"{label(me, me)} (person)"] + [short(m) for m in room["members"]])
+        names = ", ".join([f"{label(me, me, room)} (person)"] + [handle(m, room) for m in room["members"]])
         head = (f'[Group room "{room["name"]}", relayed by Reason Network Chat]\n'
                 f"Members: {names}. Everyone in the room reads your reply.\n"
                 "Answer here only. To ask a member, write @name in your reply and the room passes it on; "
                 "do not message members with Reason Network tools. Mention nobody when no answer is needed.")
-        lines = self.lines_for(room, member, me, skip)
+        lines = self.lines_for(room, member, me, skip, (speaker, core))
         earlier = ("\nEarlier in the room:\n" + "\n".join(f"{who}: {clip(t, LINE_CHARS)}" for _, who, t in lines)) \
             if lines else ""
-        return f"{head}{earlier}\n---\n{label(speaker, me)}: {core}", (lines[-1][0] if lines else 0)
+        return f"{head}{earlier}\n---\n{label(speaker, me, room)}: {core}", (lines[-1][0] if lines else 0)
 
     def deliver(self, room, member, me, speaker, core, hop, skip=None):
         """Compose and send one relayed message. The CLI runs without self.lock, so polling never waits on it."""
@@ -152,7 +160,9 @@ class Relay:
 
     @staticmethod
     def mentioned(room, text, exclude=None):
-        names = {short(m).lower(): m for m in room["members"]}
+        """Members named with @handle or @person/name. A session name two members share matches neither."""
+        names = {handle(m, room).lower(): m for m in room["members"]}
+        names.update({m.lower(): m for m in room["members"]})
         found = []
         for n in MENTION_RE.findall(text):
             m = names.get(n.lower().rstrip("."))

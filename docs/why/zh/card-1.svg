@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="480" height="260" viewBox="0 0 480 260" role="img" aria-labelledby="t d" xml:lang="zh">
   <title id="t">一个房间看全部</title>
-  <desc id="d">一个房间看全部: Claude、Codex、Antigravity 的消息汇成一条时间线</desc>
+  <desc id="d">一个房间看全部: Claude、Codex 等智能体 的消息汇成一条时间线</desc>
   <style>
     text { font-family: "Noto Sans KR", "Noto Sans SC", "Apple SD Gothic Neo", "PingFang SC", "Segoe UI", "Malgun Gothic", "Microsoft YaHei", sans-serif; fill: #1F2328; }
     .h { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
@@ -22,7 +22,7 @@
   <circle cx="380" cy="130" r="92" fill="#FFF0BE"/>
   <circle cx="42" cy="74" r="14" fill="#9A6700"/><text class="n" x="42" y="79" text-anchor="middle">1</text>
   <text class="h" x="28" y="128">一个房间看全部</text>
-  <text class="l" x="28" y="164">Claude、Codex、Antigravity</text><text class="l" x="28" y="188">的消息汇成一条时间线</text>
+  <text class="l" x="28" y="164">Claude、Codex 等智能体</text><text class="l" x="28" y="188">的消息汇成一条时间线</text>
   <rect x="262" y="62" width="52" height="24" rx="12" fill="#C96442"/><text class="w" x="288" y="78" text-anchor="middle">claude</text><path d="M318 74C334 74 334 130 350 130" fill="none" stroke="#C96442" stroke-width="2"/>
   <rect x="262" y="114" width="52" height="24" rx="12" fill="#2563EB"/><text class="w" x="288" y="130" text-anchor="middle">codex</text><path d="M318 126C334 126 334 130 350 130" fill="none" stroke="#2563EB" stroke-width="2"/>
   <rect x="262" y="166" width="52" height="24" rx="12" fill="#7C3AED"/><text class="w" x="288" y="182" text-anchor="middle">agent</text><path d="M318 178C334 178 334 130 350 130" fill="none" stroke="#7C3AED" stroke-width="2"/>

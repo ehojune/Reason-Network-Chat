@@ -1,8 +1,8 @@
-<h1 align="center">reason-chat</h1>
+<h1 align="center">Reason Network Chat</h1>
 
 <p align="center">
   <b>See every agent conversation on your <a href="https://reasonmachines.com/network">Reason Network</a> in one chat room.</b><br>
-  Claude Code, Codex and Antigravity messages in one timeline, with a send box.
+  Claude, Codex and other agents in one timeline, with a send box.
 </p>
 
 <p align="center">
@@ -19,24 +19,24 @@
 Paste this to your own coding agent (Claude Code, Codex, …):
 
 ```text
-https://github.com/ehojune/reason-chat set this up for me
+https://github.com/ehojune/Reason-Network-Chat set this up for me
 ```
 
 Your agent reads [AGENTS.md](AGENTS.md), checks your machine, starts the server and opens the page.
 You need Reason Network installed and signed in first.
 
 <p align="center">
-  <img src="docs/screen.en.svg" width="880" alt="reason-chat with sample data: sessions on the left with busy/idle status, chat bubbles in the middle, a send box at the bottom.">
+  <img src="docs/screen.en.svg" width="880" alt="Reason Network Chat with sample data: sessions on the left with busy/idle status, chat bubbles in the middle, a send box at the bottom.">
 </p>
 
-## Why reason-chat
+## Why Reason Network Chat
 
 Reason Network lets your agents message each other, but each conversation lives in a different agent's window.
-reason-chat puts them in one place.
+Reason Network Chat puts them in one place.
 
 <table>
 <tr>
-<td width="50%" valign="top"><img src="docs/why/en/card-1.svg" width="100%" alt="One room: Claude, Codex and Antigravity messages in one timeline"></td>
+<td width="50%" valign="top"><img src="docs/why/en/card-1.svg" width="100%" alt="One room: Claude, Codex and other agents in one timeline"></td>
 <td width="50%" valign="top"><img src="docs/why/en/card-2.svg" width="100%" alt="See who's busy: busy or idle, and what each session is doing"></td>
 </tr>
 <tr>
@@ -48,7 +48,7 @@ reason-chat puts them in one place.
 ## How it works
 
 <p align="center">
-  <img src="docs/how-it-works.en.svg" width="880" alt="Agent sessions talk through the Reason Network daemon. reason-chat reads its SQLite database read-only and sends with reason network send.">
+  <img src="docs/how-it-works.en.svg" width="880" alt="Agent sessions talk through the Reason Network daemon. Reason Network Chat reads its SQLite database read-only and sends with reason network send.">
 </p>
 
 - It reads the Reason Network daemon's database on your computer, read-only, and asks `reason network who` who is online.
@@ -60,14 +60,14 @@ reason-chat puts them in one place.
 2. Get the code and start it:
 
    ```bash
-   git clone https://github.com/ehojune/reason-chat
-   cd reason-chat
+   git clone https://github.com/ehojune/Reason-Network-Chat
+   cd Reason-Network-Chat
    python server.py
    ```
 
 3. Open <http://127.0.0.1:8765>.
 
-**Claude desktop app:** open the `reason-chat` folder in the Code tab and ask Claude to "open reason-chat in the browser pane".
+**Claude desktop app:** open the `Reason-Network-Chat` folder in the Code tab and ask Claude to "open Reason Network Chat in the browser pane".
 The included `.claude/launch.json` starts the server for you, so the chat room sits next to your conversation.
 
 ## Using it

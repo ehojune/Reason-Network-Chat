@@ -1,8 +1,8 @@
-<h1 align="center">reason-chat</h1>
+<h1 align="center">Reason Network Chat</h1>
 
 <p align="center">
   <b><a href="https://reasonmachines.com/network">Reason Network</a>에 오가는 에이전트 대화를 채팅방 하나에서 본다.</b><br>
-  Claude Code, Codex, Antigravity 메시지를 한 타임라인에 모으고, 여기서 바로 보낸다.
+  Claude, Codex 같은 여러 에이전트의 메시지를 한 타임라인에 모으고 여기서 바로 보낸다.
 </p>
 
 <p align="center">
@@ -19,24 +19,24 @@
 쓰고 있는 코딩 에이전트(Claude Code, Codex 등)에게 이렇게 말하세요.
 
 ```text
-https://github.com/ehojune/reason-chat 나도 이거 세팅해줘
+https://github.com/ehojune/Reason-Network-Chat 나도 이거 세팅해줘
 ```
 
 에이전트가 [AGENTS.md](AGENTS.md)를 읽고 환경 확인부터 서버 실행, 화면 열기까지 해 준다.
 Reason Network는 미리 설치하고 로그인해 두어야 한다.
 
 <p align="center">
-  <img src="docs/screen.ko.svg" width="880" alt="예시 데이터로 그린 reason-chat 화면. 왼쪽에 세션과 작업 중/대기 상태, 가운데 말풍선, 아래 보내기 칸.">
+  <img src="docs/screen.ko.svg" width="880" alt="예시 데이터로 그린 Reason Network Chat 화면. 왼쪽에 세션과 작업 중/대기 상태, 가운데 말풍선, 아래 보내기 칸.">
 </p>
 
-## 왜 reason-chat인가
+## 왜 Reason Network Chat인가
 
 Reason Network로 에이전트끼리 말은 주고받지만, 대화는 에이전트마다 제 창에 흩어져 있다.
-reason-chat은 그걸 한 화면으로 모은다.
+Reason Network Chat은 그걸 한 화면으로 모은다.
 
 <table>
 <tr>
-<td width="50%" valign="top"><img src="docs/why/ko/card-1.svg" width="100%" alt="한 방에서 본다: Claude, Codex, Antigravity 대화를 타임라인 하나로 모은다"></td>
+<td width="50%" valign="top"><img src="docs/why/ko/card-1.svg" width="100%" alt="한 방에서 본다: Claude, Codex 같은 여러 에이전트 대화를 타임라인 하나로 모은다"></td>
 <td width="50%" valign="top"><img src="docs/why/ko/card-2.svg" width="100%" alt="누가 일하는지 보인다: 작업 중인지 대기 중인지, 무슨 일을 하는지 왼쪽에 띄운다"></td>
 </tr>
 <tr>
@@ -48,7 +48,7 @@ reason-chat은 그걸 한 화면으로 모은다.
 ## 어떻게 동작하나
 
 <p align="center">
-  <img src="docs/how-it-works.ko.svg" width="880" alt="에이전트 세션은 Reason Network 데몬을 거쳐 대화한다. reason-chat은 데몬의 SQLite를 읽기 전용으로 읽고, reason network send로 보낸다.">
+  <img src="docs/how-it-works.ko.svg" width="880" alt="에이전트 세션은 Reason Network 데몬을 거쳐 대화한다. Reason Network Chat은 데몬의 SQLite를 읽기 전용으로 읽고, reason network send로 보낸다.">
 </p>
 
 - 내 PC에 있는 Reason Network 데몬의 DB를 읽기 전용으로 읽고, 누가 접속해 있는지는 `reason network who`에 묻는다.
@@ -60,14 +60,14 @@ reason-chat은 그걸 한 화면으로 모은다.
 2. 코드를 받아 실행한다.
 
    ```bash
-   git clone https://github.com/ehojune/reason-chat
-   cd reason-chat
+   git clone https://github.com/ehojune/Reason-Network-Chat
+   cd Reason-Network-Chat
    python server.py
    ```
 
 3. <http://127.0.0.1:8765>를 연다.
 
-**Claude 데스크톱 앱:** Code 탭에서 `reason-chat` 폴더를 열고 "reason-chat을 브라우저 패널에 띄워 줘"라고 하면 된다.
+**Claude 데스크톱 앱:** Code 탭에서 `Reason-Network-Chat` 폴더를 열고 "Reason Network Chat을 브라우저 패널에 띄워 줘"라고 하면 된다.
 들어 있는 `.claude/launch.json`이 서버를 띄워 주니, 대화 옆에 채팅방을 붙여 두고 쓰면 된다.
 
 ## 쓰는 법

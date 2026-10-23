@@ -190,6 +190,12 @@ class Relay:
             self.queue = {rid: items for rid, items in self.queue.items() if items}
             self.forwarded = {k: v for k, v in (data.get("forwarded") or {}).items() if isinstance(v, dict)}
             self.settled = {k: v for k, v in (data.get("settled") or {}).items() if isinstance(v, dict)}
+            self.passes = collections.defaultdict(collections.deque,
+                {rid: collections.deque(t for t in times if isinstance(t, (int, float)) and time.time() - t < BUDGET_WINDOW)
+                 for rid, times in (data.get("passes") or {}).items() if isinstance(times, list)})
+            self.tries = collections.Counter({tuple(k.split("\t", 1)): int(v)
+                for k, v in (data.get("tries") or {}).items() if "\t" in k})
+            self.notice = {k: str(v) for k, v in (data.get("notice") or {}).items()}
         except (ValueError, TypeError, AttributeError):
             pass
 
@@ -247,7 +253,8 @@ class Relay:
         revision = uuid.uuid4().hex
         data = {"revision": revision, "sent": sent, "seen": seen, "since": self.since,
                 "done": {f"{a}\t{b}": at for (a, b), at in self.done.items()}, "queue": self.queue, "forwarded": fwd,
-                "settled": settled}
+                "settled": settled, "passes": {rid: list(times) for rid, times in self.passes.items()},
+                "tries": {f"{a}\t{b}": count for (a, b), count in self.tries.items()}, "notice": self.notice}
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             atomic_json(self.path, data)
@@ -463,7 +470,7 @@ class Relay:
         row = rows[0]
         self.sent[row["id"]] = {"room": room["id"], "hop": item["hop"], "core": item["body"],
                                 "speaker": item["sender"], "to": item["to"], "at": row["sent_at"],
-                                "implicit": bool(item.get("implicit"))}
+                                "implicit": bool(item.get("implicit")), "post": item.get("post")}
         key = f'{room["id"]}|{item["to"]}'
         self.seen[key] = max(self.seen.get(key, 0), flight.get("newest", 0), item.get("at", 0))
         self.dequeue(room["id"], item)
@@ -533,6 +540,7 @@ class Relay:
             return len(items)
 
     # ---------- a member starts a message ----------
+    @serialized
     def post_as(self, room, member, body, via):
         """A member's own message to the room (rnc.py room send), queued like a member's answer: to the members it
         @mentions (an @all is not honoured: only you message everyone), hop 1, within the room's limits; answers come
@@ -689,6 +697,7 @@ class Relay:
         with self.lock:
             if ok:
                 self.tries.pop(key, None)
+                self.save()
                 return True
             if item.get("flight"):
                 return False  # ambiguous, not a failed attempt: retain it until reconciled or explicitly retried
@@ -699,6 +708,8 @@ class Relay:
                 self.dequeue(rid, item)
                 self.notice[rid] = f"{short(item['sender'])} → {short(item['to'])}: {err}"
                 self.tries.pop(key, None)
+                self.save()
+            else:
                 self.save()
             return False
 

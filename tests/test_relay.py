@@ -628,7 +628,11 @@ class RelayTest(unittest.TestCase):
         self.insert(A, ME, "@b-claude @c-codex look", reply_to=self.last_id_to(A))
         self.r.scan(ME)
         self.assertEqual(self.queued(), {"waiting": 1, "held": 0})
-        again = self.new_relay()  # a fresh window after the restart
+        again = self.new_relay()  # a restart must not reset the room's rate window
+        again.scan(ME)
+        self.assertEqual(len(self.sent_to(B)) + len(self.sent_to(C)), 1)
+        self.assertTrue(again.queue[self.room["id"]])
+        again.flush(self.room["id"])
         again.scan(ME)
         self.assertEqual(len(self.sent_to(B)) + len(self.sent_to(C)), 2)
 

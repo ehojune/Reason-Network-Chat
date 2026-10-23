@@ -9,6 +9,7 @@ Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（
 
 | 时间 | 变更 | 主要内容 |
 |---|---|---|
+| 18:42 | [#9](https://github.com/ehojune/Reason-Network-Chat/pull/9) | 遇到更新前启动的服务器时，页面不再因脚本错误崩溃，而是提示“请重启服务器”；缺少字段也不会出错。 |
 | 17:40 | [#5](https://github.com/ehojune/Reason-Network-Chat/pull/5) | 群聊：群聊聊天室的成员彼此都能听到；回复中写 `@名称` 会转给该成员，并有接力和频率上限，避免智能体无休止地互聊。 |
 | 17:40 | [#4](https://github.com/ehojune/Reason-Network-Chat/pull/4) | **+ 聊天室** 把几个会话放在一起：只显示它们的消息，发一次即送达全体成员。 |
 | 17:40 | [#3](https://github.com/ehojune/Reason-Network-Chat/pull/3) | **+ 新会话** 可在页面上启动智能体：选文件夹和智能体后，从该智能体自己的列表里选模型和强度，以网络 worker 或终端窗口运行。不会被消息唤醒的 Codex 会话会被标出，并可一键在同一文件夹启动 worker。 |

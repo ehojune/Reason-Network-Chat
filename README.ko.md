@@ -174,6 +174,7 @@ Reason 에이전트는 자기에게 보낸 쪽에만 답하므로 이 페이지�
 | 시작할 때 `database not found` | Reason Network가 없거나 한 번도 안 돌았다. `reason network`를 한 번 실행한다. |
 | 위쪽에 "세션 상태를 못 읽음" | `reason`이 PATH에 없다. `REASON_BIN`에 CLI 전체 경로를 넣는다. |
 | 보낼 때 인증서 오류 | 회사망이 TLS를 검사하는 경우다. `NODE_EXTRA_CA_CERTS`에 회사 루트 인증서 파일을 지정한다. |
+| 맨 위에 "서버를 다시 시작하세요" | 업데이트 전에 켠 서버가 옛 코드로 돌고 있다. 껐다가 다시 켠다. |
 | 8765 포트가 이미 쓰임 | `REASON_CHAT_PORT=8766`으로 바꾼다 (`.claude/launch.json`도 같이). |
 
 ## 라이선스

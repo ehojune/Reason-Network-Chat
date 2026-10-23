@@ -170,6 +170,7 @@ Reason 智能体只回复给它发消息的一方，所以由本页面充当中�
 | 启动时提示 `database not found` | 没装 Reason Network 或从未运行过。先运行一次 `reason network`。 |
 | 顶部显示“无法读取会话” | `reason` 不在 PATH 里。把 CLI 的完整路径设到 `REASON_BIN`。 |
 | 发送时报证书错误 | 公司网络在做 TLS 检查。把 `NODE_EXTRA_CA_CERTS` 设为公司根证书文件。 |
+| 顶部显示“请重启服务器” | 服务器在更新前启动，仍在运行旧代码。停止后重新启动。 |
 | 8765 端口被占用 | 设置 `REASON_CHAT_PORT=8766`（`.claude/launch.json` 里也一起改）。 |
 
 ## 许可证

@@ -175,6 +175,7 @@ page's server runs.
 | `database not found` on start | Reason Network is not installed or never ran. Run `reason network` once. |
 | "Can't read sessions" at the top | `reason` is not on PATH. Set `REASON_BIN` to the full path of the CLI. |
 | Send fails with a certificate error | Your network inspects TLS. Set `NODE_EXTRA_CA_CERTS` to your company root CA file. |
+| "Restart the server" at the top | The server was started before an update and still runs the old code. Stop it and start it again. |
 | Port 8765 is taken | Set `REASON_CHAT_PORT=8766` (also change it in `.claude/launch.json`). |
 
 ## License

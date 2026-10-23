@@ -69,6 +69,11 @@ Every endpoint accepts only `Host: 127.0.0.1:<port>` or `localhost:<port>` (DNS-
 Every POST also needs `Origin: http://127.0.0.1:<port>` (or `localhost`), `Content-Type: application/json`, and
 `X-Reason-Chat-Token` equal to the token in the page's `<meta name="reason-chat-token">` (new each server start).
 Responses forbid framing. To act from a script, use the `reason` CLI instead.
+`/api/state` carries `api` (`API` in `server.py`). Bump it together with `API` in `index.html` whenever a field or
+endpoint changes shape: the page reads `index.html` fresh from disk, so a server started before an update meets a
+newer page; on a mismatch the page asks for a restart instead of failing. `boot` (random per server start, also
+written into the page) tells an open page that the server restarted: it reloads itself (at most once a minute) to
+get the new token, and a newer server also triggers a reload.
 
 - `GET /api/state` →
   `{team, me, sessions[], messages[], launched[], rooms[], relays{}, paused{}, notices{}, whoError, now}`.

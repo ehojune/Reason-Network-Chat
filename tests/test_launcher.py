@@ -418,6 +418,26 @@ class DiscoverTest(unittest.TestCase):
             self.l.configure({"name": "no-cwd", "fullAccess": True}, False)
         self.assertEqual(e.exception.code, 409)
 
+    def test_a_log_written_since_the_process_started_proves_it_is_ours(self):
+        import os as _os
+        launcher.ledger_path().write_text("", encoding="utf-8")
+        log = launcher.STATE / "logs" / "their-codex.log"
+        saved = launcher.started_at
+        if launcher.WIN:
+            ft = int(1700000000 * 1e7) + 116444736000000000  # process started at epoch 1_700_000_000
+            launcher.started_at = lambda pid: str(ft)
+        else:
+            launcher.started_at = lambda pid: "Tue Nov 14 22:13:20 2023"
+        try:
+            _os.utime(log, (1600000000, 1600000000))  # written long before: an older worker's log
+            self.l.discover(self.procs)
+            self.assertNotIn("their-codex", self.l.workers)
+            _os.utime(log, None)  # written now, after the process started
+            self.l.discover(self.procs)
+            self.assertIn("their-codex", self.l.workers)
+        finally:
+            launcher.started_at = saved
+
     def test_save_keeps_live_workers_another_writer_recorded(self):
         self.l.workers = {"mine": {"name": "mine", "pid": 1, "started": "t1", "family": "codex"}}
         launcher.STATE.mkdir(parents=True, exist_ok=True)
@@ -429,6 +449,103 @@ class DiscoverTest(unittest.TestCase):
             self.l.save()
         names = sorted(w["name"] for w in json.loads(self.l.reg.read_text(encoding="utf-8")))
         self.assertEqual(names, ["mine", "theirs"])
+
+
+class RecordsTest(unittest.TestCase):
+    """Settings kept for workers that died (a reboot), and starting them again."""
+    def setUp(self):
+        self.saved = launcher.started_at, launcher.Launcher.__dict__["alive"]
+        launcher.started_at = lambda pid: f"t{pid}"
+        launcher.Launcher.alive = staticmethod(lambda w: w["pid"] < 1000)  # pids from 1000 on are dead
+        launcher.STATE.mkdir(parents=True, exist_ok=True)
+        for f in ("workers.json", "worker-records.json", "spawned.jsonl"):
+            (launcher.STATE / f).write_text("[]" if f == "workers.json" else "", encoding="utf-8")
+        (launcher.STATE / "workers.json").write_text(json.dumps([
+            {"name": "lead-codex", "pid": 5, "started": "t5", "family": "codex", "model": "gpt-6.1-sol",
+             "effort": "high", "cwd": FOLDER, "fullAccess": True}]), encoding="utf-8")
+        self.l = launcher.Launcher("reason", FakeCatalog())
+        self.started = []
+
+        def start(fam, cwd, model, effort, name, full):
+            self.started.append((name, fam["id"], cwd, model, effort, full))
+            return {"name": name, "pid": 7, "started": "t7", "family": fam["id"], "model": model or None,
+                    "effort": effort or None, "cwd": cwd, "log": "", "fullAccess": full, "settings": None}
+        self.l.start_worker = start
+        self.l.settle = lambda w: None
+
+    def tearDown(self):
+        launcher.started_at, launcher.Launcher.alive = self.saved
+
+    def test_seeded_from_the_running_registry(self):
+        r = self.l.records["lead-codex"]
+        self.assertEqual((r["family"], r["model"], r["effort"], r["fullAccess"]), ("codex", "gpt-6.1-sol", "high", True))
+        self.assertIn((5, "t5"), launcher.spawned_here())  # and its start proof
+        self.assertIn("lead-codex", json.loads((launcher.STATE / "worker-records.json").read_text(encoding="utf-8")))
+
+    def test_record_outlives_the_process_and_starts_it_again(self):
+        self.l.workers["lead-codex"]["pid"] = 1001  # the reboot
+        with self.l.lock:
+            self.l.save()  # on disk too, as after a real reboot
+        self.l.list()  # prunes the registry
+        self.assertNotIn("lead-codex", self.l.workers)
+        self.assertIn("lead-codex", [r["name"] for r in self.l.list_records()])
+        out = self.l.restart(["lead-codex"], blocked=set())
+        self.assertEqual(out["results"], [{"name": "lead-codex", "ok": True}])
+        self.assertEqual(self.started, [("lead-codex", "codex", FOLDER, "gpt-6.1-sol", "high", True)])
+
+    def test_restart_refuses(self):
+        res = lambda names, online=set(): self.l.restart(names, online)["results"]
+        self.assertEqual(res(["lead-codex"])[0]["code"], 409)  # still running
+        self.l.workers["lead-codex"]["pid"] = 1001
+        self.assertEqual(res(["lead-codex"], {"lead-codex"})[0]["code"], 409)  # running here, or online elsewhere
+        self.assertEqual(res(["nobody"])[0]["code"], 404)
+        self.l.records["moved"] = dict(self.l.records["lead-codex"], name="moved", cwd=str(Path(FOLDER) / "gone"))
+        self.assertIn("folder", res(["moved"])[0]["error"])
+        self.l.records["odd"] = dict(self.l.records["lead-codex"], name="odd", model="no-such-model")
+        self.assertIn("catalog", res(["odd"])[0]["error"])
+        with self.assertRaises(launcher.LaunchError):
+            self.l.restart("lead-codex", set())
+        self.assertEqual(self.started, [])
+        self.assertTrue(self.l.restart(["nobody"], set())["ok"])  # handled; the failure is in results
+
+    def test_stale_name(self):
+        who = {"person": "pat", "machine": "box", "sessions": [
+            {"address": "pat/lead-codex", "status": "idle", "machine": "box"}]}
+        self.assertTrue(self.l.stale("lead-codex", who, procs=[]))  # shown idle, but no serve process here
+        running = [(9, 1, "reason.exe", ["reason", "network", "serve", "codex", "--name", "lead-codex", "--cwd", FOLDER])]
+        self.assertFalse(self.l.stale("lead-codex", who, procs=running))
+        elsewhere = {"person": "pat", "machine": "box", "sessions": [
+            {"address": "pat/lead-codex", "status": "idle", "machine": "laptop"}]}
+        self.assertFalse(self.l.stale("lead-codex", elsewhere, procs=[]))
+        self.assertFalse(self.l.stale("not-ours", who, procs=[]))  # neither a record nor a log here
+        saved = launcher.list_processes
+        launcher.list_processes = lambda: None  # processes cannot be read (e.g. macOS): never free the name
+        try:
+            self.assertFalse(self.l.stale("lead-codex", who))
+            self.assertIsNone(self.l.running_serve_names())
+        finally:
+            launcher.list_processes = saved
+
+    def test_newer_record_wins(self):
+        path = launcher.STATE / "worker-records.json"
+        newer = dict(self.l.records["lead-codex"], effort="low", started=10**15)
+        path.write_text(json.dumps({"lead-codex": newer}), encoding="utf-8")  # another server's later change
+        with self.l.lock:
+            self.l.save_records()
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["lead-codex"]["effort"], "low")
+
+    def test_inner_sessions(self):
+        workers = {"claude-worker1", "lead-codex"}
+        self.assertEqual(launcher.inner_of("claude-worker1-claude", workers), "claude-worker1")
+        self.assertEqual(launcher.inner_of("claude-worker1-claude-3", workers), "claude-worker1")
+        self.assertIsNone(launcher.inner_of("claude-worker1", workers))
+        self.assertIsNone(launcher.inner_of("someone-else-claude", workers))
+        self.assertIsNone(launcher.inner_of("helper-claude", {"helper", "helper-claude"}))  # a worker of its own
+
+    def test_live_change_is_remembered(self):
+        self.l.workers["lead-codex"]["settings"] = str(Path(tempfile.mkdtemp()) / "s.json")
+        self.l.configure({"name": "lead-codex", "model": "gpt-6.1-sol", "effort": "low", "fullAccess": True}, False)
+        self.assertEqual(self.l.records["lead-codex"]["effort"], "low")
 
 
 if __name__ == "__main__":

@@ -42,7 +42,7 @@ ORIGINS = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 TOKEN = secrets.token_urlsafe(32)
 # Shape of /api/state and the POSTs. Bump together with API in index.html: a page that meets a server of another
 # version (the server kept running across an update) asks for a restart instead of breaking.
-API = 12
+API = 13
 BOOT = secrets.token_hex(8)  # new each start: an open page that sees another one reloads to get the new token
 NOWIN = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
 
@@ -178,8 +178,9 @@ def state():
         # The Codex app keeps the conversations it opened locked: then nothing outside the app can wake them.
         s["appOpen"] = bool(s["resumable"]) and WAKER.is_held(Waker.resumable(known[s["name"]]["key"]), s["address"])
     relays, queued, notices = RELAY.view({m["id"] for m in msgs})
+    forwarded = RELAY.forwarded_view({m["id"] for m in msgs})
     return {"api": API, "boot": BOOT, "team": who.get("team"), "me": me, "sessions": sessions, "messages": msgs,
-            "launched": LAUNCHER.list(), "foreignWorkers": LAUNCHER.list_foreign(), "workerRecords": list(records.values()), "rooms": ROOMS.list(), "relays": relays, "queued": queued, "notices": notices,
+            "launched": LAUNCHER.list(), "foreignWorkers": LAUNCHER.list_foreign(), "workerRecords": list(records.values()), "rooms": ROOMS.list(), "relays": relays, "queued": queued, "notices": notices, "forwarded": forwarded,
             "relayDefaults": {"hops": relay_mod.MAX_HOPS, "budget": relay_mod.BUDGET, "window": relay_mod.BUDGET_WINDOW},
             "prefs": PREFS.get(), "wakes": WAKER.view(),
             "whoError": who_err, "now": int(time.time() * 1000)}
@@ -207,6 +208,13 @@ def send_one(to, body, fyi):
     if body.startswith("-"):
         body = " " + body
     return run_reason("send", to, body, *(["--fyi"] if fyi else []), timeout=60)
+
+
+def dm_note(to):
+    """relay.dm_note() when `to` is a member of a group room, else nothing."""
+    if not any(r.get("group") and to in r["members"] for r in ROOMS.list()):
+        return ""
+    return relay_mod.dm_note((my_address() or "").split("/", 1)[0] or "the user")
 
 
 def fresh_who():
@@ -322,7 +330,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         if path not in ("/api/send", "/api/launch", "/api/stop", "/api/rooms/save", "/api/rooms/delete",
-                        "/api/rooms/send", "/api/rooms/flush", "/api/prefs", "/api/wake", "/api/workers/configure", "/api/workers/adopt",
+                        "/api/rooms/send", "/api/rooms/flush", "/api/rooms/forward", "/api/prefs", "/api/wake", "/api/workers/configure", "/api/workers/adopt",
                         "/api/workers/restart"):
             return self.send_error(404)
         req = self.read_json()
@@ -347,6 +355,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True})
             elif path == "/api/rooms/send":
                 self.send_room(req)
+            elif path == "/api/rooms/forward":
+                self.forward_room(req)
             elif path == "/api/rooms/flush":
                 if not ROOMS.get(req.get("id")):
                     return self.send_json({"error": "No such room."}, 404)
@@ -405,8 +415,23 @@ class Handler(BaseHTTPRequestHandler):
         to, body = to.strip(), body.strip()
         if not to or not body or to.startswith("-"):
             return self.send_json({"error": "to and body are required"}, 400)
-        rc, out, err = send_one(to, body, fyi)
+        rc, out, err = send_one(to, body + dm_note(to), fyi)
         self.send_json({"ok": rc == 0, "rc": rc, "out": out, "err": err}, 200 if rc == 0 else 502)
+
+    def forward_room(self, req):
+        """A member's answer to your 1:1 message, passed into a group room it @mentions members of."""
+        room, mid = ROOMS.get(req.get("id")), req.get("message")
+        if not room:
+            return self.send_json({"error": "No such room."}, 404)
+        if not isinstance(mid, str) or not mid:
+            return self.send_json({"error": "message must be a message id"}, 400)
+        me = my_address()
+        if not me:
+            return self.send_json({"error": "Reason Network is not answering yet; try again."}, 503)
+        rows = db_rows("select id, sender, recipient, reply_to, body, sent_at from messages where id = ?", (mid,))
+        if not rows:
+            return self.send_json({"error": "No such message."}, 404)
+        self.send_json({"ok": True, "to": RELAY.forward(room, me, dict(rows[0]))})
 
     def send_room(self, req):
         """One `reason network send` per member; reports each member's result."""
@@ -424,7 +449,7 @@ class Handler(BaseHTTPRequestHandler):
         else:
             results = []
             for to in room["members"]:
-                rc, out, err = send_one(to, body.strip(), fyi)
+                rc, out, err = send_one(to, body.strip() + dm_note(to), fyi)
                 results.append({"to": to, "ok": rc == 0, "err": "" if rc == 0 else (err or out or f"rc={rc}")})
         sent = sum(r["ok"] for r in results)
         self.send_json({"ok": sent > 0, "sent": sent, "results": results,

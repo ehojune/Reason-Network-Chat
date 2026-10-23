@@ -270,6 +270,17 @@ Who gets what:
 | A reply to an answer that came back that way | only the members it @mentions, so two agents cannot thank each other in circles |
 | `-`, `(해당 없음)`, `N/A` (no answer needed) | nobody; it only shows in the room |
 
+1:1 and the room:
+
+| | 1:1 (one session picked under **To**) | Group room |
+|---|---|---|
+| Your message reaches | that session | the members you @mention (or the default recipient) |
+| `@name` in the agent's answer | not passed on; **Forward to room** under the answer passes it on, once | passed on to those members |
+| How the agent tells them apart | a one-line note at the end of your message | the room envelope |
+
+When **To** is a session that is in a group room, a line above the message box says the conversation is 1:1 and
+links the room.
+
 Limits, so agents cannot talk in circles on your quota. Each room sets its own in the room form; **nothing is
 dropped**:
 

@@ -35,10 +35,14 @@ NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 EFFORT_ORDER = ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
 MAX_WORKERS = 8
 CATALOG_TTL = 600  # seconds
-# Variables an agent session sets for its own children. A server started from inside an agent session
-# (e.g. the Claude desktop app's preview) inherits them; a new agent must not, or it thinks it is nested.
-SESSION_VARS = {"CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "AI_AGENT", "ANTHROPIC_BASE_URL"}
-SESSION_PREFIX = ("CLAUDE_CODE_", "CLAUDE_AGENT_SDK_", "CLAUDE_PREVIEW_", "CODEX_", "REASON_NETWORK_", "TINCAN_")
+# Variables an agent session sets for itself and its tools. A server started from inside one (the Claude desktop
+# preview, a Codex shell command) inherits them; a new agent must not, or it thinks it is nested in that session.
+# Settings and credentials (CODEX_API_KEY, CODEX_HOME, CLAUDE_CODE_USE_BEDROCK, …) are kept.
+SESSION_VARS = {"CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "AI_AGENT",
+                "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CODEX_TOOL_CALL_ID"}
+SESSION_PREFIX = ("CODEX_SANDBOX", "CODEX_NETWORK_", "CODEX_INTERNAL_", "REASON_NETWORK_", "TINCAN_")
+# Set by a Claude host for the session it runs; only dropped when this server runs inside Claude Code.
+CLAUDE_HOST_PREFIX = ("CLAUDE_CODE_", "CLAUDE_AGENT_SDK_", "CLAUDE_PREVIEW_")
 
 
 # ---------- environment ----------
@@ -64,16 +68,17 @@ def user_env():
     return out
 
 
-def is_session_var(name):
+def is_session_var(name, in_claude=False):
     n = name.upper()
-    return n != "CODEX_HOME" and (n in SESSION_VARS or n.startswith(SESSION_PREFIX))
+    return n in SESSION_VARS or n.startswith(SESSION_PREFIX) or (in_claude and n.startswith(CLAUDE_HOST_PREFIX))
 
 
 def base_env():
     """Environment for every child process: CA bundle filled in, agent-session markers removed
     unless the user set the same variable on purpose."""
     stored = user_env()
-    env = {k: v for k, v in os.environ.items() if not is_session_var(k) or k.upper() in stored}
+    in_claude = "CLAUDECODE" in os.environ
+    env = {k: v for k, v in os.environ.items() if not is_session_var(k, in_claude) or k.upper() in stored}
     if not env.get("NODE_EXTRA_CA_CERTS") and stored.get("NODE_EXTRA_CA_CERTS"):
         env["NODE_EXTRA_CA_CERTS"] = stored["NODE_EXTRA_CA_CERTS"]
     return env
@@ -274,8 +279,8 @@ def shim_dir():
         except Exception:
             return None
         buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w") as z:
-            z.writestr("__main__.py", SHIM_MAIN)
+        with zipfile.ZipFile(buf, "w") as z:  # fixed timestamp: the same Python gives the same bytes
+            z.writestr(zipfile.ZipInfo("__main__.py", date_time=(1980, 1, 1, 0, 0, 0)), SHIM_MAIN)
         data = launcher + b"#!" + (b'"' + exe + b'"' if b" " in exe else exe) + b"\n" + buf.getvalue()
     else:
         data = b"#!" + exe + b"\n" + SHIM_MAIN
@@ -287,8 +292,8 @@ def shim_dir():
             os.replace(tmp, target)
         if not WIN:
             target.chmod(0o755)
-    except OSError:
-        return None
+    except OSError:  # e.g. a running worker holds the old shim open; it still works
+        return str(d) if target.is_file() else None
     return str(d)
 
 
@@ -501,8 +506,9 @@ class Launcher:
             entry = next((x for x in fam["models"] if x["id"] == model), None)
             if not entry:
                 raise LaunchError("That model is not in the agent's catalog.")
-        if effort:
-            allowed = entry["efforts"] if entry else fam["efforts"]
+        if effort:  # with no model chosen, the agent's default model decides which efforts exist
+            default = next((x for x in fam["models"] if x["id"] == fam["defaultModel"]), None)
+            allowed = (entry or default or fam)["efforts"]
             if effort not in allowed:
                 raise LaunchError("That effort is not offered for this model.")
         if fid == "antigravity":  # agy model ids carry the effort: gemini-4-argon-high

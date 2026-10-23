@@ -15,16 +15,17 @@ ARGON = {"id": "gemini-4-argon", "label": "Gemini 4 Argon", "efforts": ["low", "
          "ids": ["gemini-4-argon-low", "gemini-4-argon-high"]}
 
 
-def family(fid, models, worker=True, worker_models=True):
-    return {"id": fid, "label": fid, "installed": True, "models": models, "efforts": ["low", "high"],
-            "defaultModel": None, "defaultEffort": None, "note": None,
+def family(fid, models, worker=True, worker_models=True, default=None):
+    return {"id": fid, "label": fid, "installed": True, "models": models, "efforts": ["low", "high", "xhigh"],
+            "defaultModel": default, "defaultEffort": None, "note": None,
             "modes": {"worker": {"ok": worker, "why": None if worker else "no serve", "models": worker_models,
                                  "modelsWhy": None if worker_models else "no shim"},
                       "window": {"ok": True, "why": None, "models": True, "modelsWhy": None}}}
 
 
 class FakeCatalog:
-    families = [family("codex", [SOL]), family("antigravity", [ARGON], worker=False, worker_models=False),
+    families = [family("codex", [SOL], default="gpt-6.1-sol"),
+                family("antigravity", [ARGON], worker=False, worker_models=False),
                 family("claude", [], worker_models=False)]
 
     def family(self, fid):
@@ -57,6 +58,10 @@ class CheckTest(unittest.TestCase):
         self.bad(agent="bash")
         self.bad(mode="shell")
         self.bad(model=5)
+
+    def test_default_model_limits_effort(self):
+        self.bad(effort="xhigh")  # another model has it, the default model (gpt-6.1-sol) does not
+        self.assertEqual(self.l.check(self.req(effort="high"), set())[5], "high")
 
     def test_models_need_a_capable_mode(self):
         self.bad(agent="claude", model="opus")  # no shim/models for this worker
@@ -112,8 +117,22 @@ class CatalogParsingTest(unittest.TestCase):
     def test_session_markers_dropped(self):
         self.assertTrue(launcher.is_session_var("CLAUDECODE"))
         self.assertTrue(launcher.is_session_var("CODEX_THREAD_ID"))
+        self.assertTrue(launcher.is_session_var("CODEX_SANDBOX_NETWORK_DISABLED"))
         self.assertFalse(launcher.is_session_var("CODEX_HOME"))
+        self.assertFalse(launcher.is_session_var("CODEX_API_KEY"))
         self.assertFalse(launcher.is_session_var("PATH"))
+        # Claude host settings go only when this server itself runs inside Claude Code.
+        self.assertFalse(launcher.is_session_var("CLAUDE_CODE_USE_BEDROCK"))
+        self.assertTrue(launcher.is_session_var("CLAUDE_CODE_SESSION_ID", in_claude=True))
+
+    def test_shim_is_stable(self):
+        a = launcher.shim_dir()
+        if a is None:
+            self.skipTest("no pip launcher in this Python")
+        exe = Path(a) / ("codex.exe" if launcher.WIN else "codex")
+        first = exe.read_bytes()
+        launcher.shim_dir()
+        self.assertEqual(exe.read_bytes(), first)
 
 
 if __name__ == "__main__":

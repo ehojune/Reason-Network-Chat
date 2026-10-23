@@ -114,9 +114,10 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
 - **A killed worker looks alive.** `serve` reports "stopped" only when it exits on Ctrl+C. After `taskkill /F`
   (or a crash) the network keeps showing it idle, and its name stays taken. `/api/stop` sends Ctrl+C to the
   worker's own hidden console; to clear a stale entry, start a worker with the same name and stop it there.
-- **Agent-session variables.** A server started from inside an agent (the Claude desktop preview) inherits
-  `CLAUDECODE`, `CLAUDE_CODE_*`, `CODEX_*` and `ANTHROPIC_BASE_URL`; `launcher.base_env()` removes them for children
-  unless the user set them in the stored environment, or a new Claude would think it is nested.
+- **Agent-session variables.** A server started from inside an agent (the Claude desktop preview, a Codex shell)
+  inherits that session's markers (`CLAUDECODE`, `CODEX_THREAD_ID`, `CODEX_SANDBOX*`, and `CLAUDE_CODE_*` when inside
+  Claude Code). `launcher.base_env()` removes them for children, or a new agent thinks it is nested. Credentials and
+  settings (`CODEX_API_KEY`, `CODEX_HOME`, …) and anything in the stored user environment are kept.
 - **Codex workers and models.** `serve` runs `codex exec` with no model flag. For a chosen model or effort the
   worker's PATH starts with `codex-shim/`, whose `codex` adds `-c model=… -c model_reasoning_effort=…` and runs the
   real CLI. On Windows the shim is an `.exe` built from pip's script launcher (Bun refuses message text for `.cmd`);

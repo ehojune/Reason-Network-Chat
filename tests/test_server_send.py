@@ -46,5 +46,20 @@ class StuckTest(unittest.TestCase):
         self.assertTrue(server._activity["p/w"]["changed"])
 
 
+class PostProofTest(unittest.TestCase):
+    ROOM = {"id": "r-1", "members": ["pat/lead-codex", "pat/b-claude", "kim/b-claude"], "group": True,
+            "allowPost": ["pat/b-claude"]}
+
+    def test_who_may_post_as_a_member(self):
+        self.assertEqual(server.member_of(self.ROOM, "lead-codex"), "pat/lead-codex")
+        self.assertIsNone(server.member_of(self.ROOM, "b-claude"))  # two members share the name: give the address
+        self.assertEqual(server.member_of(self.ROOM, "kim/b-claude"), "kim/b-claude")
+        self.assertEqual(server.post_proof(self.ROOM, "pat/lead-codex", "lead-codex", "pat"), "session")
+        self.assertIsNone(server.post_proof(self.ROOM, "pat/lead-codex", "other-codex", "pat"))  # another worker
+        self.assertIsNone(server.post_proof(self.ROOM, "pat/lead-codex", None, "pat"))  # an unknown caller
+        self.assertEqual(server.post_proof(self.ROOM, "pat/b-claude", None, "pat"), "allowed")
+        self.assertIsNone(server.post_proof(self.ROOM, "kim/b-claude", "b-claude", "pat"))  # someone else's session
+
+
 if __name__ == "__main__":
     unittest.main()

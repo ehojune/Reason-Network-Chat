@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import shlex
 import signal
 import subprocess
 import sys
@@ -534,6 +535,169 @@ def efforts_for(fam, entry):
     return [e for e in fam["efforts"] if all(e in m["efforts"] for m in fam["models"])]
 
 
+# ---------- finding `serve` workers this page lost track of ----------
+# workers.json can lose entries (two servers writing it from memory did, before exclusive binding). The processes
+# keep running, so the server looks for `reason network serve` command lines and takes back those it started.
+
+def split_cmdline(cmd):
+    """A Windows command line as argv (CommandLineToArgvW)."""
+    if not cmd:
+        return []
+    import ctypes
+    from ctypes import wintypes
+    f = ctypes.windll.shell32.CommandLineToArgvW
+    f.argtypes = (wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int))
+    f.restype = ctypes.POINTER(wintypes.LPWSTR)
+    n = ctypes.c_int()
+    argv = f(cmd, ctypes.byref(n))
+    if not argv:
+        return []
+    try:
+        return [argv[i] for i in range(n.value)]
+    finally:
+        ctypes.windll.kernel32.LocalFree(argv)
+
+
+def list_processes():
+    """[(pid, parent pid, program name, argv)] for every process on this computer, or [] when they cannot be read."""
+    if WIN:
+        # UTF-8 out, or a Korean/Chinese console code page garbles non-ASCII folders in the JSON.
+        ps = ("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+              "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json -Compress")
+        try:
+            out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps], capture_output=True,
+                                 timeout=60, stdin=subprocess.DEVNULL, creationflags=NOWIN).stdout
+            items = json.loads(out.decode("utf-8", "replace") or "[]")
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            return []
+        items = [items] if isinstance(items, dict) else items if isinstance(items, list) else []
+        return [(p.get("ProcessId"), p.get("ParentProcessId"), str(p.get("Name") or ""),
+                 split_cmdline(p.get("CommandLine") or "")) for p in items if isinstance(p, dict)]
+    # Elsewhere only /proc keeps argv boundaries (`ps` joins arguments with spaces, so a folder with a space would be
+    # cut); without /proc (macOS) nothing is found.
+    rows = []
+    for d in Path("/proc").glob("[0-9]*"):
+        try:
+            argv = [a.decode("utf-8", "replace") for a in (d / "cmdline").read_bytes().split(b"\0") if a]
+            ppid = int((d / "stat").read_text().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            continue
+        rows.append((int(d.name), ppid, Path(argv[0]).name if argv else "", argv))
+    return rows
+
+
+def parse_serve(argv):
+    """{family, name, cwd, fullAccess} of a `reason network serve [claude|codex] --name N --cwd D [--full-access]`
+    command line, or None."""
+    for i in range(len(argv) - 1):
+        if argv[i] == "network" and argv[i + 1] == "serve":
+            rest = argv[i + 2:]
+            break
+    else:
+        return None
+    family = "claude"  # serve's own default
+    if rest and not rest[0].startswith("-"):
+        family, rest = rest[0], rest[1:]
+    if family not in ("claude", "codex"):
+        return None
+    out = {"family": family, "name": None, "cwd": None, "fullAccess": False}
+    k = 0
+    while k < len(rest):
+        if rest[k] in ("--name", "--cwd") and k + 1 < len(rest):
+            out[rest[k][2:]] = rest[k + 1]
+            k += 2
+            continue
+        out["fullAccess"] = out["fullAccess"] or rest[k] == "--full-access"
+        k += 1
+    return out if out["name"] and NAME_RE.match(out["name"]) else None
+
+
+def model_from_args(family, argv):
+    """(model, effort) a worker's agent runs with, read from its command line (or its shim's arguments)."""
+    model = effort = None
+    for k, a in enumerate(argv[:-1]):
+        nxt = argv[k + 1]
+        if family == "claude" and a == "--model":
+            model = nxt
+        elif family == "claude" and a == "--effort":
+            effort = nxt
+        elif family == "codex" and a == "-c":
+            key, _, val = nxt.partition("=")
+            val = val.strip('"')
+            if key == "model":
+                model = val
+            elif key == "model_reasoning_effort":
+                effort = val
+    return (model if model and MODEL_RE.match(model) else None, effort if effort and EFFORT_RE.match(effort) else None)
+
+
+def found_workers(procs):
+    """The `serve` workers among `procs`, each with the model and effort its agent processes show (if any run)."""
+    kids = {}
+    for pid, ppid, _, _ in procs:
+        kids.setdefault(ppid, []).append(pid)
+    argv_of = {pid: argv for pid, _, _, argv in procs}
+    out = []
+    for pid, _, name, argv in procs:
+        if not name.lower().startswith("reason"):
+            continue
+        s = parse_serve(argv)
+        if not s or not isinstance(pid, int):
+            continue
+        model = effort = None
+        todo, seen = list(kids.get(pid, [])), set()
+        while todo and not (model and effort):  # a warm `claude -p` or a running `codex exec` names them
+            c = todo.pop()
+            if c in seen:
+                continue
+            seen.add(c)
+            m, e = model_from_args(s["family"], argv_of.get(c) or [])
+            model, effort = model or m, effort or e
+            todo += kids.get(c, [])
+        out.append(dict(s, pid=pid, model=model, effort=effort))
+    return out
+
+
+def ledger_path():
+    return STATE / "spawned.jsonl"
+
+
+def record_spawn(name, pid, started):
+    """Append (name, pid, creation time) of a worker this page started. Lines are only appended (pruned when long),
+    so the proof survives a workers.json that lost the worker."""
+    try:
+        STATE.mkdir(parents=True, exist_ok=True)
+        with open(ledger_path(), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"name": name, "pid": pid, "started": started}) + "\n")
+    except OSError:
+        pass
+
+
+def spawned_here():
+    """{(pid, creation time)} of processes this page started, dropping dead ones when the ledger grows long."""
+    try:
+        lines = ledger_path().read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return set()
+    out, keep = set(), []
+    for line in lines:
+        try:
+            e = json.loads(line)
+            out.add((int(e["pid"]), str(e["started"])))
+            keep.append(e)
+        except (ValueError, KeyError, TypeError):
+            continue
+    if len(keep) > 500:  # prune: only live processes need the proof
+        live = [e for e in keep if started_at(int(e["pid"])) == str(e["started"])]
+        try:
+            tmp = ledger_path().with_suffix(".tmp")
+            tmp.write_text("".join(json.dumps(e) + "\n" for e in live), encoding="utf-8")
+            os.replace(tmp, ledger_path())
+        except OSError:
+            pass
+    return out
+
+
 class LaunchError(Exception):
     def __init__(self, msg, code=400):
         super().__init__(msg)
@@ -550,6 +714,8 @@ class Launcher:
         # shim's per-worker file (absent for workers started before it existed: those restart to change)
         self.workers = {}
         self.restarting = set()  # names of workers being restarted by configure(): still taken
+        self.stopped = set()  # names stopped here: a merge must not bring their old record back
+        self.foreign = {}  # name -> serve worker running on this computer that this page did not start
         self.load()
 
     # Registry on disk, so a restarted server can still stop the workers it started.
@@ -565,6 +731,16 @@ class Launcher:
         self.save()
 
     def save(self):
+        """Read, merge, write (call with self.lock held): a live worker another writer recorded is kept, not lost."""
+        try:
+            disk = json.loads(self.reg.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            disk = []
+        for w in disk if isinstance(disk, list) else []:
+            if isinstance(w, dict) and isinstance(w.get("pid"), int) and w.get("started") \
+                    and NAME_RE.match(str(w.get("name", ""))) and w["name"] not in self.workers \
+                    and w["name"] not in self.stopped and w["name"] not in self.restarting and self.alive(w):
+                self.workers[w["name"]] = w
         try:
             STATE.mkdir(parents=True, exist_ok=True)
             tmp = self.reg.with_suffix(".tmp")
@@ -572,6 +748,76 @@ class Launcher:
             os.replace(tmp, self.reg)
         except OSError:
             pass
+
+    def halt_external(self, w):
+        """Stop a worker this page did not start. It may share a console or process group with other programs (the
+        user's shell), so no console-wide Ctrl+C and no group kill: SIGINT to the process itself on POSIX; on Windows,
+        where Ctrl+C can only go to a whole console, a forced kill of its tree (the network may then show it idle)."""
+        if not WIN:
+            try:
+                os.kill(w["pid"], signal.SIGINT)
+            except OSError:
+                return
+            for _ in range(100):
+                if not self.alive(w):
+                    return
+                time.sleep(0.1)
+            try:
+                os.kill(w["pid"], signal.SIGKILL)
+            except OSError:
+                pass
+            return
+        subprocess.run(["taskkill", "/PID", str(w["pid"]), "/T", "/F"], capture_output=True, creationflags=NOWIN)
+
+    def discover(self, procs=None):
+        """Take back `serve` workers this page started (recorded in spawned.jsonl) that workers.json lost; note the others.
+
+        Model and effort come from the agent processes under the worker when one is running, else they are unknown;
+        such a worker has no settings file, so changing it restarts it.
+        """
+        found = found_workers(list_processes() if procs is None else procs)
+        ours = spawned_here()
+        with self.lock:
+            known = {w["pid"] for w in self.workers.values()}
+            foreign = {}
+            for f in found:
+                if f["pid"] in known or f["name"] in self.restarting:
+                    continue
+                started = started_at(f["pid"])
+                if not started:
+                    continue
+                log = STATE / "logs" / f"{f['name']}.log"
+                w = {"name": f["name"], "pid": f["pid"], "started": started, "family": f["family"],
+                     "model": f["model"], "effort": f["effort"], "cwd": f["cwd"], "log": str(log),
+                     "fullAccess": f["fullAccess"], "settings": None, "adopted": True}
+                # This page's own only on proof that it started this very process (pid + creation time): a log
+                # file outlives its worker, and an outside worker may reuse the name.
+                if (f["pid"], started) in ours and f["name"] not in self.workers:
+                    self.workers[f["name"]] = w
+                    self.stopped.discard(f["name"])
+                    self.save()
+                elif f["name"] not in self.workers:
+                    foreign[f["name"]] = w
+            self.foreign = foreign
+
+    def adopt(self, name):
+        """Manage a worker started outside this page (the user asked to, in the page)."""
+        with self.lock:
+            w = self.foreign.get(name)
+            if not w or not self.alive(w):
+                raise LaunchError("No such worker running outside this page.", 404)
+            if name in self.workers:
+                raise LaunchError("A worker with that name is managed here already.", 409)
+            self.workers[name] = dict(w, external=True)
+            self.foreign.pop(name, None)
+            self.stopped.discard(name)
+            self.save()
+        return {"ok": True}
+
+    def list_foreign(self):
+        with self.lock:
+            return [{k: w.get(k) for k in ("name", "family", "model", "effort", "cwd", "fullAccess")}
+                    for w in self.foreign.values() if self.alive(w)]
 
     @staticmethod
     def alive(w):
@@ -585,7 +831,8 @@ class Launcher:
             if gone:
                 self.save()
             return [dict({k: w.get(k) for k in ("name", "family", "model", "effort", "cwd")},
-                         fullAccess=bool(w.get("fullAccess")), liveSettings=self.live_settings(w))
+                         fullAccess=bool(w.get("fullAccess")), liveSettings=self.live_settings(w),
+                         adopted=bool(w.get("adopted")))
                     for w in self.workers.values()]
 
     @staticmethod
@@ -600,6 +847,7 @@ class Launcher:
             w = self.workers.pop(name, None)
             if not w:
                 raise LaunchError("Not a worker started here.", 404)
+            self.stopped.add(name)
             self.save()
         self.halt(w)
 
@@ -607,6 +855,8 @@ class Launcher:
         """Stop a worker's process: Ctrl+C so the network shows it stopped, a kill after 10 s."""
         if not self.alive(w):
             return
+        if w.get("external"):
+            return self.halt_external(w)
         try:
             interrupt(w["pid"])
         except (OSError, subprocess.TimeoutExpired):
@@ -727,6 +977,8 @@ class Launcher:
             if full and not m.get("fullAccess"):
                 raise LaunchError("This agent cannot run with full access here.")
             entry, model, effort = self.check_model(fam, m, model, effort)
+            if not w.get("cwd") or not Path(w["cwd"]).is_dir():
+                raise LaunchError("Its folder is unknown, so it cannot be restarted from here. Restart it yourself.", 409)
             same_perm = bool(w.get("fullAccess")) == full
             if same_perm and (w.get("model") or "") == model and (w.get("effort") or "") == effort:
                 return {"ok": True, "restarted": False, "unchanged": True}
@@ -779,7 +1031,9 @@ class Launcher:
         logs.mkdir(parents=True, exist_ok=True)
         log_path = logs / f"{name}.log"
         pid = spawn(serve_args(self.reason, fid, name, cwd, full), cwd, env, NOWIN, str(log_path))
-        return {"name": name, "pid": pid, "started": started_at(pid) or "", "family": fid,
+        started = started_at(pid) or ""
+        record_spawn(name, pid, started)
+        return {"name": name, "pid": pid, "started": started, "family": fid,
                 "model": model or None, "effort": effort or None, "cwd": cwd, "log": str(log_path),
                 "fullAccess": full, "settings": str(settings) if settings else None}
 

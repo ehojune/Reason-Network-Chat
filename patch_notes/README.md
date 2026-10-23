@@ -9,6 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 |---|---|---|
+| 00:34 | [#20](https://github.com/ehojune/Reason-Network-Chat/pull/20) | Workers this page started but lost from its list are **taken back** (found among running processes every 30 s), so **Change settings** works for them again, Claude workers included; a worker started elsewhere can be managed here after a confirmation. |
 | 00:25 | [#19](https://github.com/ehojune/Reason-Network-Chat/pull/19) | **Group-room hand-offs are never dropped.** Over a room's limit they wait in a queue and go out in order (**Send all now** releases them), limits are set per room (default 100 hops, 300 per 10 minutes, or none), and replies that arrive while the server restarts are still passed on. **Messages go only to the @mentioned members** (`@all` for everyone, or the room's default recipient); the page shows who will get it and suggests names after `@`. |
 
 ## 2026-10-23

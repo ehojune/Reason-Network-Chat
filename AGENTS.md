@@ -88,8 +88,9 @@ get the new token, and a newer server also triggers a reload.
   plus addresses seen only in history (`status: "gone"`, `live: false`).
   `messages[]` = rows of the `messages` table ordered by `sent_at` (ms epoch).
   `launched[]` = workers this server started and that are still running
-  (`name, family, model, effort, cwd, fullAccess, liveSettings`; `liveSettings`: a model or effort change applies
-  without a restart).
+  (`name, family, model, effort, cwd, fullAccess, liveSettings, adopted`; `liveSettings`: a model or effort change
+  applies without a restart; `adopted`: taken back from a running process, model/effort may be `null` = unknown).
+  `foreignWorkers[]` = `serve` workers running on this computer that this page did not start (no log in `logs/`).
   `rooms[]` = `{id, name, members[], group, created, limits, defaultTo}`; `members` are session addresses; `limits` =
   `{hops?, budget?}` (a number, or `null` for no limit; a missing key means the default); `defaultTo` = the member
   an unmentioned message goes to, or `null`.
@@ -117,6 +118,8 @@ get the new token, and a newer server also triggers a reload.
   first; a busy worker answers 409 unless `force` is true. `{unchanged: true}` when nothing differs. While it
   restarts, its `workers.json` record stays until the new process replaces it, its name stays taken, it counts
   toward `MAX_WORKERS`, and configure or stop on it answers 409.
+- `POST /api/workers/adopt` `{name}` → manage a worker from `foreignWorkers[]` here (the user confirms it in the
+  page). Returns `{ok}`; 404 when no such worker runs.
 - `POST /api/rooms/save` `{id?, name, members[], group, limits?, defaultTo?}` → creates a room (no `id`) or replaces
   its name, members, group flag, limits and default recipient. Members: 1–12 known session addresses, not the page's
   own. `limits`: `{hops?, budget?}`, each 1–100000 or `null` (no limit). `defaultTo`: one of the members, or `null`.
@@ -223,6 +226,16 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
   without pip, workers use the agent's default model and the page says so.
 - **Full access is dangerous by design.** A full-access worker runs whatever a network message (or a group-room
   relay) asks, without approval. The page confirms it each time it is chosen; keep that confirmation.
+- **Lost workers are taken back.** `workers.json` can lose entries (two servers writing it from memory did). Every
+  30 s `launcher.discover()` lists processes (PowerShell `Win32_Process` on Windows, `ps` elsewhere), parses
+  `reason network serve [claude|codex] --name N --cwd D [--full-access]`, and re-registers a worker whose pid and
+  creation time are in `spawned.jsonl` (appended at every start, so it survives a `workers.json` that lost the
+  worker; a log file is not proof, it outlives its worker). Model and effort come from the agent processes under it
+  when one runs. Others are only listed (`foreignWorkers`) until the user adopts one. An adopted outside worker is
+  never stopped with the console-wide Ctrl+C (it may share the user's console): POSIX gets SIGINT to its pid, Windows
+  a forced tree kill. A worker with no known folder is not restarted. Linux argv comes from `/proc` (`ps` loses
+  argument boundaries); macOS has no discovery. PowerShell output is forced to UTF-8. Saves read `workers.json` and
+  keep live records another writer added, except names stopped here.
 - **Workers and windows outlive the server.** The Claude desktop app stops a preview by killing its process tree,
   so `launcher.spawn()` starts them through a short-lived spawner and they are never the server's descendants.
   `workers.json` keeps pid + creation time, so a restarted server still recognises and stops its workers.

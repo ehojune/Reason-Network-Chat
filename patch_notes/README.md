@@ -9,6 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 |---|---|---|
+| 03:01 | [#38](https://github.com/ehojune/Reason-Network-Chat/pull/38) | **View** shows failed/unanswered messages before retrying: originals, recipients and failure details. Reply quotes jump to the original; no-answer replies fold into acknowledgements. Markdown links/list fences and usage-limit relay loops are fixed. |
 | 02:47 | [#35](https://github.com/ehojune/Reason-Network-Chat/pull/35) | **A stuck worker shows as such** (busy 30 minutes with no new step) and its right-click menu shows what runs under it and **restarts** it with the same settings. **`python rnc.py worker start/restart/stop/adopt`** is the supported way for agents to manage workers, so none is started inside an agent's own turn again. |
 | 02:41 | [#31](https://github.com/ehojune/Reason-Network-Chat/pull/31) | **A worker's failure is no longer passed on as an answer** (it once bounced between failing workers 36 times in half a minute): it shows as a red notice, and your message gets **Send again**. Messages a worker read but never answered are marked too, and a bar lists both for the room with **Send all again**. |
 | 01:55 | [#30](https://github.com/ehojune/Reason-Network-Chat/pull/30) | A passed-on reply (↪ … passed to …) now shows **what was passed on**: its first lines under the marker, and the whole reply, formatted, on a click. Also in the 1:1 view of the member who got it, where the marker used to be all there was. |

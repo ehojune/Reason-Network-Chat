@@ -252,6 +252,17 @@ class RelayTest(unittest.TestCase):
         self.r.scan(ME)
         self.assertEqual((self.counts(), self.queued()), ([0, 0, 0], None))
 
+    def test_usage_limit_reply_does_not_start_a_relay_cascade(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        body = "You've hit your session limit · resets 4:20am (Asia/Seoul) @b-claude"
+        self.insert(A, ME, body, reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 0, 0])
+        self.r.post(self.room, ME, "@c-codex next")
+        self.assertNotIn("You've hit", self.sent_to(C)[-1])
+        self.assertTrue(relay.worker_failure("You've hit your usage limit"))
+        self.assertFalse(relay.worker_failure("We fixed the You've hit your session limit issue"))
+
     def test_a_failure_cannot_be_forwarded(self):
         with self.assertRaises(relay.RelayError):
             self.r.forward(self.room, ME, self.row(self.insert(A, ME, self.FAIL)))

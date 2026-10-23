@@ -705,6 +705,8 @@ INNER_RE = re.compile(r"^(?P<worker>[a-z0-9][a-z0-9-]*)-(claude|codex)(-\d+)?$")
 def inner_of(name, workers):
     """The worker a session belongs to when it is that worker's own agent session registering itself
     (`<worker>-claude`, `<worker>-claude-2`, … from the warm `claude -p` children), else None."""
+    if name in workers:  # a worker of its own (helper-claude next to helper), not an inner session
+        return None
     m = INNER_RE.match(name or "")
     return m.group("worker") if m and m.group("worker") in workers else None
 
@@ -866,7 +868,8 @@ class Launcher:
                 results.append({"name": name, "ok": True})
             except LaunchError as e:
                 results.append({"name": name, "ok": False, "error": str(e), "code": e.code})
-        return {"ok": any(r["ok"] for r in results), "results": results}
+        # The request itself succeeded; each name's outcome is in results (the page shows the failures).
+        return {"ok": True, "started": sum(r["ok"] for r in results), "results": results}
 
     def discover(self, procs=None):
         """Take back `serve` workers this page started (recorded in spawned.jsonl) that workers.json lost; note the others.
@@ -1092,6 +1095,7 @@ class Launcher:
                     raise LaunchError(f"Could not save the worker's settings: {e}", 500)
                 w.update(model=model or None, effort=effort or None)
                 self.save()
+                self.remember(w)  # a later restart (after a reboot) uses these settings
                 return {"ok": True, "restarted": False}
             if busy and not force:
                 raise LaunchError("It is busy: restarting it now loses the turn it is in.", 409)

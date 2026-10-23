@@ -486,6 +486,7 @@ class RecordsTest(unittest.TestCase):
         with self.assertRaises(launcher.LaunchError):
             self.l.restart("lead-codex", set())
         self.assertEqual(self.started, [])
+        self.assertTrue(self.l.restart(["nobody"], set())["ok"])  # handled; the failure is in results
 
     def test_inner_sessions(self):
         workers = {"claude-worker1", "lead-codex"}
@@ -493,6 +494,12 @@ class RecordsTest(unittest.TestCase):
         self.assertEqual(launcher.inner_of("claude-worker1-claude-3", workers), "claude-worker1")
         self.assertIsNone(launcher.inner_of("claude-worker1", workers))
         self.assertIsNone(launcher.inner_of("someone-else-claude", workers))
+        self.assertIsNone(launcher.inner_of("helper-claude", {"helper", "helper-claude"}))  # a worker of its own
+
+    def test_live_change_is_remembered(self):
+        self.l.workers["lead-codex"]["settings"] = str(Path(tempfile.mkdtemp()) / "s.json")
+        self.l.configure({"name": "lead-codex", "model": "gpt-6.1-sol", "effort": "low", "fullAccess": True}, False)
+        self.assertEqual(self.l.records["lead-codex"]["effort"], "low")
 
 
 if __name__ == "__main__":

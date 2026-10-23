@@ -542,6 +542,12 @@ class RelayTest(unittest.TestCase):
         self.r.scan(ME)
         self.r.scan(ME)
         self.assertEqual(calls, [B, B])  # one manual retry, then held again
+        self.r.send_one = self.send
+        self.r.flush(self.room["id"])
+        self.r.scan(ME)
+        self.assertIsNone(self.queued())
+        self.assertNotIn(self.room["id"], self.r.view(set())[2])
+        self.assertNotIn(self.room["id"], self.new_relay().view(set())[2])
 
     def test_restart_reconciles_a_send_before_the_dequeue_was_saved(self):
         self.r.post(self.room, ME, "@a-codex go")

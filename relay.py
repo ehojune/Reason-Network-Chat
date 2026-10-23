@@ -453,6 +453,8 @@ class Relay:
             self.seen[key] = max(self.seen.get(key, 0), newest, skip_at)
             if item is not None:
                 self.dequeue(room["id"], item)
+                if not created:
+                    self.notice.pop(room["id"], None)  # the explicit retry resolved this ambiguous delivery
             self.save()
         return True, ""
 

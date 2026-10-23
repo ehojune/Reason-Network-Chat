@@ -559,7 +559,8 @@ def split_cmdline(cmd):
 
 
 def list_processes():
-    """[(pid, parent pid, program name, argv)] for every process on this computer, or [] when they cannot be read."""
+    """[(pid, parent pid, program name, argv)] for every process on this computer, or None when they cannot be read
+    (no PowerShell answer, no /proc): callers must then assume nothing about what runs."""
     if WIN:
         # UTF-8 out, or a Korean/Chinese console code page garbles non-ASCII folders in the JSON.
         ps = ("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
@@ -567,14 +568,18 @@ def list_processes():
         try:
             out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps], capture_output=True,
                                  timeout=60, stdin=subprocess.DEVNULL, creationflags=NOWIN).stdout
-            items = json.loads(out.decode("utf-8", "replace") or "[]")
+            items = json.loads(out.decode("utf-8", "replace") or "null")
         except (OSError, subprocess.TimeoutExpired, ValueError):
-            return []
+            return None
+        if not items:
+            return None
         items = [items] if isinstance(items, dict) else items if isinstance(items, list) else []
         return [(p.get("ProcessId"), p.get("ParentProcessId"), str(p.get("Name") or ""),
                  split_cmdline(p.get("CommandLine") or "")) for p in items if isinstance(p, dict)]
     # Elsewhere only /proc keeps argv boundaries (`ps` joins arguments with spaces, so a folder with a space would be
     # cut); without /proc (macOS) nothing is found.
+    if not Path("/proc/self/cmdline").is_file():
+        return None
     rows = []
     for d in Path("/proc").glob("[0-9]*"):
         try:
@@ -633,6 +638,7 @@ def model_from_args(family, argv):
 
 def found_workers(procs):
     """The `serve` workers among `procs`, each with the model and effort its agent processes show (if any run)."""
+    procs = procs or []
     kids = {}
     for pid, ppid, _, _ in procs:
         kids.setdefault(ppid, []).append(pid)
@@ -839,7 +845,9 @@ class Launcher:
         except (OSError, ValueError):
             disk = {}
         merged = {k: v for k, v in disk.items() if isinstance(v, dict)} if isinstance(disk, dict) else {}
-        merged.update(self.records)  # ours win; another writer's records are kept
+        for k, v in self.records.items():  # the newer record of a name wins; another writer's records are kept
+            if k not in merged or (v.get("started") or 0) >= (merged[k].get("started") or 0):
+                merged[k] = v
         self.records = merged
         try:
             STATE.mkdir(parents=True, exist_ok=True)
@@ -854,8 +862,9 @@ class Launcher:
             return [dict(r) for r in self.records.values()]
 
     def running_serve_names(self, procs=None):
-        """Names of `serve` processes running on this computer now."""
-        return {f["name"] for f in found_workers(list_processes() if procs is None else procs)}
+        """Names of `serve` processes running on this computer now, or None when processes cannot be read."""
+        procs = list_processes() if procs is None else procs
+        return None if procs is None else {f["name"] for f in found_workers(procs)}
 
     def restart(self, names, blocked):
         """Start recorded workers again with their last settings. `blocked`: names whose serve runs on this computer or
@@ -902,7 +911,10 @@ class Launcher:
         Model and effort come from the agent processes under the worker when one is running, else they are unknown;
         such a worker has no settings file, so changing it restarts it.
         """
-        found = found_workers(list_processes() if procs is None else procs)
+        procs = list_processes() if procs is None else procs
+        if procs is None:  # cannot see processes here: take nothing back, list nothing
+            return
+        found = found_workers(procs)
         ours = spawned_here()
         with self.lock:
             known = {w["pid"] for w in self.workers.values()}
@@ -1091,7 +1103,8 @@ class Launcher:
         for s in who.get("sessions") or []:
             if s.get("address") == addr and s.get("status") != "offline" and s.get("machine") != who.get("machine"):
                 return False
-        return name not in self.running_serve_names(procs)
+        running = self.running_serve_names(procs)
+        return running is not None and name not in running  # only on proof that the old process is gone
 
     def configure(self, req, busy):
         """Change a running worker's model, effort or permission. `busy`: the worker is in a turn right now.

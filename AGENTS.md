@@ -248,7 +248,8 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
   when one runs. Others are only listed (`foreignWorkers`) until the user adopts one. An adopted outside worker is
   never stopped with the console-wide Ctrl+C (it may share the user's console): POSIX gets SIGINT to its pid, Windows
   a forced tree kill. A worker with no known folder is not restarted. Linux argv comes from `/proc` (`ps` loses
-  argument boundaries); macOS has no discovery. PowerShell output is forced to UTF-8. Saves read `workers.json` and
+  argument boundaries); macOS has no discovery, and where processes cannot be read nothing is taken back and no
+  name is treated as free (fail closed). PowerShell output is forced to UTF-8. Saves read `workers.json` and
   keep live records another writer added, except names stopped here.
 - **Workers and windows outlive the server.** The Claude desktop app stops a preview by killing its process tree,
   so `launcher.spawn()` starts them through a short-lived spawner and they are never the server's descendants.

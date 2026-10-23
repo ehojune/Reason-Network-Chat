@@ -167,7 +167,9 @@ def state():
             if s.get("agent") not in ("claude-code", "codex"):
                 s["agent"] = BADGE[rec["family"]]
         # A worker's own agent sessions (<worker>-claude, -2, …) register themselves; the page folds them away.
-        s["inner"] = inner_of(s["name"], workers)
+        # Only this person's sessions on this computer (a teammate's helper-claude is not ours to hide).
+        own = s["address"].split("/", 1)[0] == person and s.get("machine") in (None, who.get("machine"))
+        s["inner"] = inner_of(s["name"], workers) if own else None
         # The Codex app keeps the conversations it opened locked: then nothing outside the app can wake them.
         s["appOpen"] = bool(s["resumable"]) and WAKER.is_held(Waker.resumable(known[s["name"]]["key"]), s["address"])
     relays, queued, notices = RELAY.view({m["id"] for m in msgs})
@@ -360,9 +362,13 @@ class Handler(BaseHTTPRequestHandler):
                 # Blocked: a serve with that name runs here, or the name is online on another computer of this
                 # person. A name shown online here only because its process was killed is free (Reason accepts it).
                 me_ = who.get("person")
-                elsewhere = {s["name"] for s in who.get("sessions") or [] if s.get("status") != "offline"
-                             and s.get("person") == me_ and s.get("machine") != who.get("machine")}
-                self.send_json(LAUNCHER.restart(req.get("names"), elsewhere | LAUNCHER.running_serve_names()))
+                online = [s for s in who.get("sessions") or [] if s.get("status") != "offline" and s.get("person") == me_]
+                running = LAUNCHER.running_serve_names()
+                if running is None:  # processes cannot be read here: anything online blocks (fail closed)
+                    blocked = {s["name"] for s in online}
+                else:
+                    blocked = running | {s["name"] for s in online if s.get("machine") != who.get("machine")}
+                self.send_json(LAUNCHER.restart(req.get("names"), blocked))
             elif path == "/api/workers/adopt":
                 name = req.get("name")
                 if not isinstance(name, str):

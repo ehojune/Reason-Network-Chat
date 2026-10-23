@@ -518,6 +518,21 @@ class RecordsTest(unittest.TestCase):
             {"address": "pat/lead-codex", "status": "idle", "machine": "laptop"}]}
         self.assertFalse(self.l.stale("lead-codex", elsewhere, procs=[]))
         self.assertFalse(self.l.stale("not-ours", who, procs=[]))  # neither a record nor a log here
+        saved = launcher.list_processes
+        launcher.list_processes = lambda: None  # processes cannot be read (e.g. macOS): never free the name
+        try:
+            self.assertFalse(self.l.stale("lead-codex", who))
+            self.assertIsNone(self.l.running_serve_names())
+        finally:
+            launcher.list_processes = saved
+
+    def test_newer_record_wins(self):
+        path = launcher.STATE / "worker-records.json"
+        newer = dict(self.l.records["lead-codex"], effort="low", started=10**15)
+        path.write_text(json.dumps({"lead-codex": newer}), encoding="utf-8")  # another server's later change
+        with self.l.lock:
+            self.l.save_records()
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["lead-codex"]["effort"], "low")
 
     def test_inner_sessions(self):
         workers = {"claude-worker1", "lead-codex"}

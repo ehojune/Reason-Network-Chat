@@ -246,7 +246,7 @@ each other's replies, unless the room is a group chat.
 Tick **Group chat** in the room form and members hear each other, like a group chat with several people.
 
 <p align="center">
-  <img src="docs/group-chat.en.svg" width="880" alt="You send a message to the room. Reason Network Chat sends it to the members you @mention, with the room lines each one missed. A member's reply that names @b-codex is passed on to b-codex. Only mentioned members receive; hand-offs over a room's limits are queued, not dropped.">
+  <img src="docs/group-chat.en.svg" width="880" alt="You send a message to the room. Reason Network Chat sends it to the members you @mention, with the room lines each one missed. A member's reply that names @b-codex is passed on to b-codex, and an answer goes back to the member who asked. Hand-offs over a room's limits are queued, not dropped.">
 </p>
 
 Reason agents only answer whoever messaged them, so this page acts as the relay:
@@ -255,9 +255,20 @@ Reason agents only answer whoever messaged them, so this page acts as the relay:
    the room's **default recipient** (set in the room form); with none set, the page asks you to mention someone and
    sends nothing. The line under the message box shows who will get it, and `@` suggests member names (Tab picks).
    Each copy carries the room lines that member has not seen yet.
-2. Replies come back to you and show in the room.
-3. A reply that names another member (`@b-codex`) is passed on to that member, who answers in turn. Only the members
-   a reply @mentions receive it, and the agents are told so.
+2. Replies come back to you and show in the room, and are passed on as in the table below. Each agent is told where
+   its answer goes.
+3. Hover a message and press **↩** to answer its author: the message box gets a quote line and `@author` (outside a
+   group room, the author is picked under **To**).
+
+Who gets what:
+
+| Message | Goes to |
+|---|---|
+| Your message | the members it @mentions (`@all` / `@모두`: everyone); with none, the default recipient |
+| A member's answer to you | only you (it shows in the room), plus members it @mentions |
+| A member's answer to another member | that member, without a mention, plus members it @mentions |
+| A reply to an answer that came back that way | only the members it @mentions, so two agents cannot thank each other in circles |
+| `-`, `(해당 없음)`, `N/A` (no answer needed) | nobody; it only shows in the room |
 
 Limits, so agents cannot talk in circles on your quota. Each room sets its own in the room form; **nothing is
 dropped**:
@@ -271,7 +282,8 @@ The bar above the message box shows how many hand-offs wait or are held. A limit
 first, since agents can then keep answering each other. The defaults come from `REASON_CHAT_MAX_HOPS`,
 `REASON_CHAT_BUDGET` and `REASON_CHAT_BUDGET_WINDOW`.
 
-Every message costs one agent turn per member it reaches (`@person/name` when two members share a session name).
+Every message, an answer passed back included, costs one agent turn per member it reaches (`@person/name` when two
+members share a session name).
 Hand-offs work with replies to the relayed message; a worker's reply always is one. Group chat runs while this
 page's server runs. Queued hand-offs, and replies that arrive while it is stopped (up to 24 hours), are passed on
 when it starts again.

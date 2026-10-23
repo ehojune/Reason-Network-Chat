@@ -83,10 +83,12 @@ class RelayTest(unittest.TestCase):
         self.r.post(self.room, ME, "@b-claude에게 부탁")
         self.assertEqual(self.counts(), [0, 1, 0])
 
-    def test_envelope_says_only_mentions_receive(self):
+    def test_envelope_names_where_the_answer_goes(self):
         self.r.post(self.room, ME, "@a-codex hi")
         head = self.sent_to(A)[-1].split("---")[0]
-        self.assertIn("Only the members you @mention receive your reply; pat sees the whole room.", head)
+        self.assertIn("Your answer goes back to pat automatically. To reach anyone else, @name them.", head)
+        self.assertIn("Reply `-` if no answer is needed.", head)
+        self.assertIn("You will not see a reply to your answer unless it @mentions you.", head)
         self.assertNotIn("Everyone in the room reads", head)
 
     def test_members_cannot_mention_everyone(self):
@@ -127,6 +129,56 @@ class RelayTest(unittest.TestCase):
         self.r.post(self.room, ME, "@kim/a-codex only you")
         self.assertEqual((len(self.sent_to(A)), len(self.sent_to(twin)), len(self.sent_to(B))), (0, 1, 0))
         self.assertIn("Members: pat (person), pat/a-codex, kim/a-codex, b-claude.", self.sent_to(twin)[-1])
+
+    def test_an_answer_goes_back_to_the_member_who_asked(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude what does retry.ts do?", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        self.assertIn("Your answer goes back to a-codex automatically.", self.sent_to(B)[-1])
+        self.insert(B, ME, "It retries three times with backoff.", reply_to=self.last_id_to(B))  # no @
+        self.r.scan(ME)
+        self.assertEqual(len(self.sent_to(A)), 2)  # came back to the asker
+        self.assertTrue(self.sent_to(A)[-1].endswith("---\nb-claude: It retries three times with backoff."))
+        self.assertIn("passed back to you automatically", self.sent_to(A)[-1])
+        self.insert(A, ME, "Thanks, that settles it.", reply_to=self.last_id_to(A))  # one level only
+        self.r.scan(ME)
+        self.assertEqual((len(self.sent_to(A)), len(self.sent_to(B)), len(self.sent_to(C))), (2, 1, 0))
+
+    def test_answer_with_mentions_also_goes_back(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude check this", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        self.insert(B, ME, "@c-codex please look too", reply_to=self.last_id_to(B))
+        self.r.scan(ME)
+        self.assertEqual((len(self.sent_to(A)), len(self.sent_to(C))), (2, 1))
+
+    def test_empty_answers_go_nowhere(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude check this", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        for text in ("-", "(해당 없음)", "...", " N/A "):
+            self.insert(B, ME, text, reply_to=self.last_id_to(B))
+        self.r.scan(ME)
+        self.assertEqual(len(self.sent_to(A)), 1)
+        self.assertTrue(relay.no_answer("—") and relay.no_answer("Nothing to add."))
+        self.assertFalse(any(relay.no_answer(t) for t in ("4", "no", "없음", "done, see #12")))
+
+    def test_a_short_answer_still_goes_back(self):  # found live: "4" to "what is 2+2?" was dropped
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude what is 2+2?", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        self.insert(B, ME, "4", reply_to=self.last_id_to(B))
+        self.r.scan(ME)
+        self.assertTrue(self.sent_to(A)[-1].endswith("---\nb-claude: 4"))
+
+    def test_answer_back_counts_toward_the_budget(self):
+        self.room["limits"] = {"budget": 1}
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude check this", reply_to=self.last_id_to(A))
+        self.r.scan(ME)  # uses the one hand-off
+        self.insert(B, ME, "checked, all fine", reply_to=self.last_id_to(B))
+        self.r.scan(ME)
+        self.assertEqual(self.queued(), {"waiting": 1, "held": 0})
 
     def test_no_mention_no_wake_and_self_mention_ignored(self):
         self.r.post(self.room, ME, "@a-codex hi")
@@ -223,8 +275,11 @@ class RelayTest(unittest.TestCase):
         self.assertEqual(len(self.sent_to(B)) + len(self.sent_to(C)), 2)
         self.insert(B, ME, "@c-codex next", reply_to=self.last_id_to(B))
         self.r.scan(ME)
+        self.assertEqual(self.queued(), {"waiting": 2, "held": 0})  # to c-codex, and back to a-codex who asked
+        self.r.post(self.room, ME, "@a-codex continue")  # your message: a fresh budget (one hand-off here)
+        self.r.scan(ME)
         self.assertEqual(self.queued(), {"waiting": 1, "held": 0})
-        self.r.post(self.room, ME, "@a-codex continue")  # your message: a fresh budget
+        self.r.flush(self.room["id"])
         self.r.scan(ME)
         self.assertIsNone(self.queued())
 

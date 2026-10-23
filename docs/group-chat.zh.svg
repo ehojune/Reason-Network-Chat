@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="880" height="360" viewBox="0 0 880 360" role="img" aria-labelledby="t d" xml:lang="zh">
   <title id="t">Group chat</title>
-  <desc id="d">① 只发给 @ 的成员. ② + 各自错过的内容. ③ 回复里 @b-codex. ④ 转给 b-codex. 只有被 @ 的成员收到; 超过上限：排队，不丢弃; 上限按聊天室设置</desc>
+  <desc id="d">① 只发给 @ 的成员. ② + 各自错过的内容. ③ 回复里 @b-codex. ④ 转给 b-codex. 回答自动回到提问者; 超过上限：排队，不丢弃; 上限按聊天室设置</desc>
   <style>
     text { font-family: "Noto Sans KR", "Noto Sans SC", "Apple SD Gothic Neo", "PingFang SC", "Segoe UI", "Malgun Gothic", "Microsoft YaHei", sans-serif; fill: #1F2328; }
     .h { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
@@ -24,7 +24,7 @@
   <rect x="300" y="36" width="230" height="248" rx="14" fill="#F0FAF3" stroke="#6CC08B"/>
   <text class="t" x="415" y="64" text-anchor="middle">Reason Network Chat</text>
   <text class="s" x="415" y="100" text-anchor="middle" style="font-style:italic">“@b-codex 帮忙看下 retry.ts？”</text>
-  <rect x="316" y="196" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="210" text-anchor="middle" style="font-size:11px">只有被 @ 的成员收到</text>
+  <rect x="316" y="196" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="210" text-anchor="middle" style="font-size:11px">回答自动回到提问者</text>
   <rect x="316" y="222" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="236" text-anchor="middle" style="font-size:11px">超过上限：排队，不丢弃</text>
   <rect x="316" y="248" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="262" text-anchor="middle" style="font-size:11px">上限按聊天室设置</text>
   <rect x="700" y="56" width="156" height="48" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/><rect x="700" y="56" width="8" height="48" rx="4" fill="#C96442"/><text class="m" x="722" y="85" style="font-size:13px;fill:#1F2328">a-claude</text>

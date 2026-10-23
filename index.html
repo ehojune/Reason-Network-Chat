@@ -122,6 +122,15 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .quote { border-left: 3px solid var(--line); color: var(--muted); font-size: 12px; padding: 0 0 0 8px; margin-bottom: 6px;
   max-height: 3em; overflow: hidden; }
 .foot { font-size: 11px; color: var(--muted); margin: 2px 6px 0; }
+.replyBtn { font: inherit; font-size: 12px; color: var(--muted); background: none; border: none; padding: 0 4px;
+  margin-left: 4px; cursor: pointer; visibility: hidden; }
+.msg:hover .replyBtn, .replyBtn:focus-visible { visibility: visible; }
+.replyBtn:hover { color: var(--accent); }
+#replyChip { font-size: 12px; color: var(--muted); border-left: 3px solid var(--accent); padding: 2px 8px; margin: 2px 0;
+  display: flex; gap: 6px; align-items: center; }
+#replyChip[hidden] { display: none; }
+#replyText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+#replyX { font: inherit; color: var(--muted); background: none; border: none; cursor: pointer; padding: 0 4px; }
 .empty { color: var(--muted); text-align: center; margin-top: 30vh; }
 #comp { border-top: 1px solid var(--line); background: var(--panel); padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
 #nowake { font-size: 12px; color: var(--muted); }
@@ -198,6 +207,7 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
       <label id="wakeAfterLabel" hidden><input type="checkbox" id="wakeAfter"> <span data-t="wakeAfter"></span></label>
       <span id="sendmsg"></span>
     </div>
+    <div id="replyChip" hidden><span id="replyText"></span><button type="button" id="replyX">×</button></div>
     <div id="rcpt" hidden></div>
     <div id="ac" hidden></div>
     <div id="inrow">
@@ -254,7 +264,7 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
 <script>
 const T = {
   ko: { all: "전체 대화", connecting: "연결 중…", loading: "불러오는 중…", empty: "메시지가 없습니다",
-    raw: "원문", formatted: "서식", to: "받는 세션", fyi: "깨우지 않기", fyiTip: "--fyi: 상대를 깨우지 않고 받은편지함에만 넣음",
+    raw: "원문", formatted: "서식", reply: "답글", replyX: "답글 취소", to: "받는 세션", fyi: "깨우지 않기", fyiTip: "--fyi: 상대를 깨우지 않고 받은편지함에만 넣음",
     ph: "메시지 (Enter 보내기, Shift+Enter 줄바꿈)", send: "보내기", sending: "보내는 중…", sent: "보냄 →",
     failed: "실패: ", offline: "오프라인", history: "기록에만 남은 세션",
     busy: "작업 중", idle: "대기", gone: "종료됨", read: "읽음", unread: "안 읽음", held: "보류됨",
@@ -323,7 +333,7 @@ const T = {
     noLimit: "제한 없음",
     noLimitAsk: "제한을 없애면 에이전트끼리 끝없이 주고받으며 차례(비용)를 계속 쓸 수 있습니다. 계속할까요?" },
   en: { all: "All messages", connecting: "Connecting…", loading: "Loading…", empty: "No messages",
-    raw: "Source", formatted: "Formatted", to: "To", fyi: "Don't wake", fyiTip: "--fyi: drop it in the inbox without waking the session",
+    raw: "Source", formatted: "Formatted", reply: "Reply", replyX: "Cancel reply", to: "To", fyi: "Don't wake", fyiTip: "--fyi: drop it in the inbox without waking the session",
     ph: "Message (Enter to send, Shift+Enter for a new line)", send: "Send", sending: "Sending…", sent: "Sent →",
     failed: "Failed: ", offline: "Offline", history: "History only",
     busy: "busy", idle: "idle", gone: "gone", read: "read", unread: "unread", held: "held",
@@ -394,7 +404,7 @@ const T = {
     noLimit: "No limit",
     noLimitAsk: "Without a limit, agents can keep answering each other and keep spending turns (cost). Continue?" },
   zh: { all: "全部消息", connecting: "连接中…", loading: "加载中…", empty: "暂无消息",
-    raw: "原文", formatted: "格式", to: "发送给", fyi: "不唤醒", fyiTip: "--fyi：只放进收件箱，不唤醒对方会话",
+    raw: "原文", formatted: "格式", reply: "回复", replyX: "取消回复", to: "发送给", fyi: "不唤醒", fyiTip: "--fyi：只放进收件箱，不唤醒对方会话",
     ph: "输入消息（Enter 发送，Shift+Enter 换行）", send: "发送", sending: "发送中…", sent: "已发送 →",
     failed: "失败：", offline: "离线", history: "仅在记录中",
     busy: "工作中", idle: "空闲", gone: "已结束", read: "已读", unread: "未读", held: "已暂扣",
@@ -851,7 +861,8 @@ function renderTl() {
     const html = md(m.body), rich = /<(?!\/?(p|br)>)/.test(html), raw = !rich || rawIds.has(m.id);
     h += `<div class="msg ${me ? "me" : ""}">
       <div class="meta">${agentTag(m.sender, m.sender_agent)}<span class="who" data-a="${esc(m.sender)}">${esc(short(m.sender))}</span>
-        → ${m.to.map(a => `${agentTag(a, null, true)}<span class="who" data-a="${esc(a)}">${esc(short(a))}</span>`).join(", ")} · ${fmtT(m.sent_at)}</div>
+        → ${m.to.map(a => `${agentTag(a, null, true)}<span class="who" data-a="${esc(a)}">${esc(short(a))}</span>`).join(", ")} · ${fmtT(m.sent_at)}${
+        me ? "" : `<button type="button" class="replyBtn" data-id="${esc(m.id)}" title="${esc(t("reply"))}" aria-label="${esc(t("reply"))}">↩</button>`}</div>
       <div class="bub ${raw ? "raw" : "md"}">${q ? `<div class="quote">↪ ${esc(short(qr ? qr.speaker : q.sender))}: ${esc((qr ? qr.core : q.body).slice(0, 160))}</div>` : ""}${raw ? esc(m.body) : html}</div>
       <div class="foot">${esc(flags)}${rich ? `<button type="button" class="rawBtn" data-id="${esc(m.id)}">${t(raw ? "formatted" : "raw")}</button>` : ""}</div></div>`;
   }
@@ -980,7 +991,34 @@ $("#list").addEventListener("click", e => {
   if (e.target.closest("#restartAll")) return restartWorkers(stoppedWorkers());
   const x = e.target.closest(".ses"); if (x) pick(x.dataset.a);
 });
+// Reply (for you; agents never see the page): the composer gets a quote chip and the author as recipient, in a
+// group room by an @mention, elsewhere by picking the author under "To". The quote travels as one plain line with
+// its @ signs neutralised, so quoting a message cannot wake the people it named.
+let replying = null;
+function startReply(id) {
+  const raw = S.messages.find(x => x.id === id);
+  if (!raw) return;
+  const rel = relayOf(raw), text = rel ? rel.core : raw.body;
+  const line = (text.split("\n").find(l => l.trim()) || "").trim().slice(0, 100);
+  replying = {id, author: raw.sender, line};
+  const room = roomOf($("#to").value) || roomOf(sel);
+  const b = $("#body");
+  if (room && room.group && room.members.includes(raw.sender)) {
+    const tag = `@${handleOf(raw.sender, room)}`;
+    if (!roomTargets(room, b.value).to.includes(raw.sender)) b.value = `${tag} ${b.value.replace(/^\s+/, "")}`;
+  } else if ([...$("#to").options].some(o => o.value === raw.sender)) {
+    $("#to").value = raw.sender;
+  }
+  $("#replyText").textContent = `↩ ${short(raw.sender)}: ${line}`;
+  $("#replyChip").hidden = false;
+  b.focus(); b.setSelectionRange(b.value.length, b.value.length);
+  renderRcpt(); renderNoWake();
+}
+function endReply() { replying = null; $("#replyChip").hidden = true; }
+$("#replyX").addEventListener("click", endReply);
 $("#tl").addEventListener("click", e => {
+  const rb = e.target.closest(".replyBtn");
+  if (rb) return startReply(rb.dataset.id);
   const r = e.target.closest(".rawBtn");
   if (r) { rawIds.has(r.dataset.id) ? rawIds.delete(r.dataset.id) : rawIds.add(r.dataset.id); render(true); return; }
   const x = e.target.closest(".who"); if (x) pick(x.dataset.a);
@@ -1071,10 +1109,11 @@ $("#langs").addEventListener("click", e => {
 
 $("#comp").addEventListener("submit", async e => {
   e.preventDefault();
-  const to = $("#to").value, body = $("#body").value.trim();
-  if (!to || !body) return;
+  const to = $("#to").value, typed = $("#body").value.trim();
+  if (!to || !typed) return;
+  const body = replying ? `> ${short(replying.author)}: ${replying.line.replace(/@/g, "＠")}\n${typed}` : typed;
   const room = roomOf(to), target = S.sessions.find(x => x.address === to);
-  const gets = room && room.group ? roomTargets(room, body).to : room ? room.members : [];
+  const gets = room && room.group ? roomTargets(room, typed).to : room ? room.members : [];
   if (room && room.group && !gets.length) { $("#sendmsg").textContent = t("rcptNone"); $("#body").focus(); return; }
   const off = room ? gets.filter(a => ["offline", "gone"].includes(reach(S.sessions.find(x => x.address === a) || {live: false})))
     : target && ["offline", "gone"].includes(reach(target)) ? [to] : [];
@@ -1085,7 +1124,7 @@ $("#comp").addEventListener("submit", async e => {
     if (to.startsWith("room:")) {
       const j = await post("/api/rooms/send", {id: to.slice(5), body, fyi: !$("#fyiLabel").hidden && $("#fyi").checked});
       const bad = j.results.filter(r => !r.ok);
-      $("#body").value = ""; renderRcpt(); renderAc();
+      $("#body").value = ""; endReply(); renderRcpt(); renderAc();
       $("#sendmsg").textContent = `${t("sentTo")} ${j.sent}${t("of")}${j.results.length}` +
         (bad.length ? ` · ${t("failed")}${bad.map(r => `${short(r.to)}: ${r.err}`).join("; ")}` : "");
       $("#tl").dataset.first = "1"; poll(); return;
@@ -1093,7 +1132,7 @@ $("#comp").addEventListener("submit", async e => {
     const wakeToo = !$("#wakeAfterLabel").hidden && $("#wakeAfter").checked;
     if (wakeToo && !confirm(t("wakeAsk").replace("{name}", short(to)))) return;
     await post("/api/send", {to, body, fyi: $("#fyi").checked});
-    $("#body").value = ""; $("#sendmsg").textContent = `${t("sent")} ${short(to)}`;
+    $("#body").value = ""; endReply(); $("#sendmsg").textContent = `${t("sent")} ${short(to)}`;
     // A refused wake is kept next to "sent": the status line is overwritten by the next refresh.
     const why = wakeToo ? await wake(to, true) : null;
     if (why) $("#sendmsg").textContent += ` · ${t("wakeFailed")}${why}`;

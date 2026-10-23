@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import shlex
 import signal
 import subprocess
 import sys
@@ -534,6 +535,129 @@ def efforts_for(fam, entry):
     return [e for e in fam["efforts"] if all(e in m["efforts"] for m in fam["models"])]
 
 
+# ---------- finding `serve` workers this page lost track of ----------
+# workers.json can lose entries (two servers writing it from memory did, before exclusive binding). The processes
+# keep running, so the server looks for `reason network serve` command lines and takes back those it started.
+
+def split_cmdline(cmd):
+    """A Windows command line as argv (CommandLineToArgvW)."""
+    if not cmd:
+        return []
+    import ctypes
+    from ctypes import wintypes
+    f = ctypes.windll.shell32.CommandLineToArgvW
+    f.argtypes = (wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int))
+    f.restype = ctypes.POINTER(wintypes.LPWSTR)
+    n = ctypes.c_int()
+    argv = f(cmd, ctypes.byref(n))
+    if not argv:
+        return []
+    try:
+        return [argv[i] for i in range(n.value)]
+    finally:
+        ctypes.windll.kernel32.LocalFree(argv)
+
+
+def list_processes():
+    """[(pid, parent pid, program name, argv)] for every process on this computer, or [] when they cannot be read."""
+    if WIN:
+        ps = "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json -Compress"
+        try:
+            out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps], capture_output=True,
+                                 timeout=60, stdin=subprocess.DEVNULL, creationflags=NOWIN).stdout
+            items = json.loads(out.decode("utf-8", "replace") or "[]")
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            return []
+        items = [items] if isinstance(items, dict) else items if isinstance(items, list) else []
+        return [(p.get("ProcessId"), p.get("ParentProcessId"), str(p.get("Name") or ""),
+                 split_cmdline(p.get("CommandLine") or "")) for p in items if isinstance(p, dict)]
+    try:
+        out = subprocess.run(["ps", "-eo", "pid=,ppid=,args="], capture_output=True, timeout=30).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    rows = []
+    for line in out.decode("utf-8", "replace").splitlines():
+        parts = line.split(None, 2)
+        try:
+            argv = shlex.split(parts[2]) if len(parts) == 3 else []
+            rows.append((int(parts[0]), int(parts[1]), Path(argv[0]).name if argv else "", argv))
+        except (ValueError, IndexError):
+            continue
+    return rows
+
+
+def parse_serve(argv):
+    """{family, name, cwd, fullAccess} of a `reason network serve [claude|codex] --name N --cwd D [--full-access]`
+    command line, or None."""
+    for i in range(len(argv) - 1):
+        if argv[i] == "network" and argv[i + 1] == "serve":
+            rest = argv[i + 2:]
+            break
+    else:
+        return None
+    family = "claude"  # serve's own default
+    if rest and not rest[0].startswith("-"):
+        family, rest = rest[0], rest[1:]
+    if family not in ("claude", "codex"):
+        return None
+    out = {"family": family, "name": None, "cwd": None, "fullAccess": False}
+    k = 0
+    while k < len(rest):
+        if rest[k] in ("--name", "--cwd") and k + 1 < len(rest):
+            out[rest[k][2:]] = rest[k + 1]
+            k += 2
+            continue
+        out["fullAccess"] = out["fullAccess"] or rest[k] == "--full-access"
+        k += 1
+    return out if out["name"] and NAME_RE.match(out["name"]) else None
+
+
+def model_from_args(family, argv):
+    """(model, effort) a worker's agent runs with, read from its command line (or its shim's arguments)."""
+    model = effort = None
+    for k, a in enumerate(argv[:-1]):
+        nxt = argv[k + 1]
+        if family == "claude" and a == "--model":
+            model = nxt
+        elif family == "claude" and a == "--effort":
+            effort = nxt
+        elif family == "codex" and a == "-c":
+            key, _, val = nxt.partition("=")
+            val = val.strip('"')
+            if key == "model":
+                model = val
+            elif key == "model_reasoning_effort":
+                effort = val
+    return (model if model and MODEL_RE.match(model) else None, effort if effort and EFFORT_RE.match(effort) else None)
+
+
+def found_workers(procs):
+    """The `serve` workers among `procs`, each with the model and effort its agent processes show (if any run)."""
+    kids = {}
+    for pid, ppid, _, _ in procs:
+        kids.setdefault(ppid, []).append(pid)
+    argv_of = {pid: argv for pid, _, _, argv in procs}
+    out = []
+    for pid, _, name, argv in procs:
+        if not name.lower().startswith("reason"):
+            continue
+        s = parse_serve(argv)
+        if not s or not isinstance(pid, int):
+            continue
+        model = effort = None
+        todo, seen = list(kids.get(pid, [])), set()
+        while todo and not (model and effort):  # a warm `claude -p` or a running `codex exec` names them
+            c = todo.pop()
+            if c in seen:
+                continue
+            seen.add(c)
+            m, e = model_from_args(s["family"], argv_of.get(c) or [])
+            model, effort = model or m, effort or e
+            todo += kids.get(c, [])
+        out.append(dict(s, pid=pid, model=model, effort=effort))
+    return out
+
+
 class LaunchError(Exception):
     def __init__(self, msg, code=400):
         super().__init__(msg)
@@ -550,6 +674,8 @@ class Launcher:
         # shim's per-worker file (absent for workers started before it existed: those restart to change)
         self.workers = {}
         self.restarting = set()  # names of workers being restarted by configure(): still taken
+        self.stopped = set()  # names stopped here: a merge must not bring their old record back
+        self.foreign = {}  # name -> serve worker running on this computer that this page did not start
         self.load()
 
     # Registry on disk, so a restarted server can still stop the workers it started.
@@ -565,6 +691,16 @@ class Launcher:
         self.save()
 
     def save(self):
+        """Read, merge, write (call with self.lock held): a live worker another writer recorded is kept, not lost."""
+        try:
+            disk = json.loads(self.reg.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            disk = []
+        for w in disk if isinstance(disk, list) else []:
+            if isinstance(w, dict) and isinstance(w.get("pid"), int) and w.get("started") \
+                    and NAME_RE.match(str(w.get("name", ""))) and w["name"] not in self.workers \
+                    and w["name"] not in self.stopped and w["name"] not in self.restarting and self.alive(w):
+                self.workers[w["name"]] = w
         try:
             STATE.mkdir(parents=True, exist_ok=True)
             tmp = self.reg.with_suffix(".tmp")
@@ -572,6 +708,53 @@ class Launcher:
             os.replace(tmp, self.reg)
         except OSError:
             pass
+
+    def discover(self, procs=None):
+        """Take back `serve` workers this page started (their log is in logs/) that workers.json lost; note the others.
+
+        Model and effort come from the agent processes under the worker when one is running, else they are unknown;
+        such a worker has no settings file, so changing it restarts it.
+        """
+        found = found_workers(list_processes() if procs is None else procs)
+        with self.lock:
+            known = {w["pid"] for w in self.workers.values()}
+            foreign = {}
+            for f in found:
+                if f["pid"] in known or f["name"] in self.restarting:
+                    continue
+                started = started_at(f["pid"])
+                if not started:
+                    continue
+                log = STATE / "logs" / f"{f['name']}.log"
+                w = {"name": f["name"], "pid": f["pid"], "started": started, "family": f["family"],
+                     "model": f["model"], "effort": f["effort"], "cwd": f["cwd"], "log": str(log),
+                     "fullAccess": f["fullAccess"], "settings": None, "adopted": True}
+                if log.is_file() and f["name"] not in self.workers:
+                    self.workers[f["name"]] = w
+                    self.stopped.discard(f["name"])
+                    self.save()
+                elif f["name"] not in self.workers:
+                    foreign[f["name"]] = w
+            self.foreign = foreign
+
+    def adopt(self, name):
+        """Manage a worker started outside this page (the user asked to, in the page)."""
+        with self.lock:
+            w = self.foreign.get(name)
+            if not w or not self.alive(w):
+                raise LaunchError("No such worker running outside this page.", 404)
+            if name in self.workers:
+                raise LaunchError("A worker with that name is managed here already.", 409)
+            self.workers[name] = dict(w, external=True)
+            self.foreign.pop(name, None)
+            self.stopped.discard(name)
+            self.save()
+        return {"ok": True}
+
+    def list_foreign(self):
+        with self.lock:
+            return [{k: w.get(k) for k in ("name", "family", "model", "effort", "cwd", "fullAccess")}
+                    for w in self.foreign.values() if self.alive(w)]
 
     @staticmethod
     def alive(w):
@@ -585,7 +768,8 @@ class Launcher:
             if gone:
                 self.save()
             return [dict({k: w.get(k) for k in ("name", "family", "model", "effort", "cwd")},
-                         fullAccess=bool(w.get("fullAccess")), liveSettings=self.live_settings(w))
+                         fullAccess=bool(w.get("fullAccess")), liveSettings=self.live_settings(w),
+                         adopted=bool(w.get("adopted")))
                     for w in self.workers.values()]
 
     @staticmethod
@@ -600,6 +784,7 @@ class Launcher:
             w = self.workers.pop(name, None)
             if not w:
                 raise LaunchError("Not a worker started here.", 404)
+            self.stopped.add(name)
             self.save()
         self.halt(w)
 

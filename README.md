@@ -210,6 +210,15 @@ A restart is a clean stop (the network shows it stopped) and a new `serve` under
 the middle of a turn, the page asks again first: restarting then loses that turn. Workers started before this
 version restart for any change.
 
+### Workers this page lost track of
+
+Every 30 seconds the server looks for running `reason network serve` workers. One that this page started (its log
+is in `~/.reason-network-chat/logs/`) but no longer lists is taken back: it shows on its row again and **Change
+settings** and **Stop worker** work. Its model and effort are read from the agent process when one is running,
+else the row says *model unknown*. A worker started some other way is left alone; right-click it → **Manage this
+worker started elsewhere** if you want this page to handle it. Such a worker may ignore the page's Ctrl+C, and is
+then stopped by force and can show as idle on the network afterwards.
+
 ## Rooms
 
 **+ Room** saves a set of sessions under a name. Select the room to see only the messages those sessions

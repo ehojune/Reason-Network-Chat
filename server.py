@@ -34,6 +34,7 @@ DB = Path(os.environ.get("REASON_CHAT_DB", HOME / ".reason" / "network" / "netwo
 STATIC = Path(__file__).with_name("index.html")
 POLL_WHO = 3  # seconds between `who` refreshes
 POLL_AUTO = 10  # seconds between auto-wake passes
+POLL_DISCOVER = 30  # seconds between looks for serve workers this page lost track of
 MAX_MESSAGES = 2000  # newest rows sent to the page per poll
 MAX_BODY = 64 * 1024  # bytes accepted by a POST
 ORIGINS = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
@@ -41,7 +42,7 @@ ORIGINS = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 TOKEN = secrets.token_urlsafe(32)
 # Shape of /api/state and the POSTs. Bump together with API in index.html: a page that meets a server of another
 # version (the server kept running across an update) asks for a restart instead of breaking.
-API = 9
+API = 10
 BOOT = secrets.token_hex(8)  # new each start: an open page that sees another one reloads to get the new token
 NOWIN = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
 
@@ -91,6 +92,16 @@ def who_loop():
             with _lock:
                 _who["error"] = str(e)
         time.sleep(POLL_WHO)
+
+
+def discover_loop():
+    """Take back workers this page started that workers.json lost (a process list every 30 s, so not per poll)."""
+    while True:
+        try:
+            LAUNCHER.discover()
+        except Exception as e:  # a bad pass must not end the loop
+            print(f"worker discovery: {e}", file=sys.stderr, flush=True)
+        time.sleep(POLL_DISCOVER)
 
 
 def auto_loop():
@@ -151,7 +162,7 @@ def state():
         s["appOpen"] = bool(s["resumable"]) and WAKER.is_held(Waker.resumable(known[s["name"]]["key"]), s["address"])
     relays, queued, notices = RELAY.view({m["id"] for m in msgs})
     return {"api": API, "boot": BOOT, "team": who.get("team"), "me": me, "sessions": sessions, "messages": msgs,
-            "launched": LAUNCHER.list(), "rooms": ROOMS.list(), "relays": relays, "queued": queued, "notices": notices,
+            "launched": LAUNCHER.list(), "foreignWorkers": LAUNCHER.list_foreign(), "rooms": ROOMS.list(), "relays": relays, "queued": queued, "notices": notices,
             "relayDefaults": {"hops": relay_mod.MAX_HOPS, "budget": relay_mod.BUDGET, "window": relay_mod.BUDGET_WINDOW},
             "prefs": PREFS.get(), "wakes": WAKER.view(),
             "whoError": who_err, "now": int(time.time() * 1000)}
@@ -294,7 +305,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         if path not in ("/api/send", "/api/launch", "/api/stop", "/api/rooms/save", "/api/rooms/delete",
-                        "/api/rooms/send", "/api/rooms/flush", "/api/prefs", "/api/wake", "/api/workers/configure"):
+                        "/api/rooms/send", "/api/rooms/flush", "/api/prefs", "/api/wake", "/api/workers/configure", "/api/workers/adopt"):
             return self.send_error(404)
         req = self.read_json()
         if req is None:
@@ -324,6 +335,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not who:
                     return self.send_json({"error": "Reason Network is not answering; try again."}, 503)
                 self.send_json(WAKER.wake(req.get("address"), who))
+            elif path == "/api/workers/adopt":
+                name = req.get("name")
+                if not isinstance(name, str):
+                    return self.send_json({"error": "name must be a string"}, 400)
+                self.send_json(LAUNCHER.adopt(name))
             elif path == "/api/workers/configure":
                 # Fresh too: restarting a worker that just took a message would lose that turn.
                 who = fresh_who()
@@ -406,6 +422,7 @@ def main():
     threading.Thread(target=CATALOG.get, daemon=True).start()  # `agy models` takes a few seconds
     threading.Thread(target=RELAY.run, args=(my_address,), daemon=True).start()
     threading.Thread(target=auto_loop, daemon=True).start()
+    threading.Thread(target=discover_loop, daemon=True).start()
     srv = bind(HOST, PORT)
     print(f"Reason Network Chat on http://{HOST}:{PORT}", flush=True)
     srv.serve_forever()

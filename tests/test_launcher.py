@@ -198,7 +198,7 @@ class ConfigureTest(unittest.TestCase):
     def setUp(self):
         self.l = launcher.Launcher("reason", FakeCatalog())
         self.restarts = []
-        self.alive = launcher.Launcher.alive
+        self.alive = launcher.Launcher.__dict__["alive"]  # the staticmethod itself, so it is restored as one
         launcher.Launcher.alive = staticmethod(lambda w: True)
         self.l.halt = lambda w: None
         self.l.settle = lambda w: None
@@ -321,6 +321,80 @@ class StartWorkerTest(unittest.TestCase):
         self.assertNotIn("REASON_CHAT_SHIM_SETTINGS", env)
         self.assertEqual(json.loads(env["REASON_CHAT_CODEX_ARGS"]), ["-c", "model=gpt-6.1-sol"])
         self.assertFalse(launcher.Launcher.live_settings(w))
+
+
+REASON = r"C:\Users\pat\AppData\Local\Reason\bin\reason.exe"
+
+
+class DiscoverTest(unittest.TestCase):
+    """Taking back `serve` workers that workers.json lost, with the process list faked."""
+    def setUp(self):
+        self.saved = launcher.started_at, launcher.Launcher.__dict__["alive"]
+        launcher.started_at = lambda pid: f"t{pid}"
+        launcher.Launcher.alive = staticmethod(lambda w: True)
+        launcher.STATE.mkdir(parents=True, exist_ok=True)
+        (launcher.STATE / "workers.json").write_text("[]", encoding="utf-8")  # the folder is shared by the tests
+        self.l = launcher.Launcher("reason", FakeCatalog())
+        logs = launcher.STATE / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        (logs / "lost-claude.log").write_text("x", encoding="utf-8")  # started by this page
+        self.procs = [
+            (100, 1, "reason.exe", [REASON, "network", "serve", "claude", "--name", "lost-claude", "--cwd", FOLDER,
+                                    "--full-access"]),
+            (101, 100, "claude.exe", ["claude", "-p"]),  # the shim in front of the agent
+            (102, 101, "claude.exe", [r"C:\x\claude.exe", "--model", "claude-opus-5-5", "--effort", "high", "-p"]),
+            (200, 1, "reason.exe", [REASON, "network", "serve", "codex", "--name", "their-codex", "--cwd", FOLDER]),
+            (300, 1, "reason.exe", [REASON, "network", "who", "--json"]),
+            (400, 1, "python.exe", ["python", "server.py", "network", "serve", "--name", "x"]),
+        ]
+
+    def tearDown(self):
+        launcher.started_at, launcher.Launcher.alive = self.saved
+
+    def test_parse_serve(self):
+        self.assertEqual(launcher.parse_serve([REASON, "network", "serve", "codex", "--name", "w", "--cwd", "C:/x"]),
+                         {"family": "codex", "name": "w", "cwd": "C:/x", "fullAccess": False})
+        self.assertEqual(launcher.parse_serve([REASON, "network", "serve", "--name", "w"])["family"], "claude")
+        for bad in ([REASON, "network", "who"], [REASON, "network", "serve", "grok", "--name", "w"],
+                    [REASON, "network", "serve", "codex", "--name", "Bad Name"], [REASON, "network", "serve", "codex"]):
+            self.assertIsNone(launcher.parse_serve(bad), bad)
+
+    def test_model_from_args(self):
+        self.assertEqual(launcher.model_from_args("claude", ["claude", "--model", "opus", "--effort", "high"]), ("opus", "high"))
+        self.assertEqual(launcher.model_from_args("codex", ["codex", "-c", "model=gpt-6.1-sol", "-c",
+                                                            "model_reasoning_effort=high", "exec"]), ("gpt-6.1-sol", "high"))
+        self.assertEqual(launcher.model_from_args("codex", ["codex", "-c", "model=a b"]), (None, None))
+
+    @unittest.skipUnless(launcher.WIN, "Windows command lines")
+    def test_split_cmdline(self):
+        self.assertEqual(launcher.split_cmdline('"C:\\Program Files\\r.exe" network serve --cwd "C:\\a b"'),
+                         ["C:\\Program Files\\r.exe", "network", "serve", "--cwd", "C:\\a b"])
+
+    def test_takes_back_its_own_and_lists_the_others(self):
+        self.l.discover(self.procs)
+        w = self.l.workers["lost-claude"]
+        self.assertEqual((w["pid"], w["family"], w["model"], w["effort"], w["fullAccess"], w["settings"]),
+                         (100, "claude", "claude-opus-5-5", "high", True, None))
+        self.assertNotIn("their-codex", self.l.workers)  # no log here: not started by this page
+        self.assertEqual([f["name"] for f in self.l.list_foreign()], ["their-codex"])
+        self.l.discover(self.procs)  # again: nothing doubles
+        self.assertEqual(sorted(self.l.workers), ["lost-claude"])
+        self.assertEqual(self.l.adopt("their-codex"), {"ok": True})  # the user asked to manage it
+        self.assertIn("their-codex", self.l.workers)
+        with self.assertRaises(launcher.LaunchError):
+            self.l.adopt("their-codex")
+
+    def test_save_keeps_live_workers_another_writer_recorded(self):
+        self.l.workers = {"mine": {"name": "mine", "pid": 1, "started": "t1", "family": "codex"}}
+        launcher.STATE.mkdir(parents=True, exist_ok=True)
+        self.l.reg.write_text(json.dumps([{"name": "theirs", "pid": 2, "started": "t2", "family": "claude"},
+                                          {"name": "stopped-here", "pid": 3, "started": "t3", "family": "claude"}]),
+                              encoding="utf-8")
+        self.l.stopped.add("stopped-here")
+        with self.l.lock:
+            self.l.save()
+        names = sorted(w["name"] for w in json.loads(self.l.reg.read_text(encoding="utf-8")))
+        self.assertEqual(names, ["mine", "theirs"])
 
 
 if __name__ == "__main__":

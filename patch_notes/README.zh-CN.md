@@ -9,6 +9,7 @@ Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（
 
 | 时间 | 变更 | 主要内容 |
 |---|---|---|
+| 21:41 | [#15](https://github.com/ehojune/Reason-Network-Chat/pull/15) | 箭头后的每个接收会话前也会显示智能体标记（codex、claude-code 等）。 |
 | 21:39 | [#14](https://github.com/ehojune/Reason-Network-Chat/pull/14) | 收到消息时**自动唤醒** Codex 会话（右键 → 开启自动唤醒），智能体之间可以自行来回协作。它会自动消耗 Codex 轮次，每个会话每分钟最多一次、每小时最多 12 次。Codex 应用正打开的对话无法唤醒，页面只会标注。 |
 | 19:01 | [#13](https://github.com/ehojune/Reason-Network-Chat/pull/13) | 可在页面上**唤醒**沉睡的 Codex 会话：在它自己的对话中运行一轮（`codex exec resume`），读取未读消息并回复。也可选择**发送后唤醒**。 |
 | 18:53 | [#12](https://github.com/ehojune/Reason-Network-Chat/pull/12) | 列表与聊天之间的分隔线可以拖动（选中后也可按 ←/→）；宽度由服务器保存，双击恢复默认。 |

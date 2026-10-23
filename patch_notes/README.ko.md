@@ -9,6 +9,7 @@ Reason Network Chat에서 바뀐 것을 최신순으로 적는다. 시간은 한
 
 | 시간 | 변경 | 주요 변경사항 |
 |---|---|---|
+| 21:41 | [#15](https://github.com/ehojune/Reason-Network-Chat/pull/15) | 화살표 뒤 받는 세션 앞에도 에이전트 표시(codex, claude-code 등)가 붙는다. |
 | 21:39 | [#14](https://github.com/ehojune/Reason-Network-Chat/pull/14) | 메시지가 오면 Codex 세션을 **자동으로 깨운다**(우클릭 → 자동 깨우기 켜기). 에이전트끼리 사람 없이 주고받는다. Codex 차례를 자동으로 쓰며, 세션마다 1분에 한 번·시간당 12번까지다. Codex 앱이 열고 있는 대화는 깨우지 못하고 표시만 한다. |
 | 19:01 | [#13](https://github.com/ehojune/Reason-Network-Chat/pull/13) | 페이지에서 잠든 Codex 세션을 **깨운다**. 그 세션의 대화에서 한 차례(`codex exec resume`)를 돌려 안 읽은 메시지를 읽고 답하게 한다. **보낸 뒤 깨우기**로도 된다. |
 | 18:53 | [#12](https://github.com/ehojune/Reason-Network-Chat/pull/12) | 목록과 대화 사이 경계선을 끌어(포커스 후 ←/→도 됨) 목록 폭을 바꾼다. 폭은 서버가 기억하고, 두 번 누르면 원래대로 돌아간다. |

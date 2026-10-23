@@ -265,6 +265,8 @@ class Relay:
             rec = dict(self.sent.get(mid) or {})
         if not rec:
             return None
+        if worker_failure(rec.get("core")):  # a failure an older version passed on: not something to send again
+            raise RelayError("That was a worker's failure passed on, not a message to send again.", 409)
         room = self.rooms.get(rec.get("room"))
         if not room or not room.get("group") or rec.get("to") not in room["members"]:
             raise RelayError("That room is gone, or the member left it.", 409)

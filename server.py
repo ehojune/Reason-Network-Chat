@@ -461,9 +461,10 @@ class Handler(BaseHTTPRequestHandler):
                     if rc != 0:
                         raise RelayError(err or out or f"rc={rc}", 502)
                 results.append({"id": mid, "ok": True, "to": to})
-            except RelayError as e:
-                RELAY.unclaim(mid)  # it did not go out: it can be sent again later
-                results.append({"id": mid, "ok": False, "to": to, "err": str(e)})
+            except Exception as e:  # RelayError, or the CLI missing or timing out: it did not go out
+                RELAY.unclaim(mid)  # so it can be sent again later
+                results.append({"id": mid, "ok": False, "to": to,
+                                "err": str(e) if isinstance(e, RelayError) else f"{type(e).__name__}: {e}"})
         done = sum(r["ok"] for r in results)
         self.send_json({"ok": done > 0, "done": done, "results": results,
                         **({} if done else {"error": "; ".join(r["err"] for r in results)})}, 200 if done else 409)

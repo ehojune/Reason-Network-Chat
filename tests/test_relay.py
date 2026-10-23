@@ -268,6 +268,9 @@ class RelayTest(unittest.TestCase):
         self.assertEqual(self.r.settled_view({first})[first]["how"], "resent")
         self.assertIn(first, self.new_relay().settled_view({first}))  # kept across a restart
         self.assertIsNone(self.r.redeliver("not-relayed", ME))
+        self.r.sent["old-failure"] = {"room": self.room["id"], "to": B, "speaker": A, "core": self.FAIL, "hop": 1}
+        with self.assertRaises(relay.RelayError):
+            self.r.redeliver("old-failure", ME)  # a failure an older version passed on is not sent again
         self.r.unclaim(first)
         self.assertEqual(self.r.settled_view({first}), {})
         self.room["members"] = [B, C]

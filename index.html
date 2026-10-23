@@ -1001,6 +1001,7 @@ function troubles() {
   for (const x of S.messages) if (x.reply_to) (replies[x.reply_to] ||= []).push(x);
   for (const m of S.messages) {
     if (m.sender !== S.me || S.now - m.sent_at > RECENT_MS || (S.settled || {})[m.id]) continue;
+    if (S.relays[m.id] && isFailure(S.relays[m.id].core)) continue;  // a failure an older version passed on
     const s = ses.get(m.recipient);
     if (!s || s.tier !== "turn") continue;
     const rs = (replies[m.id] || []).filter(x => x.sender === m.recipient);
@@ -1028,13 +1029,20 @@ function renderTrouble() {
     `<button type="button" class="resendAll">${esc(t("resendAll"))}</button><button type="button" class="dismissAll">${esc(t("dismissAll"))}</button>`;
 }
 async function resend(ids, dismiss) {
+  let done = 0;
+  const bad = [];
   try {
-    const j = await post("/api/resend", {ids, dismiss: !!dismiss});
-    const bad = j.results.filter(r => !r.ok);
-    say((dismiss ? t("dismissed") + " " + j.done : t("resendDone").replace("{n}", j.done)) +
+    for (let i = 0; i < ids.length; i += 100) {  // the server takes up to 100 per request
+      const j = await post("/api/resend", {ids: ids.slice(i, i + 100), dismiss: !!dismiss}).catch(err => ({done: 0, results: [{ok: false, err: err.message}]}));
+      done += j.done;
+      bad.push(...j.results.filter(r => !r.ok));
+    }
+    say((dismiss ? t("dismissed") + " " + done : t("resendDone").replace("{n}", done)) +
       (bad.length ? ` · ${t("failed")}${bad.map(r => r.err).join("; ")}` : ""), !!bad.length);
+  } finally {
+    lastSig = "";  // redraw even if nothing changed, so a button disabled by the click comes back
     poll();
-  } catch (err) { say(t("failed") + err.message, true); }
+  }
 }
 $("#trouble").addEventListener("click", e => {
   const list = troublesInView();

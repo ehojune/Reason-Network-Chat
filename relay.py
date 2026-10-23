@@ -315,6 +315,7 @@ class Relay:
         with self.lock:
             return (self.sent.get(mid) or {}).get("to")
 
+    @serialized
     def redeliver(self, mid, me):
         """Send a relayed message again as it was (same room, member, speaker, text and hop): your "Send again" after
         a worker failed on it or took it without answering. None when `mid` is not a message this page relayed."""
@@ -327,9 +328,8 @@ class Relay:
         room = self.rooms.get(rec.get("room"))
         if not room or not room.get("group") or rec.get("to") not in room["members"]:
             raise RelayError("That room is gone, or the member left it.", 409)
-        with self.transaction():
-            ok, err = self.deliver(room, rec["to"], me, rec["speaker"], rec["core"], rec.get("hop", 0),
-                                implicit=bool(rec.get("implicit")), post=rec.get("post"))
+        ok, err = self.deliver(room, rec["to"], me, rec["speaker"], rec["core"], rec.get("hop", 0),
+                               implicit=bool(rec.get("implicit")), post=rec.get("post"))
         if not ok:
             raise RelayError(err or "The message could not be sent.", 502)
         return rec["to"]

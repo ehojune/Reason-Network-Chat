@@ -568,8 +568,12 @@ class Handler(BaseHTTPRequestHandler):
                 results.append({"id": mid, "ok": False, "to": to, "err": "Already sent again or put aside."})
                 continue
             try:
-                if row is None:
-                    RELAY.redeliver(mid, me)
+                # claim() reloaded shared relay state. Choose the path now, not from the stale pre-claim cache.
+                if RELAY.recipient_of(mid) is not None:
+                    if RELAY.redeliver(mid, me) is None:
+                        raise RelayError("The relay record is no longer available; reload the history.", 409)
+                elif row is None:
+                    raise RelayError("The relay record is no longer available; reload the history.", 409)
                 else:
                     rc, out, err = send_one(to, row["body"], False)
                     if rc != 0:

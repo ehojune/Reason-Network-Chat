@@ -652,6 +652,26 @@ class RelayTest(unittest.TestCase):
         self.assertEqual(self.counts(), [1, 0, 0])
         self.assertTrue(self.r.queue[self.room["id"]][0].get("flight"))
 
+    def test_endpoint_resend_reloads_another_servers_relay_record(self):
+        import server
+        from unittest import mock
+        writer = self.new_relay()
+        writer.post(self.room, ME, "@a-codex question")
+        mid = self.last_id_to(A)
+        self.assertNotIn(mid, self.r.sent)  # the serving instance predates the other writer's message
+        h = server.Handler.__new__(server.Handler)
+        h.send_json = mock.Mock()
+        with mock.patch.object(server, "RELAY", self.r), mock.patch.object(server, "db_rows", self.rows), \
+                mock.patch.object(server, "my_address", return_value=ME), \
+                mock.patch.dict(server._who, {"data": {"sessions": [{"address": A, "status": "idle"}]}}), \
+                mock.patch.object(server.LAUNCHER, "stale_names", return_value=set()):
+            h.resend({"ids": [mid]})
+        self.assertEqual(h.send_json.call_args.args[0]["done"], 1)
+        resent = self.last_id_to(A)
+        self.assertNotEqual(resent, mid)
+        self.assertEqual(self.r.sent[resent]["core"], "@a-codex question")
+        self.assertEqual(self.r.sent[resent]["room"], self.room["id"])
+
     # ---------- restarts ----------
     def test_cursor_moves_past_queued_hand_offs(self):
         self.r.post(self.room, ME, "@a-codex go")

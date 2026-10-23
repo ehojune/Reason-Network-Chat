@@ -15,7 +15,7 @@ and starts new agent sessions.
 | `wake.py` | Wake a sleeping Codex session: `codex exec resume <thread> <fixed prompt>` in its folder; auto-wake with limits. |
 | `prefs.py` | Viewer settings in `REASON_CHAT_HOME/prefs.json` (whitelisted keys), so they survive a lost localStorage. |
 | `rooms.py` | Rooms: named sets of session addresses in `REASON_CHAT_HOME/rooms.json`. |
-| `relay.py` | Group rooms: sends your message with each member's missed lines, passes on `@name` replies, guards loops. |
+| `relay.py` | Group rooms: sends your message to the members it `@mentions` (or the room's default recipient) with their missed lines, passes on `@name` replies, queues hand-offs over the room's limits. |
 | `index.html` | The whole UI (one file, no build). Polls `/api/state` every 3 s. Strings in ko/en/zh. |
 | `tests/` | `python -m unittest discover tests` — request validation and catalog parsing, no agent needed. |
 | `.claude/launch.json` | Lets the Claude desktop app start the server and show the page in its Browser pane. |
@@ -64,6 +64,7 @@ then stop the worker.
 | `NODE_EXTRA_CA_CERTS` | unset | Root CA file for TLS-inspecting corporate networks. The CLI (Bun) needs it there. On Windows, children get it from the stored user environment even if the server started before it was set. |
 | `REASON_CHAT_HOME` | `~/.reason-network-chat` | Rooms (`rooms.json`), relayed-message records (`relay.json`), settings (`prefs.json`), running wakes (`wakes.json`), auto-wake limits (`autowake.json`), worker registry (`workers.json`), worker logs (`logs/`), the model shims (`codex-shim/`, `claude-shim/`) and each worker's shim arguments (`worker-settings/<name>.json`). |
 | `REASON_CHAT_CLAUDE`, `REASON_CHAT_CODEX`, `REASON_CHAT_AGY` | found automatically | Full path to an agent CLI. On Windows it must be an `.exe`. |
+| `REASON_CHAT_MAX_HOPS`, `REASON_CHAT_BUDGET`, `REASON_CHAT_BUDGET_WINDOW` | `100`, `300`, `600` | Default group-room limits: hops in one hand-off chain, hand-offs per window (seconds). A room's own setting wins. |
 
 ## HTTP API
 
@@ -78,7 +79,7 @@ written into the page) tells an open page that the server restarted: it reloads 
 get the new token, and a newer server also triggers a reload.
 
 - `GET /api/state` →
-  `{api, boot, team, me, sessions[], messages[], launched[], rooms[], relays{}, paused{}, notices{}, prefs{}, wakes{}, whoError, now}`.
+  `{api, boot, team, me, sessions[], messages[], launched[], rooms[], relays{}, queued{}, notices{}, relayDefaults{}, prefs{}, wakes{}, whoError, now}`.
   Each session also has `resumable` (a Codex session of yours on this computer) and `appOpen` (another Codex process,
   usually the desktop app, holds the thread's writer lock, so it cannot be woken); `wakes{}` = address →
   `{status: running|done|failed, at, error, auto, limitUntil?}` (`limitUntil`: auto-wake rests until then).
@@ -89,9 +90,13 @@ get the new token, and a newer server also triggers a reload.
   `launched[]` = workers this server started and that are still running
   (`name, family, model, effort, cwd, fullAccess, liveSettings`; `liveSettings`: a model or effort change applies
   without a restart).
-  `rooms[]` = `{id, name, members[], group, created}`; `members` are session addresses.
+  `rooms[]` = `{id, name, members[], group, created, limits, defaultTo}`; `members` are session addresses; `limits` =
+  `{hops?, budget?}` (a number, or `null` for no limit; a missing key means the default); `defaultTo` = the member
+  an unmentioned message goes to, or `null`.
   `relays{}` = for messages this page relayed into a group room: `{room, hop, core, speaker}` (`core` is the plain
-  message without the room envelope; `hop` 0 = yours, ≥1 = a member's reply passed on). `paused{}` = room → `budget`/`hops`.
+  message without the room envelope; `hop` 0 = yours, ≥1 = a member's reply passed on). `queued{}` = room →
+  `{waiting, held}`: hand-offs over the budget waiting to go out in order, and those held past the hop limit.
+  `relayDefaults` = `{hops, budget, window}` from the environment.
   `notices{}` = room → the last hand-off that still failed after 3 tries.
 - `POST /api/send` `{to, body, fyi}` → runs `reason network send <to> <body> [--fyi]`.
   Returns `{ok, rc, out, err}`; HTTP 502 when the CLI fails.
@@ -112,12 +117,17 @@ get the new token, and a newer server also triggers a reload.
   first; a busy worker answers 409 unless `force` is true. `{unchanged: true}` when nothing differs. While it
   restarts, its `workers.json` record stays until the new process replaces it, its name stays taken, it counts
   toward `MAX_WORKERS`, and configure or stop on it answers 409.
-- `POST /api/rooms/save` `{id?, name, members[], group}` → creates a room (no `id`) or replaces its name, members and group flag.
-  Members: 1–12 known session addresses, not the page's own. Returns `{ok, room}`.
+- `POST /api/rooms/save` `{id?, name, members[], group, limits?, defaultTo?}` → creates a room (no `id`) or replaces
+  its name, members, group flag, limits and default recipient. Members: 1–12 known session addresses, not the page's
+  own. `limits`: `{hops?, budget?}`, each 1–100000 or `null` (no limit). `defaultTo`: one of the members, or `null`.
+  Returns `{ok, room}`.
 - `POST /api/rooms/delete` `{id}` → removes the room; messages are untouched.
-- `POST /api/rooms/send` `{id, body, fyi}` → one `reason network send` per member (a group room: per member it targets,
-  each with the room envelope; `fyi` is ignored). Returns
+- `POST /api/rooms/send` `{id, body, fyi}` → a plain room: one `reason network send` per member. A group room: only to
+  the members the body `@mentions` (`@all`, `@everyone`, `@모두`, `@전체` = every member), else to `defaultTo`, else
+  HTTP 400 (nothing is sent to everyone by default); each copy carries the room envelope; `fyi` is ignored. Returns
   `{ok, sent, results[{to, ok, err}]}`; `ok` when at least one member got it.
+- `POST /api/rooms/flush` `{id}` → marks every queued hand-off of the room to go out now, past its budget and hop
+  limit ("Send all now"); the relay loop sends them within a few seconds. Returns `{ok, released}`.
 - `POST /api/prefs` `{key, value}` → saves one whitelisted setting: `hideOffline` (bool), `favorites` (up to 100
   session addresses or `room:<id>` keys, no repeats), `sideWidth` (int 180–900; the page also keeps it under 60 % of
   the window), `autoWake` (up to 50 session addresses the server wakes on unread messages). Returns `{ok, prefs}`.
@@ -165,9 +175,14 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
 - **`reason network serve codex` on Windows** can fail with "contains a cmd.exe special character" when a `codex.cmd` shim comes first on PATH. Put the folder of the real `codex.exe` first on PATH for that process.
 - **Replies to `<person>/terminal`** stay unread in the database because nothing else reads that inbox. The page hides the read mark for them.
 - **Sending is acting for the user.** Send only what the user asked for, or the one-line test they approved.
-- **Group rooms cost turns.** Each message wakes every targeted member, and `@name` replies wake more. The guards
-  in `relay.py` (`MAX_HOPS` 3, `BUDGET` 20 per `BUDGET_WINDOW` 600 s) are the only thing between two agents and an
-  endless exchange; keep them. Only replies whose `reply_to` is a relayed message are passed on.
+- **Group rooms cost turns.** Each message wakes the members it names, and `@name` replies wake more. The limits in
+  `relay.py` (`MAX_HOPS` 100, `BUDGET` 300 per `BUDGET_WINDOW` 600 s, or a room's own) are what stands between two
+  agents and an endless exchange; keep a default limit. Over a limit a hand-off is queued, never dropped: users rely
+  on the flow continuing. Only replies whose `reply_to` is a relayed message are passed on.
+- **Relay state survives restarts.** `relay.json` keeps `sent` (relayed messages), `seen`, the scan cursor `since`,
+  `done` (hand-offs already queued) and `queue`. A restarted server resumes from `since` (at most `RESUME_MS`, 24 h,
+  back), so replies that arrived while it was down are passed on once. Saves read the file and merge `sent` / `seen`
+  first. Do not reset `since` to the start time: every live refresh restarts the server.
 - **Agents may also use their own Reason tools.** A Codex or Claude member with the Reason Network MCP server can
   message another member directly instead of writing `@name`. The envelope asks them not to; those messages do not
   show in the room because they come from the agent's inner session (`codex exec` registers its own name).

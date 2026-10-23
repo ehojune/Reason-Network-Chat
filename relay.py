@@ -1,11 +1,16 @@
 """Group chat for rooms: members hear each other, and an @mention passes a reply on.
 
 Reason Network agents answer only whoever sent them a message. In a group room this server is that sender:
-it sends each member your message together with the room lines that member has not seen yet, and when a
-member's reply names another member (@name) it passes the reply on to that member.
+it sends a member your message together with the room lines that member has not seen yet, and when a member's
+reply names another member (@name) it passes the reply on to that member.
 
-Loop guards: only you and explicit @mentions wake anyone; a chain of passed-on replies stops after MAX_HOPS;
-each room passes on at most BUDGET replies per BUDGET_WINDOW seconds, then pauses until you write again.
+Who receives what: only members a message @mentions (@all / @모두 for everyone, from you only). Your message with no
+mention goes to the room's default recipient; with none set, the page asks you to mention someone.
+
+Loop guards, per room (env defaults, each room can set its own or none): a chain of passed-on replies holds after
+MAX_HOPS until you continue it; at most BUDGET hand-offs per BUDGET_WINDOW seconds, the rest wait in a queue and go
+out as the window frees up. Nothing is dropped: queued hand-offs, the scan cursor and what was passed on are kept in
+relay.json, so a restart neither loses nor repeats a hand-off.
 """
 import collections
 import json
@@ -15,15 +20,28 @@ import threading
 import time
 from pathlib import Path
 
-MAX_HOPS = 3
-BUDGET = 20
-BUDGET_WINDOW = 600
+
+def _env_int(name, default):
+    try:
+        v = int(os.environ.get(name, ""))
+    except ValueError:
+        return default
+    return v if v > 0 else default
+
+
+MAX_HOPS = _env_int("REASON_CHAT_MAX_HOPS", 100)
+BUDGET = _env_int("REASON_CHAT_BUDGET", 300)
+BUDGET_WINDOW = _env_int("REASON_CHAT_BUDGET_WINDOW", 600)
+LIMIT_MAX = 100000  # largest per-room limit; None means no limit
+RESUME_MS = 24 * 3600 * 1000  # after a restart, replies at most this old are still passed on
 CONTEXT_LINES = 12
 CONTEXT_CHARS = 4000
 LINE_CHARS = 600
 KEEP = 3000  # records of sent messages kept on disk
 RETRIES = 3  # attempts at one hand-off before it is reported as failed
-MENTION_RE = re.compile(r"(?<![\w@/])@([A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)?)")  # @name or @person/name
+# @name or @person/name (ASCII, so "@codex-worker1에게" still names codex-worker1), or @모두 / @전체
+MENTION_RE = re.compile(r"(?<![\w@/])@([A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)?|모두|전체)")
+EVERYONE = {"all", "everyone", "모두", "전체"}
 
 
 def short(addr):
@@ -46,6 +64,20 @@ def clip(text, n):
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
+def limit(room, key):
+    """A room's hop or budget limit: its own setting (None = no limit), else the default."""
+    own = room.get("limits") or {}
+    if key in own:
+        return own[key]
+    return MAX_HOPS if key == "hops" else BUDGET
+
+
+class RelayError(Exception):
+    def __init__(self, msg, code=400):
+        super().__init__(msg)
+        self.code = code
+
+
 class Relay:
     def __init__(self, home, rooms, db_rows, send_one):
         self.path = Path(home) / "relay.json"
@@ -54,40 +86,76 @@ class Relay:
         self.send_lock = threading.Lock()  # one delivery batch at a time (your message, or a scan)
         self.sent = {}  # message id -> {room, hop, core, speaker, to, at}
         self.seen = {}  # "room|member" -> sent_at of the newest room line that member has been given
-        self.done = {}  # (reply id, member) -> reply sent_at: passed on, or given up
+        self.done = {}  # (reply id, member) -> reply sent_at: queued (and so settled for the cursor), or given up
         self.tries = collections.Counter()  # (reply id, member) -> failed attempts
-        self.passes = collections.defaultdict(collections.deque)  # room -> times a reply was passed on
-        self.paused = {}  # room -> "budget" | "hops"
+        self.passes = collections.defaultdict(collections.deque)  # room -> times a hand-off went out
+        self.queue = {}  # room -> [{reply, to, sender, body, hop, at, held, force}] in arrival order
         self.notice = {}  # room -> the last hand-off that failed for good, shown to you
-        self.since = int(time.time() * 1000)  # scan cursor; replies from before this server started are not passed on
+        self.since = None  # scan cursor (ms): replies before it are settled
         self.load()
+        now = int(time.time() * 1000)
+        # Resume where the last run stopped, so replies that came in while the server was down are passed on.
+        self.since = max(self.since, now - RESUME_MS) if self.since is not None else now
 
-    # ---------- what this page sent, kept so its bubbles still show the plain message after a restart ----------
-    def load(self):
+    # ---------- relay.json: what this page sent, the cursor, settled hand-offs and the queue ----------
+    def read(self):
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
-            self.sent = {k: v for k, v in data["sent"].items() if isinstance(v, dict)}
-            self.seen = {k: int(v) for k, v in data["seen"].items()}
-        except (OSError, ValueError, KeyError, AttributeError, TypeError):
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def load(self):
+        data = self.read()
+        try:
+            self.sent = {k: v for k, v in (data.get("sent") or {}).items() if isinstance(v, dict)}
+            self.seen = {k: int(v) for k, v in (data.get("seen") or {}).items()}
+            since = data.get("since")
+            self.since = int(since) if isinstance(since, (int, float)) else None
+            self.done = {tuple(k.split("\t", 1)): int(v) for k, v in (data.get("done") or {}).items() if "\t" in k}
+            self.queue = {rid: [i for i in items if isinstance(i, dict) and {"reply", "to", "sender", "body", "hop"} <= set(i)]
+                          for rid, items in (data.get("queue") or {}).items() if isinstance(items, list)}
+            self.queue = {rid: items for rid, items in self.queue.items() if items}
+        except (ValueError, TypeError, AttributeError):
             pass
 
     def save(self):
-        if len(self.sent) > KEEP:
-            for k in sorted(self.sent, key=lambda k: self.sent[k].get("at", 0))[: len(self.sent) - KEEP]:
-                del self.sent[k]
+        """Read, merge, write: records another writer added since are kept (call with self.lock held)."""
+        disk = self.read()
+        sent = {k: v for k, v in (disk.get("sent") or {}).items() if isinstance(v, dict)} if isinstance(disk.get("sent"), dict) else {}
+        sent.update(self.sent)
+        if len(sent) > KEEP:
+            for k in sorted(sent, key=lambda k: sent[k].get("at", 0))[: len(sent) - KEEP]:
+                del sent[k]
+        seen = {}
+        for k, v in (disk.get("seen") or {}).items() if isinstance(disk.get("seen"), dict) else ():
+            try:
+                seen[k] = int(v)
+            except (TypeError, ValueError):
+                pass
+        for k, v in self.seen.items():
+            seen[k] = max(seen.get(k, 0), v)
+        self.sent, self.seen = sent, seen
+        data = {"sent": sent, "seen": seen, "since": self.since,
+                "done": {f"{a}\t{b}": at for (a, b), at in self.done.items()}, "queue": self.queue}
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.path.with_suffix(".tmp")
-            tmp.write_text(json.dumps({"sent": self.sent, "seen": self.seen}, ensure_ascii=False), encoding="utf-8")
+            tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
             os.replace(tmp, self.path)
         except OSError:
             pass
 
     def view(self, ids):
-        """For the page: the relay record of each listed message, paused rooms, and failed hand-offs."""
+        """For the page: the relay record of each listed message, queued hand-offs per room, failed hand-offs."""
         with self.lock:
             rel = {i: {k: self.sent[i].get(k) for k in ("room", "hop", "core", "speaker")} for i in ids if i in self.sent}
-            return rel, dict(self.paused), dict(self.notice)
+            queued = {}
+            for rid, items in self.queue.items():
+                held = sum(1 for i in items if i.get("held") and not i.get("force"))
+                if items:
+                    queued[rid] = {"waiting": len(items) - held, "held": held}
+            return rel, queued, dict(self.notice)
 
     # ---------- composing ----------
     def lines_for(self, room, member, me, skip=None, current=None):
@@ -134,8 +202,9 @@ class Relay:
         """The message for one member, and the timestamp of the newest room line it includes (0 if none)."""
         names = ", ".join([f"{label(me, me, room)} (person)"] + [handle(m, room) for m in room["members"]])
         head = (f'[Group room "{room["name"]}", relayed by Reason Network Chat]\n'
-                f"Members: {names}. Everyone in the room reads your reply.\n"
-                "Answer here only. To ask a member, write @name in your reply and the room passes it on; "
+                f"Members: {names}.\n"
+                f"Only the members you @mention receive your reply; {label(me, me, room)} sees the whole room. "
+                "To ask a member, write @name in your reply and the room passes it on; "
                 "do not message members with Reason Network tools. Mention nobody when no answer is needed.")
         lines = self.lines_for(room, member, me, skip, (speaker, core))
         earlier = ("\nEarlier in the room:\n" + "\n".join(f"{who}: {t}" for _, who, t in lines)) \
@@ -166,24 +235,37 @@ class Relay:
         return True, ""
 
     @staticmethod
-    def mentioned(room, text, exclude=None):
-        """Members named with @handle or @person/name. A session name two members share matches neither."""
+    def mentioned(room, text, exclude=None, everyone=False):
+        """Members named with @handle or @person/name (a session name two members share matches neither);
+        with `everyone`, @all / @모두 names every member."""
         names = {handle(m, room).lower(): m for m in room["members"]}
         names.update({m.lower(): m for m in room["members"]})
         found = []
         for n in MENTION_RE.findall(text):
-            m = names.get(n.lower().rstrip("."))
-            if m and m != exclude and m not in found:
-                found.append(m)
+            n = n.lower().rstrip(".")
+            for m in (room["members"] if everyone and n in EVERYONE else [names.get(n)]):
+                if m and m != exclude and m not in found:
+                    found.append(m)
         return found
+
+    @classmethod
+    def targets(cls, room, body):
+        """Who your message goes to: the members it @mentions, else the room's default recipient, else nobody."""
+        found = cls.mentioned(room, body, everyone=True)
+        if found:
+            return found
+        default = room.get("defaultTo")
+        return [default] if default in room["members"] else []
 
     # ---------- your message ----------
     def post(self, room, me, body):
-        """Send your message to the members it @mentions, or to every member. Clears a pause."""
-        targets = self.mentioned(room, body) or room["members"]
+        """Send your message to the members it @mentions (or the default recipient). A fresh hand-off budget."""
+        targets = self.targets(room, body)
+        if not targets:
+            raise RelayError("Mention who should receive it (@name, or @all for everyone), "
+                             "or set a default recipient for this room.")
         with self.send_lock:
             with self.lock:
-                self.paused.pop(room["id"], None)
                 self.notice.pop(room["id"], None)
                 self.passes[room["id"]].clear()  # you are back in the conversation: a fresh budget
             results = []
@@ -192,61 +274,104 @@ class Relay:
                 results.append({"to": m, "ok": ok, "err": err})
         return results
 
+    def flush(self, rid):
+        """Send everything queued in a room now, past its budget and hop limit (your explicit go-ahead)."""
+        with self.lock:
+            items = self.queue.get(rid) or []
+            for i in items:
+                i["force"] = True
+            if items:
+                self.save()
+            return len(items)
+
     # ---------- passing replies on ----------
+    def take(self, room):
+        """Use one hand-off of the room's budget; None when the window is full (call with self.lock held)."""
+        q, now = self.passes[room["id"]], time.time()
+        while q and now - q[0] > BUDGET_WINDOW:
+            q.popleft()
+        budget = limit(room, "budget")
+        if budget is not None and len(q) >= budget:
+            return None
+        q.append(now)
+        return now
+
     def scan(self, me):
-        """Pass on member replies that @mention another member; retry a failed hand-off a few times."""
+        """Queue member replies that @mention another member, then send what the room's limits allow."""
         if not me:
             return
         with self.send_lock:
             with self.lock:
-                if not self.sent:
+                if not self.sent and not self.queue:
                     return
                 rows = self.db_rows("select id, sender, reply_to, body, sent_at from messages where recipient = ?"
                                     " and reply_to is not null and sent_at >= ? order by sent_at", (me, self.since))
-                todo, keys = [], []  # keys: (sent_at, that reply's hand-offs) in reply order, for the cursor
+                changed = False
                 for r in rows:
                     rec = self.sent.get(r["reply_to"])
                     room = self.rooms.get(rec["room"]) if rec else None
                     targets = [] if not room or not room.get("group") or r["sender"] not in room["members"] \
                         else self.mentioned(room, r["body"], exclude=r["sender"])
-                    keys.append((r["sent_at"], [(r["id"], m) for m in targets]))
-                    todo += [(room, r, rec, m) for m in targets if (r["id"], m) not in self.done]
-            for room, r, rec, m in todo:
-                key, rid = (r["id"], m), room["id"]
+                    for m in targets:
+                        if (r["id"], m) in self.done:
+                            continue
+                        hops = limit(room, "hops")
+                        self.queue.setdefault(room["id"], []).append({
+                            "reply": r["id"], "to": m, "sender": r["sender"], "body": r["body"], "hop": rec["hop"] + 1,
+                            "at": r["sent_at"], "held": hops is not None and rec["hop"] >= hops})
+                        self.done[(r["id"], m)] = r["sent_at"]  # settled: it is in the queue now
+                        changed = True
+                if rows and rows[-1]["sent_at"] > self.since:
+                    self.since = rows[-1]["sent_at"]  # every reply up to here is queued or needs nothing
+                    self.done = {k: at for k, at in self.done.items() if at >= self.since}
+                    changed = True
+                if changed:
+                    self.save()
+            self.drain(me)
+
+    def drain(self, me):
+        """Send queued hand-offs in order, room by room, as far as each room's budget allows."""
+        for rid in list(self.queue):
+            room = self.rooms.get(rid)
+            while True:
                 with self.lock:
-                    if rec["hop"] >= MAX_HOPS:
-                        self.paused[rid] = "hops"  # shown to you; your next message clears it
-                        self.done[key] = r["sent_at"]
-                        continue
-                    q, now = self.passes[rid], time.time()
-                    while q and now - q[0] > BUDGET_WINDOW:
-                        q.popleft()
-                    if self.paused.get(rid) == "budget" or len(q) >= BUDGET:
-                        self.paused[rid] = "budget"
-                        self.done[key] = r["sent_at"]  # dropped, not queued: your next message starts afresh
-                        continue
-                    q.append(now)
-                ok, err = self.deliver(room, m, me, r["sender"], r["body"], rec["hop"] + 1,
-                                       skip=r["id"], skip_at=r["sent_at"])
-                with self.lock:
-                    if ok:
-                        self.done[key] = r["sent_at"]
-                        continue
-                    if now in q:
-                        q.remove(now)  # a failed send does not use up the budget
-                    self.tries[key] += 1
-                    if self.tries[key] >= RETRIES:
-                        self.done[key] = r["sent_at"]
-                        self.notice[rid] = f"{short(r['sender'])} → {short(m)}: {err}"
-            # Move the cursor past every reply whose hand-offs are all settled; a hand-off still being retried
-            # holds it there. Records behind the cursor are no longer needed.
-            with self.lock:
-                for at, ks in keys:
-                    if any(k not in self.done for k in ks):
+                    items = self.queue.get(rid) or []
+                    if not room or not room.get("group"):  # the room is gone or no longer a group: nothing to pass
+                        self.queue.pop(rid, None)
+                        self.save()
                         break
-                    self.since = max(self.since, at)
-                self.done = {k: at for k, at in self.done.items() if at >= self.since}
-                self.tries = collections.Counter({k: n for k, n in self.tries.items() if k not in self.done})
+                    # Held items (past the hop limit) wait for you; the others go out in order.
+                    item = next((i for i in items if i.get("force") or not i.get("held")), None)
+                    if not item:
+                        break
+                    slot = self.take(room) if not item.get("force") else time.time()
+                    if slot is None:
+                        break  # the window is full: the rest wait for it to free up
+                    if item.get("force"):
+                        self.passes[rid].append(slot)
+                if not self.send_item(room, me, item, slot):
+                    break  # a failed send is retried on the next scan
+
+    def send_item(self, room, me, item, slot):
+        rid, key = room["id"], (item["reply"], item["to"])
+        ok, err = self.deliver(room, item["to"], me, item["sender"], item["body"], item["hop"],
+                               skip=item["reply"], skip_at=item.get("at", 0))
+        with self.lock:
+            items = self.queue.get(rid) or []
+            if not ok and slot in self.passes[rid]:
+                self.passes[rid].remove(slot)  # a failed send does not use up the budget
+            if ok or self.tries[key] + 1 >= RETRIES:
+                if item in items:
+                    items.remove(item)
+                if not items:
+                    self.queue.pop(rid, None)
+                if not ok:
+                    self.notice[rid] = f"{short(item['sender'])} → {short(item['to'])}: {err}"
+                self.tries.pop(key, None)
+                self.save()
+                return ok
+            self.tries[key] += 1
+            return False
 
     def run(self, me_fn, every=2):
         while True:

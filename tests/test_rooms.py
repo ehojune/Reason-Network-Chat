@@ -41,6 +41,17 @@ class RoomsTest(unittest.TestCase):
         with self.assertRaises(rooms.RoomError):  # but not for a new room
             self.r.upsert({"name": "new", "members": ["pat/web-codex"]}, now_known, ME)
 
+    def test_limits_and_default_recipient(self):
+        room = self.r.upsert({"name": "g", "members": ["pat/api-claude", "pat/web-codex"], "group": True,
+                              "limits": {"hops": 50, "budget": None}, "defaultTo": "pat/web-codex"}, KNOWN, ME)
+        again = rooms.Rooms(self.home).get(room["id"])
+        self.assertEqual((again["limits"], again["defaultTo"]), ({"hops": 50, "budget": None}, "pat/web-codex"))
+        plain = self.r.upsert({"name": "p", "members": ["pat/api-claude"]}, KNOWN, ME)
+        self.assertEqual((plain["limits"], plain["defaultTo"]), ({}, None))  # defaults, nobody by default
+        for bad in ({"hops": 0}, {"hops": "5"}, {"budget": True}, {"budget": 100001}, {"other": 1}, ["hops"]):
+            self.bad(name="g", members=["pat/api-claude"], limits=bad)
+        self.bad(name="g", members=["pat/api-claude"], defaultTo="pat/web-codex")  # not a member
+
     def test_validation(self):
         self.bad(name="", members=["pat/api-claude"])
         self.bad(name="x" * 61, members=["pat/api-claude"])

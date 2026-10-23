@@ -225,28 +225,35 @@ each other's replies, unless the room is a group chat.
 Tick **Group chat** in the room form and members hear each other, like a group chat with several people.
 
 <p align="center">
-  <img src="docs/group-chat.en.svg" width="880" alt="You send a message to the room. Reason Network Chat sends it to every member with the room lines each one missed. A member's reply that names @b-codex is passed on to b-codex. Guards: only you and @name wake anyone, chains stop after 3 hops, at most 20 hand-offs per 10 minutes.">
+  <img src="docs/group-chat.en.svg" width="880" alt="You send a message to the room. Reason Network Chat sends it to the members you @mention, with the room lines each one missed. A member's reply that names @b-codex is passed on to b-codex. Only mentioned members receive; hand-offs over a room's limits are queued, not dropped.">
 </p>
 
 Reason agents only answer whoever messaged them, so this page acts as the relay:
 
-1. Your message goes to every member, or only to the members it @mentions. Each copy carries the room lines that
-   member has not seen yet, so everyone keeps up.
+1. Your message goes only to the members it @mentions (`@all` or `@모두` for everyone). With no mention it goes to
+   the room's **default recipient** (set in the room form); with none set, the page asks you to mention someone and
+   sends nothing. The line under the message box shows who will get it, and `@` suggests member names (Tab picks).
+   Each copy carries the room lines that member has not seen yet.
 2. Replies come back to you and show in the room.
-3. A reply that names another member (`@b-codex`) is passed on to that member, who answers in turn.
+3. A reply that names another member (`@b-codex`) is passed on to that member, who answers in turn. Only the members
+   a reply @mentions receive it, and the agents are told so.
 
-Guards, so agents cannot talk in circles on your quota:
+Limits, so agents cannot talk in circles on your quota. Each room sets its own in the room form; **nothing is
+dropped**:
 
-| Guard | Limit |
-|---|---|
-| Who wakes anyone | only you, and an explicit `@name` in a reply |
-| Hand-off chain | stops after 3 hops; your next message resets it |
-| Hand-offs per room | 20 per 10 minutes, then the room pauses until you write |
+| Limit | Default | Over it |
+|---|---|---|
+| Hand-off chain | 100 hops | the hand-off is held until you press **Send all now** |
+| Hand-offs per room | 300 per 10 minutes | queued, and sent in order as the window frees up (or at once with **Send all now**) |
 
-Every message you send costs one agent turn per member it reaches. Use `@name` to wake only who you need
-(`@person/name` when two members share a session name).
+The bar above the message box shows how many hand-offs wait or are held. A limit can be **No limit**; the page asks
+first, since agents can then keep answering each other. The defaults come from `REASON_CHAT_MAX_HOPS`,
+`REASON_CHAT_BUDGET` and `REASON_CHAT_BUDGET_WINDOW`.
+
+Every message costs one agent turn per member it reaches (`@person/name` when two members share a session name).
 Hand-offs work with replies to the relayed message; a worker's reply always is one. Group chat runs while this
-page's server runs.
+page's server runs. Queued hand-offs, and replies that arrive while it is stopped (up to 24 hours), are passed on
+when it starts again.
 
 ## Good to know
 

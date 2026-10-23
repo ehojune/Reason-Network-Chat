@@ -67,6 +67,14 @@ body.resizing { cursor: col-resize; user-select: none; }
 .tag.grp { background: none; color: var(--accent); border: 1px solid var(--accent); font-weight: 600; }
 .relay { text-align: center; color: var(--muted); font-size: 12px; margin: 4px 0; }
 #paused { color: var(--err); }
+#paused button { font: inherit; font-size: 12px; color: var(--accent); background: none; border: 1px solid var(--line);
+  border-radius: 6px; padding: 1px 8px; margin-left: 6px; cursor: pointer; }
+#rcpt { font-size: 12px; color: var(--muted); min-height: 1em; }
+#rcpt.none { color: var(--err); }
+#ac { display: flex; flex-wrap: wrap; gap: 4px; font-size: 12px; }
+#ac button { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+  padding: 1px 8px; cursor: pointer; }
+#ac button:first-child { border-color: var(--accent); }
 main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #head { padding: 12px 18px; border-bottom: 1px solid var(--line); background: var(--panel); display: flex;
   justify-content: space-between; align-items: center; gap: 8px; }
@@ -165,6 +173,8 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
       <label id="wakeAfterLabel" hidden><input type="checkbox" id="wakeAfter"> <span data-t="wakeAfter"></span></label>
       <span id="sendmsg"></span>
     </div>
+    <div id="rcpt" hidden></div>
+    <div id="ac" hidden></div>
     <div id="inrow">
       <textarea id="body"></textarea>
       <button id="btn" type="submit" data-t="send"></button>
@@ -200,6 +210,15 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
       <input id="rfName" required maxlength="60" autocomplete="off"></label>
     <div class="fld"><span data-t="roomMembers"></span><div class="mem" id="rfMembers"></div></div>
     <label class="fld chk"><input type="checkbox" id="rfGroup"> <span data-t="groupChat"></span></label>
+    <div id="rfGroupOpts" hidden>
+      <label class="fld"><span data-t="defaultTo"></span><select id="rfDefault"></select></label>
+      <div class="two">
+        <div class="fld"><span data-t="hopsLimit"></span><input type="number" id="rfHops" min="1" max="100000">
+          <label class="chk"><input type="checkbox" id="rfHopsOff"> <span data-t="noLimit"></span></label></div>
+        <div class="fld"><span id="rfBudgetLabel"></span><input type="number" id="rfBudget" min="1" max="100000">
+          <label class="chk"><input type="checkbox" id="rfBudgetOff"> <span data-t="noLimit"></span></label></div>
+      </div>
+    </div>
     <p class="hint" id="rfHint"></p>
     <div class="dbtn"><button type="button" class="plain danger" id="rfDelete" data-t="deleteRoom"></button>
       <span style="flex:1"></span>
@@ -263,11 +282,16 @@ const T = {
     deleteAsk: "이 대화방을 지울까요? 메시지는 그대로 남습니다.", pickMembers: "세션을 하나 이상 고르세요.",
     roomHint: "이 세션들이 나와, 또 서로 주고받은 메시지만 보입니다. 대화방 전체로 보내면 세션마다 한 통씩 갑니다.",
     memberCount: "명", groupChat: "단체 대화: 참여 세션끼리도 서로의 말을 듣는다", grp: "단체",
-    groupHint: "각 세션은 놓친 대화를 함께 받고, @이름이 들어간 답은 그 세션에게 넘어간다(최대 3번, 10분에 20통).\n"
-      + "내가 보낸 메시지는 참여 세션을 모두 깨운다(@이름을 쓰면 그 세션만). 세션마다 에이전트 한 턴씩 쓴다.",
-    passed: "의 답을 넘김 →", pausedBudget: "넘겨주기가 10분 한도에 걸려 멈췄습니다. 다음 메시지를 보내면 다시 시작합니다.",
-    pausedHops: "@로 이어진 답이 3번을 넘어 멈췄습니다. 다음 메시지를 보내면 다시 시작합니다.",
-    groupPh: "메시지 (@이름: 그 세션만 깨움)", handoffFailed: "넘겨주기 실패: " },
+    groupHint: "메시지는 @로 부른 멤버에게만 갑니다(@모두: 전체, 부르지 않으면 기본 받는 멤버). 받는 멤버는 놓친 대화도 함께 받고, "
+      + "답에 @이름이 있으면 그 멤버에게 넘어갑니다.\n한도를 넘은 넘겨주기는 버리지 않고 대기열에 넣어 순서대로 보냅니다. 받는 멤버마다 에이전트 한 턴씩 씁니다.",
+    passed: "의 답을 넘김 →", qWaiting: "대기 중 {n}건: 넘겨주기 한도에 걸려 순서대로 나갑니다.",
+    qHeld: "멈춤 {n}건: @로 이어진 답이 한도를 넘었습니다. 계속하려면 누르세요.", flushAll: "지금 모두 보내기",
+    flushed: "보내는 중: {n}건", groupPh: "메시지 (@이름으로 받을 멤버 지정, @모두: 전체)", handoffFailed: "넘겨주기 실패: ",
+    rcptNone: "@이름으로 받을 멤버를 지정하세요 (@모두: 전체)", rcptTo: "받는 멤버: {names}", rcptAll: "받는 멤버: 모두 ({n}명)",
+    rcptDefault: "멘션이 없어 기본 받는 멤버에게: {name}", defaultTo: "기본 받는 멤버 (멘션이 없을 때)",
+    defaultNone: "없음: 멘션해야 보냄", hopsLimit: "@ 연쇄 한도 (번)", budgetLimit: "넘겨주기 한도 ({w}분에 몇 통)",
+    noLimit: "제한 없음",
+    noLimitAsk: "제한을 없애면 에이전트끼리 끝없이 주고받으며 차례(비용)를 계속 쓸 수 있습니다. 계속할까요?" },
   en: { all: "All messages", connecting: "Connecting…", loading: "Loading…", empty: "No messages",
     to: "To", fyi: "Don't wake", fyiTip: "--fyi: drop it in the inbox without waking the session",
     ph: "Message (Enter to send, Shift+Enter for a new line)", send: "Send", sending: "Sending…", sent: "Sent →",
@@ -323,11 +347,17 @@ const T = {
     deleteAsk: "Delete this room? Its messages stay.", pickMembers: "Pick at least one session.",
     roomHint: "Shows only messages these sessions exchange with you and with each other. Sending to the whole room sends one message to each.",
     memberCount: "", groupChat: "Group chat: members hear each other too", grp: "group",
-    groupHint: "Each member also gets the room lines it missed, and a reply that @mentions a member is passed on to it "
-      + "(at most 3 hops, 20 per 10 minutes).\nYour message wakes every member (or only those you @mention): one agent turn each.",
-    passed: "'s reply passed to", pausedBudget: "Passing replies on hit the 10-minute limit and paused. Your next message restarts it.",
-    pausedHops: "A chain of @mentions went past 3 hops and stopped. Your next message restarts it.",
-    groupPh: "Message (@name wakes only that member)", handoffFailed: "Hand-off failed: " },
+    groupHint: "A message goes only to the members you @mention (@all: everyone; no mention: the default recipient). "
+      + "They also get the room lines they missed, and a reply that @mentions a member is passed on to it.\n"
+      + "Hand-offs over the room's limits are queued and sent in order, never dropped. Each recipient costs one agent turn.",
+    passed: "'s reply passed to", qWaiting: "{n} waiting: over the hand-off limit, they go out in order.",
+    qHeld: "{n} held: a chain of @mentions passed the hop limit. Press to continue.", flushAll: "Send all now",
+    flushed: "Sending {n}", groupPh: "Message (@name picks who gets it, @all for everyone)", handoffFailed: "Hand-off failed: ",
+    rcptNone: "Mention who should get it: @name (@all for everyone)", rcptTo: "To: {names}", rcptAll: "To: everyone ({n})",
+    rcptDefault: "No mention: to the default recipient, {name}", defaultTo: "Default recipient (when nobody is mentioned)",
+    defaultNone: "None: mention someone to send", hopsLimit: "@ chain limit (hops)", budgetLimit: "Hand-offs per {w} min",
+    noLimit: "No limit",
+    noLimitAsk: "Without a limit, agents can keep answering each other and keep spending turns (cost). Continue?" },
   zh: { all: "全部消息", connecting: "连接中…", loading: "加载中…", empty: "暂无消息",
     to: "发送给", fyi: "不唤醒", fyiTip: "--fyi：只放进收件箱，不唤醒对方会话",
     ph: "输入消息（Enter 发送，Shift+Enter 换行）", send: "发送", sending: "发送中…", sent: "已发送 →",
@@ -382,11 +412,16 @@ const T = {
     deleteAsk: "删除这个聊天室？消息会保留。", pickMembers: "请至少选择一个会话。",
     roomHint: "只显示这些会话与你、以及彼此之间的消息。发给全体时，每个成员各收到一条。",
     memberCount: "", groupChat: "群聊：成员之间也能听到彼此", grp: "群聊",
-    groupHint: "每个成员还会收到它错过的聊天内容；回复里 @某成员 时会转给该成员（最多 3 跳，每 10 分钟 20 条）。\n"
-      + "你发的消息会唤醒全部成员（若 @了成员则只唤醒他们），每个成员消耗一次智能体回合。",
-    passed: " 的回复已转给", pausedBudget: "转发达到 10 分钟上限，已暂停。你发下一条消息即可恢复。",
-    pausedHops: "@ 接力超过 3 跳，已停止。你发下一条消息即可恢复。",
-    groupPh: "输入消息（@名称 只唤醒该成员）", handoffFailed: "转发失败：" },
+    groupHint: "消息只发给你 @ 的成员（@all：全体；未 @ 时发给默认接收成员）。接收的成员还会收到错过的聊天内容，"
+      + "回复里 @某成员 时会转给该成员。\n超过房间上限的转发不会丢弃，而是排队按顺序发出。每个接收成员消耗一次智能体回合。",
+    passed: " 的回复已转给", qWaiting: "{n} 条排队：超过转发上限，将按顺序发出。",
+    qHeld: "{n} 条暂停：@ 接力超过跳数上限，点击继续。", flushAll: "全部立即发送",
+    flushed: "正在发送 {n} 条", groupPh: "输入消息（用 @名称 指定接收成员，@all 发给全体）", handoffFailed: "转发失败：",
+    rcptNone: "请用 @名称 指定接收成员（@all 发给全体）", rcptTo: "接收：{names}", rcptAll: "接收：全体（{n}）",
+    rcptDefault: "未 @：发给默认接收成员 {name}", defaultTo: "默认接收成员（未 @ 时）",
+    defaultNone: "无：必须 @ 才能发送", hopsLimit: "@ 接力上限（跳）", budgetLimit: "每 {w} 分钟转发上限",
+    noLimit: "不限",
+    noLimitAsk: "取消上限后，智能体可能无休止地互相回复并持续消耗轮次（费用）。继续吗？" },
 };
 const LOCALE = {ko: "ko-KR", en: "en-US", zh: "zh-CN"};
 const store = {get: k => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -397,7 +432,7 @@ let lang = new URLSearchParams(location.search).get("lang") || store.get("reason
 if (!T[lang]) lang = "en";
 const t = k => T[lang][k];
 const TOKEN = document.querySelector('meta[name="reason-chat-token"]').content;
-const API = 8;  // must match API in server.py
+const API = 9;  // must match API in server.py
 const BOOT = document.querySelector('meta[name="reason-chat-boot"]').content;  // which server start served this page
 // Reload to pick up a restarted or newer server, at most once a minute so a broken setup cannot loop.
 function reloadOnce() {
@@ -576,6 +611,70 @@ function renderTo() {
   if (want && [...$("#to").options].some(o => o.value === want)) $("#to").value = want;
 }
 
+// The network can store a second local copy under another id after the relay records the first.
+// Reuse only a recorded relay with the same sender, recipient and complete envelope, close in time.
+function relayOf(m) {
+  if (S.relays[m.id]) return S.relays[m.id];
+  const copy = S.messages.find(x => S.relays[x.id] && x.sender === m.sender
+    && x.recipient === m.recipient && x.body === m.body && Math.abs(x.sent_at - m.sent_at) < 15000);
+  return copy ? S.relays[copy.id] : null;
+}
+
+// Who a group-room message goes to, the rule relay.targets() applies: the members it @mentions (@all / @모두:
+// everyone), else the room's default recipient, else nobody (the page then asks for a mention).
+const MENTION_RE = /(?<![\w@\/])@([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)?|모두|전체)/g;
+const EVERYONE = ["all", "everyone", "모두", "전체"];
+const handleOf = (addr, room) => room.members.filter(m => short(m) === short(addr)).length === 1 ? short(addr) : addr;
+function roomTargets(room, body) {
+  const names = {};
+  room.members.forEach(m => { names[handleOf(m, room).toLowerCase()] = m; names[m.toLowerCase()] = m; });
+  const found = [];
+  for (const [, raw] of body.matchAll(MENTION_RE)) {
+    const n = raw.toLowerCase().replace(/\.+$/, "");
+    for (const m of EVERYONE.includes(n) ? room.members : [names[n]]) if (m && !found.includes(m)) found.push(m);
+  }
+  if (found.length) return {to: found, how: found.length === room.members.length ? "all" : "mention"};
+  return room.defaultTo && room.members.includes(room.defaultTo) ? {to: [room.defaultTo], how: "default"} : {to: [], how: "none"};
+}
+function renderRcpt() {
+  const room = roomOf($("#to").value);
+  $("#rcpt").hidden = !(room && room.group);
+  if ($("#rcpt").hidden) return;
+  const r = roomTargets(room, $("#body").value);
+  $("#rcpt").className = r.how === "none" ? "none" : "";
+  $("#rcpt").textContent = r.how === "none" ? t("rcptNone") : r.how === "all" ? t("rcptAll").replace("{n}", r.to.length)
+    : r.how === "default" ? t("rcptDefault").replace("{name}", short(r.to[0]))
+    : t("rcptTo").replace("{names}", r.to.map(a => handleOf(a, room)).join(", "));
+}
+
+// @ autocomplete in a group room: members whose name starts with what follows the @ before the caret.
+function acToken() {
+  const b = $("#body"), m = b.value.slice(0, b.selectionStart).match(/(?:^|[\s(])@([A-Za-z0-9._\/-]*)$/);
+  return m ? m[1] : null;
+}
+function renderAc() {
+  const room = roomOf($("#to").value), tok = room && room.group ? acToken() : null;
+  const names = tok === null ? [] : [...room.members.map(m => handleOf(m, room)), "all"]
+    .filter(n => n.toLowerCase().startsWith(tok.toLowerCase()) && n.toLowerCase() !== tok.toLowerCase()).slice(0, 8);
+  $("#ac").hidden = !names.length;
+  $("#ac").innerHTML = names.map(n => `<button type="button" data-n="${esc(n)}">@${esc(n)}</button>`).join("");
+}
+function acPick(name) {
+  const b = $("#body"), at = b.selectionStart, before = b.value.slice(0, at), tok = acToken() || "";
+  b.value = before.slice(0, before.length - tok.length) + name + " " + b.value.slice(at);
+  const caret = at - tok.length + name.length + 1;
+  b.setSelectionRange(caret, caret); b.focus();
+  renderAc(); renderRcpt();
+}
+$("#ac").addEventListener("mousedown", e => e.preventDefault());  // keep the caret in the message box
+$("#ac").addEventListener("click", e => { const x = e.target.closest("button[data-n]"); if (x) acPick(x.dataset.n); });
+$("#body").addEventListener("input", () => { renderAc(); renderRcpt(); });
+$("#body").addEventListener("keydown", e => {
+  if ($("#ac").hidden || !["Tab", "Enter"].includes(e.key) || e.shiftKey || e.isComposing) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  acPick($("#ac button").dataset.n);
+}, true);
+
 function renderTl() {
   const tl = $("#tl");
   const atBottom = tl.scrollHeight - tl.scrollTop - tl.clientHeight < 80;
@@ -587,7 +686,7 @@ function renderTl() {
   const same = (g, m) => g.sender === m.sender && g.body === m.body && g.reply_to === m.reply_to && g.wake === m.wake
     && !!g.rel === !!m.rel && m.sent_at - g.sent_at < 15000 && !g.to.includes(m.recipient);
   for (const raw of S.messages.filter(shown)) {
-    const rel = S.relays[raw.id], m = rel ? {...raw, body: rel.core, rel} : raw;
+    const rel = relayOf(raw), m = rel ? {...raw, body: rel.core, rel} : raw;
     let g = null;
     for (let i = ms.length - 1; i >= 0 && m.sent_at - ms[i].sent_at < 15000; i--) if (same(ms[i], m)) { g = ms[i]; break; }
     if (g) { g.to.push(m.recipient); g.all.push(m); continue; }
@@ -603,7 +702,7 @@ function renderTl() {
       continue;
     }
     const me = m.sender === S.me;
-    const q = m.reply_to && byId[m.reply_to], qr = q && S.relays[q.id];  // quote the plain message, not the envelope
+    const q = m.reply_to && byId[m.reply_to], qr = q && relayOf(q);  // quote the plain message, not the envelope
     // Replies to the page's own address are read here, not through an inbox, so skip the read mark.
     const nread = m.all.filter(x => x.read_at).length;
     const flags = [m.recipient === S.me ? "" : m.all.length > 1 ? `${t("read")} ${nread}${t("of")}${m.all.length}`
@@ -625,10 +724,13 @@ function render(force) {
   const room = roomOf(sel);
   $("#title").textContent = room ? `# ${room.name}` : sel && !sel.startsWith("room:") ? short(sel) : t("all");
   $("#members").textContent = room ? (room.group ? `${t("grp")} · ` : "") + room.members.map(short).join(", ") : "";
-  const pz = room && S && S.paused[room.id], nz = room && S && S.notices[room.id];
-  $("#paused").textContent = [pz ? t(pz === "budget" ? "pausedBudget" : "pausedHops") : "", nz ? t("handoffFailed") + nz : ""]
-    .filter(Boolean).join(" ");
+  // Hand-offs over the room's limits wait in a queue (never dropped): say how many, and offer to send them now.
+  const qz = room && S && S.queued[room.id], nz = room && S && S.notices[room.id];
+  $("#paused").innerHTML = [qz && qz.waiting ? esc(t("qWaiting").replace("{n}", qz.waiting)) : "",
+    qz && qz.held ? esc(t("qHeld").replace("{n}", qz.held)) : "", nz ? esc(t("handoffFailed") + nz) : ""]
+    .filter(Boolean).join(" ") + (qz && (qz.waiting || qz.held) ? `<button type="button" id="flushBtn">${esc(t("flushAll"))}</button>` : "");
   $("#body").placeholder = room && room.group ? t("groupPh") : t("ph");
+  renderRcpt();
   $("#fyiLabel").hidden = !!(room && room.group);  // a group message always wakes its targets
   $("#editRoom").hidden = !room;
   if (!S) return;
@@ -641,7 +743,7 @@ function render(force) {
   $("#wakeHead").hidden = !(ss && ss.resumable && !ss.appOpen && sleepy(ss) && unreadTo(sel));
   $("#wakeHead").disabled = !!(ss && waking(sel));
   $("#wakeHead").textContent = t(ss && waking(sel) ? "waking" : "wake");
-  const sig = JSON.stringify([S.sessions, S.launched, S.rooms, S.paused, S.notices, S.prefs, S.wakes, Object.keys(S.relays).length,
+  const sig = JSON.stringify([S.sessions, S.launched, S.rooms, S.queued, S.notices, S.prefs, S.wakes, Object.keys(S.relays).length,
     S.messages.map(m => [m.id, m.read_at, m.held]), sel, lang]);
   if (!force && sig === lastSig) return;
   lastSig = sig;
@@ -700,7 +802,8 @@ async function poll() {
     if ((j.boot && j.boot !== BOOT) || j.api > API) { if (reloadOnce()) return; }
     if (j.api !== API) return say(t(j.api > API ? "reloadPage" : "restart").replace("{p}", API).replace("{s}", j.api ?? 1), true);
     if (j.boot !== BOOT) return say(t("reloadPage"), true);
-    S = {sessions: [], messages: [], launched: [], rooms: [], relays: {}, paused: {}, notices: {}, prefs: {}, wakes: {}, ...j};
+    S = {sessions: [], messages: [], launched: [], rooms: [], relays: {}, queued: {}, notices: {}, prefs: {}, wakes: {},
+      relayDefaults: {hops: 100, budget: 300, window: 600}, ...j};
     render();
     say(j.whoError ? t("whoErr") + j.whoError : `${t("updated")} ${fmtT(j.now)}`, !!j.whoError);
   } catch (e) {
@@ -789,7 +892,9 @@ $("#comp").addEventListener("submit", async e => {
   const to = $("#to").value, body = $("#body").value.trim();
   if (!to || !body) return;
   const room = roomOf(to), target = S.sessions.find(x => x.address === to);
-  const off = room ? room.members.filter(a => ["offline", "gone"].includes(reach(S.sessions.find(x => x.address === a) || {live: false})))
+  const gets = room && room.group ? roomTargets(room, body).to : room ? room.members : [];
+  if (room && room.group && !gets.length) { $("#sendmsg").textContent = t("rcptNone"); $("#body").focus(); return; }
+  const off = room ? gets.filter(a => ["offline", "gone"].includes(reach(S.sessions.find(x => x.address === a) || {live: false})))
     : target && ["offline", "gone"].includes(reach(target)) ? [to] : [];
   if (off.length && !confirm(room ? t("roomOffline").replace("{names}", off.map(short).join(", "))
     : t("sendOffline").replace("{name}", short(to)))) return;
@@ -798,7 +903,7 @@ $("#comp").addEventListener("submit", async e => {
     if (to.startsWith("room:")) {
       const j = await post("/api/rooms/send", {id: to.slice(5), body, fyi: !$("#fyiLabel").hidden && $("#fyi").checked});
       const bad = j.results.filter(r => !r.ok);
-      $("#body").value = "";
+      $("#body").value = ""; renderRcpt(); renderAc();
       $("#sendmsg").textContent = `${t("sentTo")} ${j.sent}${t("of")}${j.results.length}` +
         (bad.length ? ` · ${t("failed")}${bad.map(r => `${short(r.to)}: ${r.err}`).join("; ")}` : "");
       $("#tl").dataset.first = "1"; poll(); return;
@@ -815,7 +920,7 @@ $("#comp").addEventListener("submit", async e => {
     $("#sendmsg").textContent = t("failed") + err.message;
   } finally { $("#btn").disabled = false; }
 });
-$("#to").addEventListener("change", renderNoWake);
+$("#to").addEventListener("change", () => { renderNoWake(); renderRcpt(); renderAc(); });
 $("#toWorker").addEventListener("click", () => {
   const s = S.sessions.find(x => x.address === $("#to").value);
   if (s) openLaunch({folder: s.cwd || "", agent: s.agent === "claude-code" ? "claude" : "codex"});
@@ -1011,21 +1116,58 @@ function openRoom(room) {
     .sort((a, b) => (chosen.has(b.address) - chosen.has(a.address)) || (up(b) - up(a)) || a.name.localeCompare(b.name));
   $("#rfMembers").innerHTML = ss.map(s => `<label class="${up(s) ? "" : "gone"}"><input type="checkbox" value="${esc(s.address)}"
     ${chosen.has(s.address) ? "checked" : ""}><span class="tag ${esc(s.agent)}">${esc(s.agent)}</span>${esc(s.name)}</label>`).join("");
-  rhint(t($("#rfGroup").checked ? "groupHint" : "roomHint"));
+  const lim = (room && room.limits) || {}, d = S.relayDefaults;
+  for (const [key, id] of [["hops", "rfHops"], ["budget", "rfBudget"]]) {
+    $(`#${id}`).placeholder = d[key];
+    $(`#${id}`).value = lim[key] || "";
+    $(`#${id}Off`).checked = key in lim && lim[key] === null;
+    $(`#${id}`).disabled = $(`#${id}Off`).checked;
+  }
+  $("#rfBudgetLabel").textContent = t("budgetLimit").replace("{w}", Math.round(d.window / 60));
+  renderDefault(room ? room.defaultTo : null);
+  groupOpts();
   $("#rdlg").showModal();
 }
+// The default recipient is picked from the members ticked right now.
+function renderDefault(keep) {
+  const now = $("#rfDefault").value, want = keep !== undefined ? keep : now;
+  const members = [...document.querySelectorAll("#rfMembers input:checked")].map(i => i.value);
+  $("#rfDefault").innerHTML = `<option value="">${esc(t("defaultNone"))}</option>` +
+    members.map(a => `<option value="${esc(a)}">${esc(short(a))}</option>`).join("");
+  $("#rfDefault").value = members.includes(want) ? want : "";
+}
+function groupOpts() {
+  $("#rfGroupOpts").hidden = !$("#rfGroup").checked;
+  rhint(t($("#rfGroup").checked ? "groupHint" : "roomHint"));
+}
+$("#rfMembers").addEventListener("change", () => renderDefault());
+for (const id of ["rfHops", "rfBudget"]) $(`#${id}Off`).addEventListener("change", () => { $(`#${id}`).disabled = $(`#${id}Off`).checked; });
 $("#newRoom").addEventListener("click", () => openRoom(null));
-$("#rfGroup").addEventListener("change", () => rhint(t($("#rfGroup").checked ? "groupHint" : "roomHint")));
+$("#rfGroup").addEventListener("change", groupOpts);
 $("#editRoom").addEventListener("click", () => openRoom(roomOf(sel)));
 $("#rfCancel").addEventListener("click", () => $("#rdlg").close());
+$("#paused").addEventListener("click", async e => {
+  if (!e.target.closest("#flushBtn")) return;
+  const room = roomOf(sel); if (!room) return;
+  try { const j = await post("/api/rooms/flush", {id: room.id}); say(t("flushed").replace("{n}", j.released)); poll(); }
+  catch (err) { say(t("failed") + err.message, true); }
+});
 $("#rf").addEventListener("submit", async e => {
   e.preventDefault();
   const members = [...document.querySelectorAll("#rfMembers input:checked")].map(i => i.value);
   if (!members.length) return rhint(t("pickMembers"), true);
+  // Limits: empty = the default, "no limit" = null (asked once, since agents can then answer each other forever).
+  const limits = {}, was = (editing && editing.limits) || {};
+  for (const [key, id] of [["hops", "rfHops"], ["budget", "rfBudget"]]) {
+    if ($(`#${id}Off`).checked) limits[key] = null;
+    else if ($(`#${id}`).value) limits[key] = parseInt($(`#${id}`).value, 10);
+  }
+  const newlyOff = Object.keys(limits).some(k => limits[k] === null && was[k] !== null);
+  if ($("#rfGroup").checked && newlyOff && !confirm(t("noLimitAsk"))) return;
   $("#rfGo").disabled = true;
   try {
     const j = await post("/api/rooms/save", {id: editing ? editing.id : undefined, name: $("#rfName").value, members,
-      group: $("#rfGroup").checked});
+      group: $("#rfGroup").checked, limits, defaultTo: $("#rfDefault").value || null});
     S.rooms = [...S.rooms.filter(r => r.id !== j.room.id), j.room];  // show it now, before the next poll
     $("#rdlg").close(); sel = `room:${j.room.id}`; $("#tl").dataset.first = "1"; render(true);
   } catch (err) { rhint(t("failed") + err.message, true); }

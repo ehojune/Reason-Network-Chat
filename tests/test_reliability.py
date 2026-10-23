@@ -124,6 +124,19 @@ for i in range(20):
         worker=launcher.found_workers(procs)[0]
         self.assertEqual((worker['model'],worker['effort']),('opus',None))
 
+    def test_interpreter_backed_agents_are_boundaries(self):
+        cases=[('claude',['node','/opt/node_modules/@anthropic-ai/claude-code/cli.js','-p','--model','opus'],('opus',None)),
+               ('claude',['python3','-u','/opt/bin/claude','-p','--model','opus','--effort','high'],('opus','high')),
+               ('codex',['node','--enable-source-maps','/opt/node_modules/@openai/codex/bin/codex.js','exec','--model','gpt-6.1-sol'],('gpt-6.1-sol',None))]
+        for family,argv,expected in cases:
+            procs=[(1,0,'reason',['reason','network','serve',family,'--name','lead']),
+                   (2,1,argv[0],argv),
+                   (3,2,'python',['python','tool.py','--model','fake','--effort','max'])]
+            worker=launcher.found_workers(procs)[0]
+            self.assertEqual((worker['model'],worker['effort']),expected)
+        self.assertIsNone(launcher.agent_argv('claude',['node','tool.js','-p','--model','fake']))
+        self.assertIsNone(launcher.agent_argv('claude',['node','-e','claude','--model','fake']))
+
     def test_external_stop_cleans_only_verified_descendant_pids(self):
         l=launcher.Launcher.__new__(launcher.Launcher)
         l.alive=lambda w: False

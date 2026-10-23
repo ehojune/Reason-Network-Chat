@@ -761,13 +761,15 @@ def parse_serve(argv):
 def model_from_args(family, argv):
     """(model, effort) a worker's agent runs with, read from its command line (or its shim's arguments)."""
     model = effort = None
-    for k, a in enumerate(argv[:-1]):
-        nxt = argv[k + 1]
-        if family == "claude" and a == "--model":
+    for k, a in enumerate(argv):
+        nxt = argv[k + 1] if k + 1 < len(argv) else ""
+        if a.startswith("--model="):
+            model = a.split("=", 1)[1]
+        elif a == "--model" or family == "codex" and a == "-m":
             model = nxt
         elif family == "claude" and a == "--effort":
             effort = nxt
-        elif family == "codex" and a == "-c":
+        elif family == "codex" and a in ("-c", "--config"):
             key, _, val = nxt.partition("=")
             val = val.strip('"')
             if key == "model":
@@ -775,6 +777,34 @@ def model_from_args(family, argv):
             elif key == "model_reasoning_effort":
                 effort = val
     return (model if model and MODEL_RE.match(model) else None, effort if effort and EFFORT_RE.match(effort) else None)
+
+
+def agent_argv(family, argv):
+    """The CLI argv of a native agent or an interpreter running its CLI script; None for ordinary tools."""
+    if not argv:
+        return None
+    basename = lambda s: re.split(r"[\\/]", s)[-1].lower()
+    program = basename(argv[0])
+    if program in (family, family + ".exe"):
+        return argv
+    if not re.fullmatch(r"(node(js)?|python(\d+(\.\d+)*)?)(\.exe)?", program):
+        return None
+    takes_value = {"-r", "--require", "--loader", "--import", "--conditions", "--inspect-port", "-W", "-X"}
+    i = 1
+    while i < len(argv):
+        arg = argv[i]
+        option = arg.split("=", 1)[0]
+        if option in ("-e", "--eval", "-c", "-m", "--print", "-p"):
+            return None  # inline code/module names cannot masquerade as a script path
+        if arg.startswith("-"):
+            i += 2 if option in takes_value and "=" not in arg else 1
+            continue
+        path = arg.replace("\\", "/").lower()
+        name = basename(arg)
+        direct = name in (family, family + ".js", family + ".mjs", family + ".cjs", family + ".py")
+        package = "/@anthropic-ai/claude-code/" if family == "claude" else "/@openai/codex/"
+        return argv[i:] if direct or name == "cli.js" and package in path else None
+    return None
 
 
 def found_workers(procs):
@@ -798,10 +828,8 @@ def found_workers(procs):
             if c in seen:
                 continue
             seen.add(c)
-            argv = argv_of.get(c) or []
-            program = re.split(r"[\\/]", argv[0])[-1].lower() if argv else ""
-            expected = ("claude", "claude.exe") if s["family"] == "claude" else ("codex", "codex.exe")
-            agent = program in expected and (any(a in argv[1:] for a in ("-p", "--print"))
+            argv = agent_argv(s["family"], argv_of.get(c) or [])
+            agent = argv is not None and (any(a in argv[1:] for a in ("-p", "--print"))
                     if s["family"] == "claude" else "exec" in argv[1:])
             if not agent:
                 todo += kids.get(c, [])
@@ -809,7 +837,7 @@ def found_workers(procs):
             m, e = model_from_args(s["family"], argv)
             model, effort = model or m, effort or e
             # A model-less shim can wrap the real agent; never inspect tools launched by an agent.
-            todo += [k for k in kids.get(c, []) if re.split(r"[\\/]", (argv_of.get(k) or [""])[0])[-1].lower() in expected]
+            todo += [k for k in kids.get(c, []) if agent_argv(s["family"], argv_of.get(k) or []) is not None]
         out.append(dict(s, pid=pid, model=model, effort=effort))
     return out
 

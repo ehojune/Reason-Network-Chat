@@ -194,6 +194,8 @@ get the new token, and a newer server also triggers a reload.
   released again). Refused per message when its recipient is offline. Returns `{ok, done, results[{id, ok, to?, err?}]}`.
 - `POST /api/rooms/flush` `{id}` → marks every queued hand-off of the room to go out now, past its budget and hop
   limit ("Send all now"); the relay loop sends them within a few seconds. Returns `{ok, released}`.
+  Queued deliveries are persisted before sending and reconciled against the daemon database after interruption.
+  With no receipt the outcome is unknown: the item stays queued until **Send all now** explicitly retries it once.
 - `POST /api/prefs` `{key, value}` → saves one whitelisted setting: `hideOffline` (bool), `favorites` (up to 100
   session addresses or `room:<id>` keys, no repeats), `sideWidth` (int 180–900; the page also keeps it under 60 % of
   the window), `autoWake` (up to 50 session addresses the server wakes on unread messages). Returns `{ok, prefs}`.

@@ -1147,7 +1147,7 @@ function troubleListHtml(list) {
     if (!m) return "";
     const rel = relayOf(m), body = (rel ? rel.core : m.body).split(DM_MARK)[0];
     const failures = S.messages.filter(x => x.reply_to === id && x.sender === m.recipient && isFailure(x.body));
-    return `<article class="troubleItem" data-id="${esc(id)}"><strong>${esc(t(v.kind === "failed" ? "tFailed" : "tNoAnswer"))}</strong> · ${esc(m.recipient)}
+    return `<article class="troubleItem" data-id="${esc(id)}"><strong>${esc(t(v.kind === "failed" ? "tFailed" : "tNoAnswer"))}</strong> · ${esc(rel ? rel.speaker : m.sender)} → ${esc(m.recipient)}
       <div>${esc(fmtD(m.sent_at))} ${fmtT(m.sent_at)}${rel ? ` · # ${esc((S.rooms.find(r => r.id === rel.room) || {}).name || rel.room)}` : ""}</div>
       <pre class="troubleText">${esc(body)}</pre>${failures.length ? `<details><summary>${esc(t("failureDetail"))}</summary>${failures.map(x => `<pre class="troubleText">${esc(x.body)}</pre>`).join("")}</details>` : ""}
       <div class="dbtn"><button type="button" data-action="jump">${esc(t("goOriginal"))}</button><button type="button" data-action="resend"${running(v.to) ? "" : ` disabled title="${esc(t("notRunning"))}"`}>${esc(t("resend"))}</button><button type="button" data-action="dismiss">${esc(t("dismissOne"))}</button></div></article>`;

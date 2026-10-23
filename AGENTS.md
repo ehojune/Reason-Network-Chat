@@ -97,4 +97,8 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
 - No dependencies, no build step. Keep it that way.
 - UI strings live in the `T` table in `index.html`; add every key to `ko`, `en` and `zh`.
 - Figures: edit `TEXT` in `docs/tools/make_figures.py`, run `python docs/tools/make_figures.py`, commit the SVGs.
-- READMEs: `README.md` (English), `README.ko.md`, `README.zh-CN.md`. Change all three together.
+- Docs for people come in three languages: English `X.md`, Korean `X.ko.md`, Chinese `X.zh-CN.md`, each starting with
+  the same language switcher row (English · 한국어 · 中文). Change all three together, and give any new doc the same set.
+  `AGENTS.md` and `CLAUDE.md` are English only.
+- Patch notes: every pull request adds one row at the top of `patch_notes/README.md`, `README.ko.md` and
+  `README.zh-CN.md` (time in KST, PR link, one sentence on what changed for the user). New date → new `## YYYY-MM-DD` heading.

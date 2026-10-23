@@ -86,9 +86,17 @@ class AllowPostTest(unittest.TestCase):
         known = {"pat/a-codex", "pat/b-claude"}
         room = r.upsert({"name": "t", "members": sorted(known), "group": True, "allowPost": ["pat/a-codex"]}, known, "pat/terminal")
         self.assertEqual(room["allowPost"], ["pat/a-codex"])
+        self.assertEqual(rooms_mod.Rooms(r.path.parent).get(room["id"])["allowPost"], ["pat/a-codex"])
         self.assertEqual(r.upsert({"name": "u", "members": ["pat/a-codex"], "group": True}, known, "pat/terminal")["allowPost"], [])
         with self.assertRaises(rooms_mod.RoomError):
             r.upsert({"name": "v", "members": ["pat/a-codex"], "allowPost": ["pat/b-claude"]}, known, "pat/terminal")
+
+    def test_saved_allow_post_rejects_non_members_and_bad_types(self):
+        import json
+        home = Path(tempfile.mkdtemp())
+        for value, expected in ((["pat/a", "pat/a", "pat/other", 1], ["pat/a"]), ("pat/a", []), (None, [])):
+            (home / "rooms.json").write_text(json.dumps([{"id": "r-00000001", "name": "t", "members": ["pat/a"], "allowPost": value}]), encoding="utf-8")
+            self.assertEqual(rooms.Rooms(home).list()[0]["allowPost"], expected)
 
 
 if __name__ == "__main__":

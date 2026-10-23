@@ -503,6 +503,14 @@ def connection_owner(client_port, server_port):
             return int(out.decode("ascii", "replace").strip() or 0) or None
         except (OSError, subprocess.TimeoutExpired, ValueError):
             return None
+    if sys.platform == "darwin":
+        # lsof field output keeps the exact client -> server direction; a listener proves nothing.
+        try:
+            r = subprocess.run(["/usr/sbin/lsof", "-nP", "-a", f"-iTCP:{int(client_port)}",
+                                "-sTCP:ESTABLISHED", "-Fpn"], capture_output=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        return lsof_owner(r.stdout.decode("utf-8", "replace"), client_port, server_port) if r.returncode == 0 else None
     # Linux: the client socket's inode in /proc/net/tcp, then the process that holds it (elsewhere: unknown)
     inode = None
     for table in ("/proc/net/tcp", "/proc/net/tcp6"):
@@ -527,6 +535,55 @@ def connection_owner(client_port, server_port):
         except OSError:
             continue
     return None
+
+
+def lsof_owner(text, client_port, server_port):
+    endpoint = f"127.0.0.1:{int(client_port)}->127.0.0.1:{int(server_port)}"
+    pid, owners = None, set()
+    for line in text.splitlines():
+        if line.startswith("p"):
+            pid = int(line[1:]) if line[1:].isdigit() else None
+        elif line == "n" + endpoint and pid:
+            owners.add(pid)
+    return next(iter(owners)) if len(owners) == 1 else None
+
+
+def darwin_argv(pid):
+    """Read argument boundaries from KERN_PROCARGS2, not the space-joined ps command column.
+    ABI: https://github.com/apple/darwin-xnu/blob/main/bsd/sys/sysctl.h (CTL_KERN=1, KERN_PROCARGS2=49).
+    """
+    import ctypes
+    try:
+        call = ctypes.CDLL(None, use_errno=True).sysctl
+        call.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.c_uint, ctypes.c_void_p,
+                         ctypes.POINTER(ctypes.c_size_t), ctypes.c_void_p, ctypes.c_size_t]
+        call.restype = ctypes.c_int
+        mib, size = (ctypes.c_int * 3)(1, 49, pid), ctypes.c_size_t()
+        if call(mib, 3, None, ctypes.byref(size), None, 0) != 0 or not 4 < size.value <= 1024 * 1024:
+            return []
+        buf = ctypes.create_string_buffer(size.value)
+        if call(mib, 3, buf, ctypes.byref(size), None, 0) != 0:
+            return []
+        return parse_darwin_argv(buf.raw[:size.value])
+    except (OSError, AttributeError, ValueError):
+        return []
+
+
+def parse_darwin_argv(blob):
+    import struct
+    if len(blob) < 4:
+        return []
+    argc = struct.unpack_from("=i", blob)[0]
+    if not 0 < argc <= 65536:
+        return []
+    end = blob.find(b"\0", 4)  # executable path, followed by padding and argc NUL-terminated arguments
+    if end < 0:
+        return []
+    at = end + 1
+    while at < len(blob) and blob[at] == 0:
+        at += 1
+    argv = blob[at:].split(b"\0")
+    return [a.decode("utf-8", "replace") for a in argv[:argc]] if len(argv) > argc else []
 
 
 def ancestors(procs, pid):
@@ -644,8 +701,23 @@ def list_processes():
         items = [items] if isinstance(items, dict) else items if isinstance(items, list) else []
         return [(p.get("ProcessId"), p.get("ParentProcessId"), str(p.get("Name") or ""),
                  split_cmdline(p.get("CommandLine") or "")) for p in items if isinstance(p, dict)]
-    # Elsewhere only /proc keeps argv boundaries (`ps` joins arguments with spaces, so a folder with a space would be
-    # cut); without /proc (macOS) nothing is found.
+    if sys.platform == "darwin":
+        try:
+            r = subprocess.run(["/bin/ps", "-axo", "pid=,ppid="], capture_output=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if r.returncode:
+            return None
+        rows = []
+        for line in r.stdout.decode("ascii", "replace").splitlines():
+            fields = line.split()
+            if len(fields) != 2 or not all(f.isdigit() for f in fields):
+                continue
+            pid, ppid = map(int, fields)
+            argv = darwin_argv(pid)
+            rows.append((pid, ppid, Path(argv[0]).name if argv else "", argv))
+        return rows
+    # Linux /proc keeps argv boundaries (`ps` joins arguments with spaces).
     if not Path("/proc/self/cmdline").is_file():
         return None
     rows = []

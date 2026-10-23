@@ -73,6 +73,9 @@ class Rooms:
             except RoomError:
                 room["limits"] = {}
             room["defaultTo"] = r.get("defaultTo") if r.get("defaultTo") in room["members"] else None
+            allowed = r.get("allowPost")
+            room["allowPost"] = list(dict.fromkeys(m for m in allowed if isinstance(m, str) and m in room["members"])) \
+                if isinstance(allowed, list) else []
             if ID_RE.match(str(room["id"])) and room["members"]:
                 self.rooms.append(room)
 

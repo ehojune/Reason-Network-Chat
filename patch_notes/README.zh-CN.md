@@ -9,6 +9,7 @@ Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（
 
 | 时间 | 变更 | 主要内容 |
 |---|---|---|
+| 03:05 | [#36](https://github.com/ehojune/Reason-Network-Chat/pull/36) | 成员可通过 `rnc.py room send` **主动发消息**，定时报告无需等待用户先发消息。支持 Windows、Linux、macOS 的发送者验证，并在重启后保留房间授权。 |
 | 02:47 | [#35](https://github.com/ehojune/Reason-Network-Chat/pull/35) | **能识别卡住的 worker**（忙碌 30 分钟以上且步骤没有变化）：右键菜单可查看其下运行的进程，并以相同设置**重新启动**。智能体用 **`python rnc.py worker start/restart/stop/adopt`** 管理 worker，不再在自己的回合里启动 worker。 |
 | 02:41 | [#31](https://github.com/ehojune/Reason-Network-Chat/pull/31) | **worker 的失败不再当作回答转发**（曾在失败的 worker 之间半分钟内来回 36 次）：显示为红色提示，你的消息带 **再次发送**。worker 已读未答的消息也会标出，消息框上方一行汇总并提供 **全部再次发送**。 |
 | 01:55 | [#30](https://github.com/ehojune/Reason-Network-Chat/pull/30) | 转发的回复（↪ … 的回复已转给）现在**显示转发的内容**：标记下方显示开头几行，点击后按格式完整展开。收到它的成员的 1:1 视图里原来只有标记，现在也一样能看到。 |

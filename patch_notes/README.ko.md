@@ -9,6 +9,7 @@ Reason Network Chat에서 바뀐 것을 최신순으로 적는다. 시간은 한
 
 | 시간 | 변경 | 주요 변경사항 |
 |---|---|---|
+| 03:05 | [#36](https://github.com/ehojune/Reason-Network-Chat/pull/36) | **멤버가 방에 먼저 보내기**: `rnc.py room send`로 예약 보고도 먼저 올립니다. 사람이 깨우는 메시지를 보낼 필요가 없습니다. Windows·Linux·macOS 발신 확인과 재시작 뒤 방별 허용 설정을 지원합니다. |
 | 02:47 | [#35](https://github.com/ehojune/Reason-Network-Chat/pull/35) | **멈춘 워커를 알아본다**(30분 넘게 단계가 바뀌지 않는 작업 중 워커). 오른쪽 클릭 메뉴에서 그 아래 도는 프로세스를 보고 같은 설정으로 **다시 시작**한다. 에이전트는 **`python rnc.py worker start/restart/stop/adopt`**로 워커를 다룬다. 에이전트가 자기 턴 안에서 워커를 띄우는 일이 다시 없게 하려는 것이다. |
 | 02:41 | [#31](https://github.com/ehojune/Reason-Network-Chat/pull/31) | **워커의 실패를 답으로 넘기지 않는다**(실패한 워커끼리 30초 만에 36번 주고받은 적이 있다). 빨간 안내로 보이고, 내 메시지에 **다시 보내기**가 붙는다. 워커가 읽고 답하지 않은 메시지도 표시하고, 보내기 칸 위 줄에 모아 **모두 다시 보내기**를 준다. |
 | 01:55 | [#30](https://github.com/ehojune/Reason-Network-Chat/pull/30) | 넘긴 답(↪ …의 답을 넘김 →)에 **넘긴 내용이 보인다.** 표시 아래에 첫 몇 줄이 뜨고, 누르면 서식대로 전부 펼쳐진다. 표시만 덩그러니 있던 받은 멤버의 1:1 화면에서도 그렇다. |

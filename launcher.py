@@ -374,8 +374,10 @@ def started_at(pid):
 
 
 # A worker reports "stopped" to the network only when it exits on Ctrl+C; killed, it stays "idle" for good.
-# Each worker runs in its own hidden console (CREATE_NO_WINDOW); this helper attaches to that console and
-# sends Ctrl+C to it, so the server's own console (if any) is never touched.
+# Each worker runs in its own hidden console: CREATE_NO_WINDOW still gives a console process a console, only
+# without a window, so AttachConsole(pid) works (checked: the helper exits 0, the worker exits at once and the
+# network shows it stopped). The helper attaches to that console and sends Ctrl+C there, so the server's own
+# console (if any) is never touched.
 CTRL_C_HELPER = """import ctypes, sys
 k = ctypes.windll.kernel32
 k.FreeConsole()

@@ -166,6 +166,7 @@ class Relay:
         self.passes = collections.defaultdict(collections.deque)  # room -> times a hand-off went out
         self.queue = {}  # room -> [{reply, to, sender, body, hop, at, held, force}] in arrival order
         self.notice = {}  # room -> the last hand-off that failed for good, shown to you
+        self.transient_notice = {}  # temporary delivery/storage state, never overwrites a permanent failure
         self.forwarded = {}  # message id -> {room, to, at}: 1:1 answers you forwarded into a room (once each)
         self.settled = {}  # message id -> {how: resent|dismissed, at}: unanswered or failed messages you dealt with
         self.since = None  # scan cursor (ms): replies before it are settled
@@ -203,6 +204,10 @@ class Relay:
             self.tries = collections.Counter({tuple(k.split("\t", 1)): int(v)
                 for k, v in (data.get("tries") or {}).items() if "\t" in k})
             self.notice = {k: str(v) for k, v in (data.get("notice") or {}).items()}
+            self.transient_notice = {k: str(v) for k, v in (data.get("transientNotice") or {}).items()}
+            for rid, text in list(self.notice.items()):
+                if text in (STORAGE_NOTICE, AMBIGUOUS_NOTICE, RECEIPT_NOTICE):
+                    self.transient_notice.setdefault(rid, self.notice.pop(rid))
         except (ValueError, TypeError, AttributeError):
             pass
 
@@ -261,7 +266,8 @@ class Relay:
         data = {"revision": revision, "sent": sent, "seen": seen, "since": self.since,
                 "done": {f"{a}\t{b}": at for (a, b), at in self.done.items()}, "queue": self.queue, "forwarded": fwd,
                 "settled": settled, "passes": {rid: list(times) for rid, times in self.passes.items()},
-                "tries": {f"{a}\t{b}": count for (a, b), count in self.tries.items()}, "notice": self.notice}
+                "tries": {f"{a}\t{b}": count for (a, b), count in self.tries.items()}, "notice": self.notice,
+                "transientNotice": self.transient_notice}
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             atomic_json(self.path, data)
@@ -281,7 +287,10 @@ class Relay:
                 n = sum(1 for i in items if room and held(room, i))
                 if items:
                     queued[rid] = {"waiting": len(items) - n, "held": n}
-            return rel, queued, dict(self.notice)
+            notices = dict(self.notice)
+            for rid, text in self.transient_notice.items():
+                notices[rid] = " · ".join(filter(None, (notices.get(rid), text)))
+            return rel, queued, notices
 
     def forwarded_view(self, ids):
         """For the page: {message id: {room, to}} for the listed 1:1 answers you forwarded into a room."""
@@ -419,9 +428,14 @@ class Relay:
                     item["flight"] = {"body": body, "newest": newest, "me": me}
             if item is not None:
                 forced = item.pop("force", None)  # consume one explicit retry durably before the side effect
+                storage_notice = self.transient_notice.get(room["id"]) == STORAGE_NOTICE
+                if storage_notice:
+                    self.transient_notice.pop(room["id"], None)
                 try:
                     self.save(strict=True)
                 except Exception as exc:
+                    if storage_notice:
+                        self.transient_notice[room["id"]] = STORAGE_NOTICE
                     if created:
                         item.pop("flight", None)  # no send was attempted; storage recovery can retry normally
                     if forced is not None:
@@ -434,7 +448,7 @@ class Relay:
                 if item is not None:
                     # An exception may have happened after delivery: retain the claim for reconciliation.
                     item.pop("force", None)  # one explicit retry is not permission to retry forever
-                    self.notice[room["id"]] = AMBIGUOUS_NOTICE
+                    self.transient_notice[room["id"]] = AMBIGUOUS_NOTICE
                     self.save()
             return False, f"{type(e).__name__}: {e}"
         if rc != 0:
@@ -443,7 +457,7 @@ class Relay:
                     if created:
                         item.pop("flight", None)
                     else:
-                        self.notice[room["id"]] = AMBIGUOUS_NOTICE
+                        self.transient_notice[room["id"]] = AMBIGUOUS_NOTICE
                     self.save()
             return False, err or out or f"rc={rc}"
         rows = self.db_rows("select id, sent_at from messages where sender = ? and recipient = ? and body = ?"
@@ -451,7 +465,7 @@ class Relay:
         with self.lock:
             if item is not None and not rows:
                 item.pop("force", None)
-                self.notice[room["id"]] = RECEIPT_NOTICE
+                self.transient_notice[room["id"]] = RECEIPT_NOTICE
                 self.save()
                 return False, "Waiting for delivery receipt"
             if rows:
@@ -491,8 +505,7 @@ class Relay:
 
     def clear_transient_notice(self, rid):
         """Recovery resolves temporary delivery state, never an unrelated exhausted-retry failure."""
-        if self.notice.get(rid) in (STORAGE_NOTICE, AMBIGUOUS_NOTICE, RECEIPT_NOTICE):
-            self.notice.pop(rid, None)
+        self.transient_notice.pop(rid, None)
 
     def dequeue(self, rid, item):
         """Take one item off a room's queue (call with self.lock held)."""
@@ -537,6 +550,7 @@ class Relay:
         with self.transaction():
             with self.lock:
                 self.notice.pop(room["id"], None)
+                self.transient_notice.pop(room["id"], None)
                 self.passes[room["id"]].clear()  # you are back in the conversation: a fresh budget
             results = []
             for m in targets:
@@ -695,7 +709,7 @@ class Relay:
                         if self.reconcile(room, me, item):
                             continue
                         if not item.get("force"):
-                            self.notice[rid] = AMBIGUOUS_NOTICE
+                            self.transient_notice[rid] = AMBIGUOUS_NOTICE
                             break  # keep an ambiguous send; a restart must never guess and spend another turn
                     slot = self.take(room) if not item.get("force") else time.time()
                     if slot is None:
@@ -715,7 +729,7 @@ class Relay:
             with self.lock:
                 if slot in self.passes[rid]:
                     self.passes[rid].remove(slot)
-                self.notice[rid] = STORAGE_NOTICE
+                self.transient_notice[rid] = STORAGE_NOTICE
                 self.save()
             raise
         with self.lock:

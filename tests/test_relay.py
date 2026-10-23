@@ -604,6 +604,23 @@ class RelayTest(unittest.TestCase):
         self.assertIsNone(self.queued())
         self.assertIn("retries exhausted", self.r.view(set())[2][self.room["id"]])
 
+    def test_temporary_delivery_warning_never_overwrites_a_permanent_failure(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.r.notice[self.room["id"]] = "older retries exhausted"
+        self.insert(A, ME, "@b-claude another question", reply_to=self.last_id_to(A))
+        def delivered_but_timed_out(to, body, fyi):
+            self.send(to, body, fyi)
+            raise subprocess.TimeoutExpired("reason", 60)
+        self.r.send_one = delivered_but_timed_out
+        self.r.scan(ME)
+        note = self.r.view(set())[2][self.room["id"]]
+        self.assertIn("older retries exhausted", note)
+        self.assertIn("unknown", note)
+        self.r = self.new_relay()
+        self.r.scan(ME)
+        self.assertEqual(self.r.view(set())[2][self.room["id"]], "older retries exhausted")
+        self.assertEqual(self.new_relay().view(set())[2][self.room["id"]], "older retries exhausted")
+
     def test_crash_during_manual_retry_does_not_authorize_a_second_retry(self):
         self.r.post(self.room, ME, "@a-codex go")
         self.insert(A, ME, "@b-claude question", reply_to=self.last_id_to(A))
@@ -651,6 +668,21 @@ class RelayTest(unittest.TestCase):
         self.r.scan(ME)
         self.assertEqual(self.counts(), [1, 0, 0])
         self.assertTrue(self.r.queue[self.room["id"]][0].get("flight"))
+
+    def test_recovered_storage_notice_is_not_left_after_a_known_network_failure(self):
+        from unittest import mock
+        self.r.post(self.room, ME, "@a-codex go")
+        self.r.forward(self.room, ME, self.row(self.insert(A, ME, "@b-claude question")))
+        with mock.patch.object(relay, "atomic_json", side_effect=OSError("disk full")):
+            with self.assertRaises(relay.NotSentError):
+                self.r.scan(ME)
+        self.r.send_one = lambda *args: (1, "", "network down")
+        for _ in range(relay.RETRIES):
+            self.r.scan(ME)
+        self.assertIsNone(self.queued())
+        note = self.r.view(set())[2][self.room["id"]]
+        self.assertIn("network down", note)
+        self.assertNotIn("storage recovery", note)
 
     def test_endpoint_resend_reloads_another_servers_relay_record(self):
         import server

@@ -2,7 +2,8 @@
 
 Localhost only, Python standard library only. Reads the daemon's SQLite database read-only
 (mode=ro) and `reason network who --all --json`; sends with `reason network send`; starts new
-sessions through launcher.py and keeps rooms in rooms.py. It never writes the database.
+sessions through launcher.py, keeps rooms in rooms.py and relays group rooms through relay.py.
+It never writes the database.
 """
 import hmac
 import json
@@ -19,6 +20,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from launcher import STATE, Catalog, Launcher, LaunchError, allow_ctrl_c, base_env
+from relay import Relay
 from rooms import RoomError, Rooms
 
 HOST = "127.0.0.1"
@@ -81,11 +83,11 @@ def who_loop():
         time.sleep(POLL_WHO)
 
 
-def db_rows(sql):
+def db_rows(sql, params=()):
     con = sqlite3.connect(f"{DB.resolve().as_uri()}?mode=ro", uri=True, timeout=2)
     con.row_factory = sqlite3.Row
     try:
-        return [dict(r) for r in con.execute(sql)]
+        return [dict(r) for r in con.execute(sql, params)]
     finally:
         con.close()
 
@@ -113,8 +115,10 @@ def state():
                          "doing": k.get("doing"), "cwd": k.get("cwd"), "tier": k.get("tier"),
                          "live": False})
         seen.add(addr)
+    relays, paused, notices = RELAY.view({m["id"] for m in msgs})
     return {"team": who.get("team"), "me": me, "sessions": sessions, "messages": msgs,
-            "launched": LAUNCHER.list(), "rooms": ROOMS.list(), "whoError": who_err, "now": int(time.time() * 1000)}
+            "launched": LAUNCHER.list(), "rooms": ROOMS.list(), "relays": relays, "paused": paused, "notices": notices,
+            "whoError": who_err, "now": int(time.time() * 1000)}
 
 
 def me_and_known():
@@ -126,6 +130,12 @@ def me_and_known():
     for r in db_rows("select distinct sender as a from messages union select distinct recipient from messages"):
         known.add(r["a"])
     return (f"{person}/terminal" if person else None), known
+
+
+def my_address():
+    with _lock:
+        person = (_who["data"] or {}).get("person")
+    return f"{person}/terminal" if person else None
 
 
 def send_one(to, body, fyi):
@@ -153,6 +163,9 @@ def folders():
             if path not in seen and Path(path).is_dir():
                 seen.append(path)
     return seen
+
+
+RELAY = Relay(STATE, ROOMS, db_rows, send_one)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -282,10 +295,16 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "No such room."}, 404)
         if not isinstance(body, str) or not body.strip() or not isinstance(fyi, bool):
             return self.send_json({"error": "body must be a non-empty string, fyi a boolean"}, 400)
-        results = []
-        for to in room["members"]:
-            rc, out, err = send_one(to, body.strip(), fyi)
-            results.append({"to": to, "ok": rc == 0, "err": "" if rc == 0 else (err or out or f"rc={rc}")})
+        if room.get("group"):  # members get the lines they missed; @mentions wake only those members
+            me = my_address()
+            if not me:
+                return self.send_json({"error": "Reason Network is not answering yet; try again."}, 503)
+            results = RELAY.post(room, me, body.strip())
+        else:
+            results = []
+            for to in room["members"]:
+                rc, out, err = send_one(to, body.strip(), fyi)
+                results.append({"to": to, "ok": rc == 0, "err": "" if rc == 0 else (err or out or f"rc={rc}")})
         sent = sum(r["ok"] for r in results)
         self.send_json({"ok": sent > 0, "sent": sent, "results": results,
                         **({} if sent else {"error": "; ".join(r["err"] for r in results)})}, 200 if sent else 502)
@@ -297,6 +316,7 @@ def main():
     allow_ctrl_c()
     threading.Thread(target=who_loop, daemon=True).start()
     threading.Thread(target=CATALOG.get, daemon=True).start()  # `agy models` takes a few seconds
+    threading.Thread(target=RELAY.run, args=(my_address,), daemon=True).start()
     srv = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"Reason Network Chat on http://{HOST}:{PORT}", flush=True)
     srv.serve_forever()

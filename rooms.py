@@ -48,6 +48,7 @@ class Rooms:
         for r in items if isinstance(items, list) else []:
             try:
                 room = {"id": r["id"], "name": clean_name(r["name"]), "created": int(r.get("created") or 0),
+                        "group": r.get("group") is True,
                         "members": [m for m in r["members"] if isinstance(m, str) and ADDR_RE.match(m)][:MAX_MEMBERS]}
             except (KeyError, TypeError, ValueError, RoomError):
                 continue
@@ -83,6 +84,9 @@ class Rooms:
         members = list(dict.fromkeys(m.strip() for m in members))
         if not 0 < len(members) <= MAX_MEMBERS:
             raise RoomError(f"Pick 1 to {MAX_MEMBERS} sessions.")
+        group = req.get("group", False)
+        if not isinstance(group, bool):
+            raise RoomError("group must be a boolean.")
         rid = req.get("id")
         old = next((r for r in self.rooms if r["id"] == rid), None) if rid is not None else None
         kept = set(old["members"]) if old else set()  # a saved member may have left and never sent anything
@@ -93,14 +97,14 @@ class Rooms:
             if rid is None:
                 if len(self.rooms) >= MAX_ROOMS:
                     raise RoomError(f"At most {MAX_ROOMS} rooms.", 429)
-                room = {"id": f"r-{secrets.token_hex(4)}", "name": name, "members": members,
+                room = {"id": f"r-{secrets.token_hex(4)}", "name": name, "members": members, "group": group,
                         "created": int(time.time() * 1000)}
                 rooms = self.rooms + [room]
             else:
                 old = next((r for r in self.rooms if r["id"] == rid), None)
                 if not old:
                     raise RoomError("No such room.", 404)
-                room = dict(old, name=name, members=members)
+                room = dict(old, name=name, members=members, group=group)
                 rooms = [room if r is old else r for r in self.rooms]
             self.commit(rooms)
             return dict(room, members=list(room["members"]))

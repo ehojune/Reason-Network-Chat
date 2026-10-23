@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="480" height="260" viewBox="0 0 480 260" role="img" aria-labelledby="t d" xml:lang="zh">
-  <title id="t">聊天室</title>
-  <desc id="d">聊天室: 只看选中会话之间的对话， 一条消息发给全体成员</desc>
+  <title id="t">聊天室与群聊</title>
+  <desc id="d">聊天室与群聊: 只看选中会话之间的对话； 群聊中成员彼此都能听到</desc>
   <style>
     text { font-family: "Noto Sans KR", "Noto Sans SC", "Apple SD Gothic Neo", "PingFang SC", "Segoe UI", "Malgun Gothic", "Microsoft YaHei", sans-serif; fill: #1F2328; }
     .h { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
@@ -21,11 +21,11 @@
   <rect x=".5" y=".5" width="479" height="259" rx="18" fill="#FFF5F0" stroke="#F0A27E"/>
   <circle cx="380" cy="130" r="92" fill="#FFE4D6"/>
   <circle cx="42" cy="74" r="14" fill="#C2410C"/><text class="n" x="42" y="79" text-anchor="middle">5</text>
-  <text class="h" x="28" y="128">聊天室</text>
-  <text class="l" x="28" y="164">只看选中会话之间的对话，</text><text class="l" x="28" y="188">一条消息发给全体成员</text>
+  <text class="h" x="28" y="128">聊天室与群聊</text>
+  <text class="l" x="28" y="164">只看选中会话之间的对话；</text><text class="l" x="28" y="188">群聊中成员彼此都能听到</text>
   <rect x="300" y="44" width="164" height="172" rx="14" fill="#FFFFFF" stroke="#C2410C" stroke-width="2" stroke-dasharray="6 4"/><text class="t" x="316" y="70" style="fill:#C2410C"># team</text>
   <circle cx="324" cy="100" r="6" fill="#C96442"/><text class="m" x="338" y="104" style="fill:#1F2328">api-claude</text>
   <circle cx="324" cy="136" r="6" fill="#2563EB"/><text class="m" x="338" y="140" style="fill:#1F2328">web-codex</text>
   <circle cx="324" cy="172" r="6" fill="#7C3AED"/><text class="m" x="338" y="176" style="fill:#1F2328">docs-agent</text>
-  <rect x="252" y="190" width="40" height="22" rx="8" fill="#F0E6DC" stroke="#D0D7DE"/><path d="M262 201h20" stroke="#8C959F" stroke-width="3" stroke-linecap="round"/><path d="M294 199C304 199 304 100 314 100" fill="none" stroke="#C2410C" stroke-width="1.5" marker-end="url(#a-claude)"/><path d="M294 199C304 199 304 136 314 136" fill="none" stroke="#C2410C" stroke-width="1.5" marker-end="url(#a-claude)"/><path d="M294 199C304 199 304 172 314 172" fill="none" stroke="#C2410C" stroke-width="1.5" marker-end="url(#a-claude)"/>
+  <rect x="252" y="210" width="40" height="22" rx="8" fill="#F0E6DC" stroke="#D0D7DE"/><path d="M262 221h20" stroke="#8C959F" stroke-width="3" stroke-linecap="round"/><path d="M294 219C304 219 304 100 314 100" fill="none" stroke="#C2410C" stroke-width="1.5" marker-end="url(#a-claude)"/><path d="M294 219C304 219 304 136 314 136" fill="none" stroke="#C2410C" stroke-width="1.5" marker-end="url(#a-claude)"/><path d="M294 219C304 219 304 172 314 172" fill="none" stroke="#C2410C" stroke-width="1.5" marker-end="url(#a-claude)"/>
 </svg>

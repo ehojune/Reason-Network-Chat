@@ -13,6 +13,7 @@ and starts new agent sessions.
 | `server.py` | Python standard library HTTP server on `127.0.0.1:8765`. No dependencies. |
 | `launcher.py` | New sessions: model catalogs, `reason network serve` workers, terminal windows, the Codex model shim. |
 | `rooms.py` | Rooms: named sets of session addresses in `REASON_CHAT_HOME/rooms.json`. |
+| `relay.py` | Group rooms: sends your message with each member's missed lines, passes on `@name` replies, guards loops. |
 | `index.html` | The whole UI (one file, no build). Polls `/api/state` every 3 s. Strings in ko/en/zh. |
 | `tests/` | `python -m unittest discover tests` — request validation and catalog parsing, no agent needed. |
 | `.claude/launch.json` | Lets the Claude desktop app start the server and show the page in its Browser pane. |
@@ -59,7 +60,7 @@ then stop the worker.
 | `REASON_CHAT_DB` | `~/.reason/network/network.db` | Daemon database path. |
 | `REASON_BIN` | `%LOCALAPPDATA%\Reason\bin\reason.exe` on Windows, else `reason` on PATH | The Reason CLI. |
 | `NODE_EXTRA_CA_CERTS` | unset | Root CA file for TLS-inspecting corporate networks. The CLI (Bun) needs it there. On Windows, children get it from the stored user environment even if the server started before it was set. |
-| `REASON_CHAT_HOME` | `~/.reason-network-chat` | Rooms (`rooms.json`), worker registry (`workers.json`), worker logs (`logs/`), the Codex shim (`codex-shim/`). |
+| `REASON_CHAT_HOME` | `~/.reason-network-chat` | Rooms (`rooms.json`), relayed-message records (`relay.json`), worker registry (`workers.json`), worker logs (`logs/`), the Codex shim (`codex-shim/`). |
 | `REASON_CHAT_CLAUDE`, `REASON_CHAT_CODEX`, `REASON_CHAT_AGY` | found automatically | Full path to an agent CLI. On Windows it must be an `.exe`. |
 
 ## HTTP API
@@ -70,13 +71,16 @@ Every POST also needs `Origin: http://127.0.0.1:<port>` (or `localhost`), `Conte
 Responses forbid framing. To act from a script, use the `reason` CLI instead.
 
 - `GET /api/state` →
-  `{team, me, sessions[], messages[], launched[], rooms[], whoError, now}`.
+  `{team, me, sessions[], messages[], launched[], rooms[], relays{}, paused{}, notices{}, whoError, now}`.
   `me` is the address the page sends as (`<person>/terminal`).
   `sessions[]` = live entries from `who --all --json` (`address, name, agent, status, doing, cwd, tier, live: true`)
   plus addresses seen only in history (`status: "gone"`, `live: false`).
   `messages[]` = rows of the `messages` table ordered by `sent_at` (ms epoch).
   `launched[]` = workers this server started and that are still running (`name, family, model, effort, cwd`).
-  `rooms[]` = `{id, name, members[], created}`; `members` are session addresses.
+  `rooms[]` = `{id, name, members[], group, created}`; `members` are session addresses.
+  `relays{}` = for messages this page relayed into a group room: `{room, hop, core, speaker}` (`core` is the plain
+  message without the room envelope; `hop` 0 = yours, ≥1 = a member's reply passed on). `paused{}` = room → `budget`/`hops`.
+  `notices{}` = room → the last hand-off that still failed after 3 tries.
 - `POST /api/send` `{to, body, fyi}` → runs `reason network send <to> <body> [--fyi]`.
   Returns `{ok, rc, out, err}`; HTTP 502 when the CLI fails.
 - `GET /api/catalog[?refresh=1]` → `{families[], folders[]}`. Each family: `id` (`claude`/`codex`/`antigravity`),
@@ -86,10 +90,11 @@ Responses forbid framing. To act from a script, use the `reason` CLI instead.
   `model`/`effort` mean the agent's own default; `name` is for workers (`[a-z0-9-]`, ≤ 48, not taken).
   Every value is checked against the catalog; the folder must be an existing absolute local directory.
   Returns `{ok, mode, name}`; 4xx with `{error}` otherwise.
-- `POST /api/rooms/save` `{id?, name, members[]}` → creates a room (no `id`) or replaces its name and members.
+- `POST /api/rooms/save` `{id?, name, members[], group}` → creates a room (no `id`) or replaces its name, members and group flag.
   Members: 1–12 known session addresses, not the page's own. Returns `{ok, room}`.
 - `POST /api/rooms/delete` `{id}` → removes the room; messages are untouched.
-- `POST /api/rooms/send` `{id, body, fyi}` → one `reason network send` per member. Returns
+- `POST /api/rooms/send` `{id, body, fyi}` → one `reason network send` per member (a group room: per member it targets,
+  each with the room envelope; `fyi` is ignored). Returns
   `{ok, sent, results[{to, ok, err}]}`; `ok` when at least one member got it.
 - `POST /api/stop` `{name}` → stops a worker this server started: Ctrl+C first (so the network shows it as stopped),
   then a kill after 10 s.
@@ -118,6 +123,12 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
 - **`reason network serve codex` on Windows** can fail with "contains a cmd.exe special character" when a `codex.cmd` shim comes first on PATH. Put the folder of the real `codex.exe` first on PATH for that process.
 - **Replies to `<person>/terminal`** stay unread in the database because nothing else reads that inbox. The page hides the read mark for them.
 - **Sending is acting for the user.** Send only what the user asked for, or the one-line test they approved.
+- **Group rooms cost turns.** Each message wakes every targeted member, and `@name` replies wake more. The guards
+  in `relay.py` (`MAX_HOPS` 3, `BUDGET` 20 per `BUDGET_WINDOW` 600 s) are the only thing between two agents and an
+  endless exchange; keep them. Only replies whose `reply_to` is a relayed message are passed on.
+- **Agents may also use their own Reason tools.** A Codex or Claude member with the Reason Network MCP server can
+  message another member directly instead of writing `@name`. The envelope asks them not to; those messages do not
+  show in the room because they come from the agent's inner session (`codex exec` registers its own name).
 - **Starting sessions is too.** A worker takes work on the network as the user and keeps running after the page
   closes. Start one only when the user asks, and stop test workers afterwards.
 - **A killed worker looks alive.** `serve` reports "stopped" only when it exits on Ctrl+C. After `taskkill /F`

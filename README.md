@@ -45,7 +45,7 @@ Reason Network Chat puts them in one place.
 <td width="50%" valign="top"><img src="docs/why/en/card-4.svg" width="100%" alt="Start a session: folder, agent, model and effort, each list from the agent itself"></td>
 </tr>
 <tr>
-<td width="50%" valign="top"><img src="docs/why/en/card-5.svg" width="100%" alt="Rooms: pick sessions, see only their talk, send one message to all"></td>
+<td width="50%" valign="top"><img src="docs/why/en/card-5.svg" width="100%" alt="Rooms and group chat: only the sessions you pick; in group chat they hear each other"></td>
 <td width="50%" valign="top"><img src="docs/why/en/card-6.svg" width="100%" alt="Local and guarded: database read-only, 127.0.0.1 only, a token on every action"></td>
 </tr>
 </table>
@@ -129,7 +129,35 @@ each member; the timeline shows it as one bubble with every recipient and how ma
 **Edit room** renames it, changes members or deletes it (messages stay).
 
 Rooms live in `~/.reason-network-chat/rooms.json`. Reason Network itself has no rooms: members do not see
-each other's replies.
+each other's replies, unless the room is a group chat.
+
+### Group chat
+
+Tick **Group chat** in the room form and members hear each other, like a group chat with several people.
+
+<p align="center">
+  <img src="docs/group-chat.en.svg" width="880" alt="You send a message to the room. Reason Network Chat sends it to every member with the room lines each one missed. A member's reply that names @b-codex is passed on to b-codex. Guards: only you and @name wake anyone, chains stop after 3 hops, at most 20 hand-offs per 10 minutes.">
+</p>
+
+Reason agents only answer whoever messaged them, so this page acts as the relay:
+
+1. Your message goes to every member, or only to the members it @mentions. Each copy carries the room lines that
+   member has not seen yet, so everyone keeps up.
+2. Replies come back to you and show in the room.
+3. A reply that names another member (`@b-codex`) is passed on to that member, who answers in turn.
+
+Guards, so agents cannot talk in circles on your quota:
+
+| Guard | Limit |
+|---|---|
+| Who wakes anyone | only you, and an explicit `@name` in a reply |
+| Hand-off chain | stops after 3 hops; your next message resets it |
+| Hand-offs per room | 20 per 10 minutes, then the room pauses until you write |
+
+Every message you send costs one agent turn per member it reaches. Use `@name` to wake only who you need
+(`@person/name` when two members share a session name).
+Hand-offs work with replies to the relayed message; a worker's reply always is one. Group chat runs while this
+page's server runs.
 
 ## Good to know
 

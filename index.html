@@ -343,7 +343,9 @@ function renderTl() {
   const ms = [];
   for (const m of S.messages.filter(shown)) {
     const prev = ms[ms.length - 1];
+    // Same sender, text, quote and wake within 15 s: one send to several sessions, not separate replies.
     if (prev && prev.sender === m.sender && prev.body === m.body && m.sent_at - prev.sent_at < 15000
+        && prev.reply_to === m.reply_to && prev.wake === m.wake
         && !prev.to.includes(m.recipient)) { prev.to.push(m.recipient); prev.all.push(m); continue; }
     ms.push({...m, to: [m.recipient], all: [m]});
   }
@@ -565,7 +567,11 @@ function openRoom(room) {
   $("#rfDelete").hidden = !room;
   const chosen = new Set(room ? room.members : sel && !sel.startsWith("room:") ? [sel] : []);
   const up = s => s.live && s.status !== "offline";
-  const ss = S.sessions.filter(s => s.address !== S.me)
+  // Saved members whose traffic fell out of the message window are not in S.sessions; list them anyway,
+  // or saving (even a rename) would drop them.
+  const extra = [...chosen].filter(a => !S.sessions.some(s => s.address === a))
+    .map(a => ({address: a, name: short(a), agent: "?", live: false, status: "gone"}));
+  const ss = S.sessions.filter(s => s.address !== S.me).concat(extra)
     .sort((a, b) => (chosen.has(b.address) - chosen.has(a.address)) || (up(b) - up(a)) || a.name.localeCompare(b.name));
   $("#rfMembers").innerHTML = ss.map(s => `<label class="${up(s) ? "" : "gone"}"><input type="checkbox" value="${esc(s.address)}"
     ${chosen.has(s.address) ? "checked" : ""}><span class="tag ${esc(s.agent)}">${esc(s.agent)}</span>${esc(s.name)}</label>`).join("");

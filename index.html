@@ -1127,15 +1127,26 @@ $("#tl").addEventListener("click", e => {
   const fb = e.target.closest(".fwdBtn");
   if (fb) return forwardToRoom(fb.dataset.id, fb.dataset.room);
   const r = e.target.closest(".rawBtn");
-  if (r) { rawIds.has(r.dataset.id) ? rawIds.delete(r.dataset.id) : rawIds.add(r.dataset.id); render(true); return; }
+  if (r) {
+    rawIds.has(r.dataset.id) ? rawIds.delete(r.dataset.id) : rawIds.add(r.dataset.id);
+    return rerenderKeeping(`.rawBtn[data-id="${CSS.escape(r.dataset.id)}"]`);
+  }
   const x = e.target.closest(".who"); if (x) return pick(x.dataset.a);
   // A passed-on reply: the header folds and unfolds it; a folded one also opens from its text (not from a link).
   const v = e.target.closest(".relay");
   if (v && !e.target.closest("a") && (e.target.closest(".relayHead") || !v.classList.contains("open"))) {
     openRelays.has(v.dataset.id) ? openRelays.delete(v.dataset.id) : openRelays.add(v.dataset.id);
-    render(true);
+    rerenderKeeping(`.relay[data-id="${CSS.escape(v.dataset.id)}"]`);
   }
 });
+// Re-render after a fold or format toggle with the clicked item kept where it was on screen: at the bottom of the
+// timeline, following the bottom would otherwise jump past the start of what was just unfolded.
+function rerenderKeeping(selector) {
+  const tl = $("#tl"), el = tl.querySelector(selector), top = el ? el.getBoundingClientRect().top : null;
+  render(true);
+  const now = tl.querySelector(selector);
+  if (top !== null && now) tl.scrollTop += now.getBoundingClientRect().top - top;
+}
 $("#list").addEventListener("keydown", e => {
   const x = e.target.closest(".ses"); if (!x) return;
   if (e.key === "Enter") pick(x.dataset.a);

@@ -664,6 +664,53 @@ def found_workers(procs):
     return out
 
 
+def descendants(procs, root):
+    """[(pid, ppid, name, argv)] of every process under `root` in a list_processes() result. A parent pid can be
+    reused on Windows, so a "child" that started before its parent is not one."""
+    kids = {}
+    for pid, ppid, name, argv in procs:
+        if pid != ppid:
+            kids.setdefault(ppid, []).append((pid, ppid, name, argv))
+    born = {}
+
+    def epoch(pid):
+        if pid not in born:
+            born[pid] = started_epoch(started_at(pid))
+        return born[pid]
+
+    out, todo, seen = [], [root], {root}
+    while todo:
+        parent = todo.pop()
+        for row in kids.get(parent, []):
+            pid = row[0]
+            if pid in seen:
+                continue
+            a, b = epoch(parent), epoch(pid)
+            if a and b and b < a - 1:
+                continue  # older than its "parent": that pid was reused
+            seen.add(pid)
+            out.append(row)
+            todo.append(pid)
+    return out
+
+
+def pending_requests(name):
+    """Messages a `serve` worker took but has not answered. Reason keeps them in ~/.reason/ask-workers/<name>.json
+    (checked in 0.12.10) and runs them again when a worker of that name starts: a restart re-runs them. Read only."""
+    path = HOME / ".reason" / "ask-workers" / (re.sub(r"[^a-zA-Z0-9-]", "-", name) + ".json")
+    try:
+        items = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    out = []
+    for it in items if isinstance(items, list) else []:
+        req = it.get("request") if isinstance(it, dict) else None
+        if isinstance(req, dict):
+            out.append({"id": req.get("id"), "from": req.get("from"), "body": str(req.get("body") or "")[:200],
+                        "answered": "reply" in it})
+    return out
+
+
 def started_epoch(started):
     """A process creation time from started_at() as epoch seconds, or None."""
     try:
@@ -956,14 +1003,22 @@ class Launcher:
                     foreign[f["name"]] = w
             self.foreign = foreign
 
-    def adopt(self, name):
-        """Manage a worker started outside this page (the user asked to, in the page)."""
+    def adopt(self, name, model=None, effort=None):
+        """Manage a worker started outside this page (the user asked to, in the page or with rnc.py). `model` and
+        `effort`: what it is known to run with, when its processes cannot tell (checked against the catalog); they are
+        what a later restart uses. The running process is not touched."""
         with self.lock:
             w = self.foreign.get(name)
             if not w or not self.alive(w):
                 raise LaunchError("No such worker running outside this page.", 404)
             if name in self.workers:
                 raise LaunchError("A worker with that name is managed here already.", 409)
+            if model or effort:
+                fam = self.catalog.family(w["family"])
+                if not fam:
+                    raise LaunchError("Unknown agent.")
+                entry, model, effort = self.check_model(fam, fam["modes"]["worker"], model or "", effort or "")
+                w = dict(w, model=model or w.get("model"), effort=effort or w.get("effort"))
             self.workers[name] = dict(w, external=True)
             self.foreign.pop(name, None)
             self.stopped.discard(name)
@@ -1025,6 +1080,84 @@ class Launcher:
                 return
             time.sleep(0.1)
         kill_tree(w["pid"])
+
+    def log_activity(self, name):
+        """When a running worker last wrote its log (ms), if it has written it since its process started, else None."""
+        with self.lock:
+            w = self.workers.get(name) or self.foreign.get(name)
+        if not w or not w.get("log"):
+            return None
+        try:
+            mtime = Path(w["log"]).stat().st_mtime
+        except OSError:
+            return None
+        start = started_epoch(w.get("started"))
+        return int(mtime * 1000) if start and mtime >= start else None
+
+    def running_here(self, name):
+        with self.lock:
+            w = self.workers.get(name)
+            return "managed" if w and self.alive(w) else "foreign" if name in self.foreign else None
+
+    def tree(self, name):
+        """The processes of a running worker, managed here or not: its `serve` and everything under it (the agent
+        turns), for a worker that looks stuck."""
+        with self.lock:
+            w = self.workers.get(name) or self.foreign.get(name)
+            managed = name in self.workers
+        if not w or not self.alive(w):
+            raise LaunchError("No such worker running on this computer.", 404)
+        procs = list_processes()
+        if procs is None:
+            raise LaunchError("Processes cannot be read on this computer.", 501)
+        rows = [r for r in procs if r[0] == w["pid"]] + descendants(procs, w["pid"])
+        return {"name": name, "pid": w["pid"], "managed": managed, "pending": pending_requests(name),
+                "procs": [{"pid": pid, "ppid": ppid, "name": pname, "cmd": " ".join(argv)[:400]}
+                          for pid, ppid, pname, argv in rows]}
+
+    def relaunch(self, name):
+        """Stop a running worker managed here and start it again with its recorded settings: the cure for a stuck
+        one. Ctrl+C first (a forced tree kill for one started elsewhere), then whatever was left under it (an agent
+        turn that outlived its serve, still holding the turn open) is killed too. A busy worker loses its turn."""
+        with self.lock:
+            if name in self.restarting:
+                raise LaunchError("It is restarting already.", 409)
+            w = self.workers.get(name)
+            if not w or not self.alive(w):
+                raise LaunchError("Not a running worker managed here.", 404)
+            rec = self.records.get(name) or w
+            fam = self.catalog.family(rec.get("family") or w["family"])
+            if not fam:
+                raise LaunchError("Unknown agent.")
+            m = fam["modes"]["worker"]
+            if not m["ok"]:
+                raise LaunchError(m["why"] or "Not available.")
+            entry, model, effort = self.check_model(fam, m, rec.get("model") or "", rec.get("effort") or "")
+            cwd = rec.get("cwd") or w.get("cwd")
+            if not cwd or not Path(cwd).is_dir():
+                raise LaunchError("Its folder is unknown, so it cannot be restarted from here.", 409)
+            full = bool(rec.get("fullAccess", w.get("fullAccess")))
+            self.restarting.add(name)
+        try:
+            procs = list_processes()
+            left = [(pid, started_at(pid)) for pid, *_ in descendants(procs, w["pid"])] if procs else []
+            self.halt(w)
+            for pid, started in left:
+                if started and started_at(pid) == started:
+                    kill_tree(pid)
+            time.sleep(1)  # let the network take in "stopped" before the same name comes back
+            with self.lock:
+                nw = self.start_worker(fam, cwd, model, effort, name, full)
+                self.workers[name] = nw
+                self.stopped.discard(name)
+                self.save()
+                self.remember(nw)
+        finally:
+            self.restarting.discard(name)
+        self.settle(nw)
+        if self.serving is not None:
+            self.serving.add(name)
+        return {"ok": True, "restarted": True}
 
     def check(self, req, live_names):
         """Validate a launch request against the catalogs; returns the cleaned values."""

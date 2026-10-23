@@ -287,6 +287,97 @@ class ConfigureTest(unittest.TestCase):
         self.assertNotIn("a-claude", self.l.restarting)
 
 
+class StuckWorkerTest(unittest.TestCase):
+    """A stuck worker's processes, its restart, and adopting one started elsewhere, with processes faked."""
+    PROCS = [(10, 1, "reason.exe", ["reason", "network", "serve", "codex", "--name", "lead-codex"]),
+             (11, 10, "codex.exe", ["codex", "exec", "--json"]),  # the hung turn
+             (12, 11, "node.exe", ["node", "server.js"]),          # what the turn started
+             (13, 10, "conhost.exe", ["conhost"]),
+             (99, 12, "late.exe", ["late"]),                        # pid 12 reused? no: born after its parent
+             (20, 1, "other.exe", ["other"])]
+
+    def setUp(self):
+        self.l = launcher.Launcher("reason", FakeCatalog())
+        self.saved = {k: launcher.__dict__[k] for k in ("list_processes", "started_at", "started_epoch", "kill_tree")}
+        self.alive = launcher.Launcher.__dict__["alive"]
+        born = {10: "100", 11: "110", 12: "120", 13: "101", 99: "130", 20: "5"}
+        launcher.started_at = lambda pid: born.get(pid, "")
+        launcher.started_epoch = lambda s: float(s) if s else None  # creation times in seconds
+        launcher.list_processes = lambda: list(self.PROCS)
+        self.killed, self.halted, self.started = [], [], []
+        launcher.kill_tree = lambda pid: self.killed.append(pid)
+        launcher.Launcher.alive = staticmethod(lambda w: True)
+        self.l.halt = lambda w: self.halted.append(w["name"])
+        self.l.settle = lambda w: None
+
+        def start(fam, cwd, model, effort, name, full):
+            self.started.append((name, model, effort, full))
+            return {"name": name, "pid": 50, "started": "500", "family": fam["id"], "model": model or None,
+                    "effort": effort or None, "cwd": cwd, "log": "", "fullAccess": full, "settings": None}
+        self.l.start_worker = start
+        self.l.workers = {"lead-codex": {"name": "lead-codex", "pid": 10, "started": "100", "family": "codex",
+                                         "model": "gpt-6.1-sol", "effort": "high", "cwd": FOLDER, "log": "",
+                                         "fullAccess": True}}
+        self.l.records = {"lead-codex": dict(self.l.workers["lead-codex"])}
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            setattr(launcher, k, v)
+        launcher.Launcher.alive = self.alive
+
+    def test_descendants_follow_parents_but_not_reused_pids(self):
+        self.assertEqual([r[0] for r in launcher.descendants(self.PROCS, 10)], [11, 13, 12, 99])
+        launcher.started_at = lambda pid: {10: "100", 11: "90"}.get(pid, "")  # 11 is older than 10: pid reuse
+        self.assertEqual([r[0] for r in launcher.descendants(self.PROCS, 10)], [13])
+
+    def test_tree_lists_the_serve_and_what_runs_under_it(self):
+        tree = self.l.tree("lead-codex")
+        self.assertTrue(tree["managed"])
+        self.assertEqual([p["pid"] for p in tree["procs"]], [10, 11, 13, 12, 99])
+        self.assertEqual(tree["procs"][1]["cmd"], "codex exec --json")
+        with self.assertRaises(launcher.LaunchError):
+            self.l.tree("nobody")
+
+    def test_pending_requests_read_from_reason(self):
+        home = Path(tempfile.mkdtemp())
+        (home / ".reason" / "ask-workers").mkdir(parents=True)
+        (home / ".reason" / "ask-workers" / "lead-codex.json").write_text(json.dumps([
+            {"request": {"id": "m1", "from": "p/terminal", "body": "restart the workers"}},
+            {"request": {"id": "m2", "from": "p/terminal", "body": "x"}, "reply": "done"}]), encoding="utf-8")
+        saved, launcher.HOME = launcher.HOME, home
+        try:
+            got = launcher.pending_requests("lead-codex")
+        finally:
+            launcher.HOME = saved
+        self.assertEqual([(p["id"], p["answered"]) for p in got], [("m1", False), ("m2", True)])
+        self.assertEqual(launcher.pending_requests("nobody-here"), [])
+
+    def test_relaunch_stops_kills_leftovers_and_starts_with_the_record(self):
+        self.assertEqual(self.l.relaunch("lead-codex"), {"ok": True, "restarted": True})
+        self.assertEqual(self.halted, ["lead-codex"])
+        self.assertEqual(sorted(self.killed), [11, 12, 13, 99])  # the hung turn and what it started
+        self.assertEqual(self.started, [("lead-codex", "gpt-6.1-sol", "high", True)])
+        self.assertEqual(self.l.workers["lead-codex"]["pid"], 50)
+        self.assertNotIn("lead-codex", self.l.restarting)
+        with self.assertRaises(launcher.LaunchError) as e:
+            self.l.relaunch("not-here")
+        self.assertEqual(e.exception.code, 404)
+
+    def test_adopt_records_the_settings_it_is_said_to_run_with(self):
+        self.l.workers = {}
+        self.l.foreign = {"lead-codex": {"name": "lead-codex", "pid": 10, "started": "100", "family": "codex",
+                                         "model": None, "effort": None, "cwd": FOLDER, "log": "",
+                                         "fullAccess": True, "settings": None, "adopted": True}}
+        with self.assertRaises(launcher.LaunchError):
+            self.l.adopt("lead-codex", "gpt-6.1-sol; calc", None)
+        self.assertEqual(self.l.running_here("lead-codex"), "foreign")
+        self.l.adopt("lead-codex", "gpt-6.1-sol", "high")
+        w = self.l.workers["lead-codex"]
+        self.assertEqual((w["model"], w["effort"], w["external"]), ("gpt-6.1-sol", "high", True))
+        self.assertEqual(self.l.records["lead-codex"]["model"], "gpt-6.1-sol")
+        self.assertEqual(self.l.running_here("lead-codex"), "managed")
+
+
 class StartWorkerTest(unittest.TestCase):
     """What a worker process is given, with spawning faked."""
     def setUp(self):

@@ -565,6 +565,9 @@ class RelayTest(unittest.TestCase):
         self.r.scan(ME)
         self.assertEqual(self.counts(), [1, 1, 0])
         self.assertIsNone(self.queued())
+
+        self.assertNotIn(self.room["id"], self.r.view(set())[2])
+        self.assertNotIn(self.room["id"], self.new_relay().view(set())[2])
         mid = self.last_id_to(B)
         self.assertEqual(self.r.sent[mid]["speaker"], A)
         self.insert(B, ME, "answer", reply_to=mid)
@@ -613,6 +616,8 @@ class RelayTest(unittest.TestCase):
         self.r.scan(ME)  # storage recovered: no full-window wait for an attempt that never happened
         self.assertEqual(self.counts(), [1, 1, 0])
         self.assertIsNone(self.queued())
+        self.assertNotIn(self.room["id"], self.r.view(set())[2])
+        self.assertNotIn(self.room["id"], self.new_relay().view(set())[2])
 
     # ---------- restarts ----------
     def test_cursor_moves_past_queued_hand_offs(self):

@@ -59,6 +59,7 @@ CONTEXT_CHARS = 4000
 LINE_CHARS = 600
 KEEP = 3000  # records of sent messages kept on disk
 RETRIES = 3  # attempts at one hand-off before it is reported as failed
+STORAGE_NOTICE = "Could not save the hand-off; no message was sent. Waiting for storage recovery."
 # @name or @person/name (ASCII, so "@codex-worker1에게" still names codex-worker1), or @모두 / @전체
 # The same pattern as MENTION_RE in index.html, so the page shows who the server will send to ("안녕@b-claude" names
 # b-claude; "pat@b-claude" does not).
@@ -457,7 +458,7 @@ class Relay:
             self.seen[key] = max(self.seen.get(key, 0), newest, skip_at)
             if item is not None:
                 self.dequeue(room["id"], item)
-                if not created:
+                if not created or self.notice.get(room["id"]) == STORAGE_NOTICE:
                     self.notice.pop(room["id"], None)  # the explicit retry resolved this ambiguous delivery
             self.save()
         return True, ""
@@ -705,7 +706,7 @@ class Relay:
             with self.lock:
                 if slot in self.passes[rid]:
                     self.passes[rid].remove(slot)
-                self.notice[rid] = "Could not save the hand-off; no message was sent. Waiting for storage recovery."
+                self.notice[rid] = STORAGE_NOTICE
                 self.save()
             raise
         with self.lock:

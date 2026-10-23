@@ -447,7 +447,9 @@ class Handler(BaseHTTPRequestHandler):
                     results.append({"id": mid, "ok": False, "err": "Only your own messages can be sent again."})
                     continue
                 row, to = rows[0], rows[0]["recipient"]
-            if status.get(to) in (None, "offline"):  # nothing would take it: start the worker first
+            # Nothing would take it: offline, or a worker of ours the network still shows although its process is gone.
+            if status.get(to) in (None, "offline") or (to.split("/", 1)[0] == me.split("/", 1)[0]
+                                                       and to.split("/", 1)[-1] in LAUNCHER.stale_names()):
                 results.append({"id": mid, "ok": False, "to": to, "err": f"{to} is not running; start it first."})
                 continue
             if not RELAY.claim(mid, "resent"):

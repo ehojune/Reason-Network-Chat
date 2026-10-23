@@ -600,12 +600,15 @@ $("#list").addEventListener("contextmenu", e => {
   e.preventDefault();
   openCtx(x, e.clientX || e.clientY ? e : null);
 });
-$("#ctxFav").addEventListener("click", () => {
-  const f = favs(), key = ctxKey;
+$("#ctxFav").addEventListener("click", async () => {
+  const key = ctxKey;
   closeCtx();
   if (!key) return;
+  // Drop favorites whose room or session is gone, so they neither linger in the setting nor use up the cap.
+  const f = favs().filter(k => roomOf(k) || S.sessions.some(s => s.address === k));
   if (!f.includes(key) && f.length >= 100) return say(t("favFull"), true);  // the server keeps at most 100
-  setPref("favorites", f.includes(key) ? f.filter(k => k !== key) : [...f, key]);
+  await setPref("favorites", f.includes(key) ? f.filter(k => k !== key) : [...f, key]);
+  [...$("#list").querySelectorAll(".ses")].find(r => r.dataset.a === key)?.focus();  // back to the row (focus-visible: keyboard only)
 });
 document.addEventListener("click", e => { if (!e.target.closest("#ctx")) closeCtx(); });
 document.addEventListener("keydown", e => {

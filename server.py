@@ -157,6 +157,7 @@ def state():
                          "live": False, "resumable": can_wake(name, addr.split("/", 1)[0], None)})
         seen.add(addr)
     records = {r["name"]: r for r in LAUNCHER.list_records()}
+    stale = LAUNCHER.stale_names()
     workers = set(records) | {w["name"] for w in LAUNCHER.list()}
     for s in sessions:
         s["unread"] = unread.get(s["address"], 0)
@@ -166,6 +167,10 @@ def state():
             s["worker"] = True
             if s.get("agent") not in ("claude-code", "codex"):
                 s["agent"] = BADGE[rec["family"]]
+            # Killed mid-turn (or forced off): the network keeps it busy/idle, but no serve process runs here.
+            if s.get("status") in ("busy", "idle") and s.get("machine") in (None, who.get("machine")) \
+                    and s["name"] in stale:
+                s["stale"] = True
         # A worker's own agent sessions (<worker>-claude, -2, …) register themselves; the page folds them away.
         # Only this person's sessions on this computer (a teammate's helper-claude is not ours to hide).
         own = s["address"].split("/", 1)[0] == person and s.get("machine") in (None, who.get("machine"))

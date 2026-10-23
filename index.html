@@ -296,7 +296,7 @@ const T = {
     rAppOpen: "Codex 앱에서 열려 있음 · 앱에서 말을 걸어야 읽음", rAuto: "메시지 오면 자동으로 깨움",
     nwAppOpen: "Codex 앱이 이 대화를 열고 있어 여기서는 깨울 수 없습니다. 앱에서 말을 걸면 읽습니다. 앱은 한 번 연 대화를 앱이 꺼질 때까지 붙잡습니다.",
     rNow: "바로 답함", rWorkerBusy: "작업 중, 끝나면 답함", rPushed: "바로 받음", rAfterTurn: "작업 중, 이번 차례 뒤에 읽음",
-    rPull: "직접 확인할 때만 읽음", rNextTurn: "말을 걸어야 읽음", rFyi: "깨우지 않고 보냄 · 다음 차례에 읽음", rOffline: "오프라인", rGone: "종료됨", rCli: "일회성 질문",
+    rPull: "직접 확인할 때만 읽음", rNextTurn: "말을 걸어야 읽음", rFyi: "깨우지 않고 보냄 · 다음 차례에 읽음", rOffline: "오프라인", rStale: "중지됨 (네트워크 표시만 남음)", rGone: "종료됨", rCli: "일회성 질문",
     gNow: "바로 받는 세션", gLater: "나중에 읽는 세션", hideOff: "오프라인·기록 {n}개 숨김 · 보이기",
     showOff: "오프라인·기록 {n}개 보이는 중 · 숨기기",
     nwOffline: "이 세션은 오프라인이라 다시 켜질 때까지 메시지를 읽지 않습니다.",
@@ -366,7 +366,7 @@ const T = {
     nwAppOpen: "The Codex app has this conversation open, so it cannot be woken from here. Talk to it in the app. The app keeps a conversation it opened until the app is closed.",
     rNow: "answers right away", rWorkerBusy: "busy, answers when done", rPushed: "gets it right away",
     rAfterTurn: "busy, reads after this turn", rPull: "reads only when it checks", rNextTurn: "reads when someone talks to it", rFyi: "sent without waking · read on its next turn",
-    rOffline: "offline", rGone: "gone", rCli: "one-off ask",
+    rOffline: "offline", rStale: "stopped (only the network's entry is left)", rGone: "gone", rCli: "one-off ask",
     gNow: "Get messages now", gLater: "Read later", hideOff: "Hiding {n} offline and past · Show",
     showOff: "Showing {n} offline and past · Hide",
     nwOffline: "This session is offline; it reads nothing until it comes back.",
@@ -436,7 +436,7 @@ const T = {
     rAppOpen: "在 Codex 应用中打开 · 在应用里跟它说话才读", rAuto: "收到消息时自动唤醒",
     nwAppOpen: "Codex 应用正打开这个对话，无法在这里唤醒。请在应用里跟它说话。应用会一直占用打开过的对话，直到应用关闭。",
     rNow: "立即回复", rWorkerBusy: "工作中，完成后回复", rPushed: "立即收到", rAfterTurn: "工作中，本轮结束后读取",
-    rPull: "只在自己查看时读取", rNextTurn: "有人跟它说话才读", rFyi: "未唤醒发送 · 下一轮才读", rOffline: "离线", rGone: "已结束", rCli: "一次性提问",
+    rPull: "只在自己查看时读取", rNextTurn: "有人跟它说话才读", rFyi: "未唤醒发送 · 下一轮才读", rOffline: "离线", rStale: "已停止（网络上仅剩记录）", rGone: "已结束", rCli: "一次性提问",
     gNow: "立即收到的会话", gLater: "稍后读取的会话", hideOff: "已隐藏 {n} 个离线和过往会话 · 显示",
     showOff: "正在显示 {n} 个离线和过往会话 · 隐藏",
     nwOffline: "该会话离线，重新上线前不会读取消息。",
@@ -549,6 +549,7 @@ function reach(s) {
   if (s.resumable && !s.appOpen && s.status !== "busy" && autoOn(s.address)) return "auto";
   if (!s.live) return "gone";
   if (s.status === "offline") return "offline";
+  if (s.stale) return "stale";  // stopped here; only the network's entry is left
   if (s.worker) return s.status === "busy" ? "workerBusy" : "now";
   if (s.agent === "cli") return "cli";
   if (s.status === "busy") return "afterTurn";
@@ -595,7 +596,7 @@ async function setPref(key, value) {
 
 function renderSide() {
   const count = a => S.messages.filter(m => m.sender === a || m.recipient === a).length;
-  const group = s => NOW.includes(reach(s)) ? 0 : LATER.includes(reach(s)) ? 1 : reach(s) === "offline" ? 2 : 3;
+  const group = s => NOW.includes(reach(s)) ? 0 : LATER.includes(reach(s)) ? 1 : ["offline", "stale"].includes(reach(s)) ? 2 : 3;
   const hide = pref("hideOffline") !== false;
   const all = [...S.sessions].sort((a, b) => group(a) - group(b) || (b.status === "busy") - (a.status === "busy")
     || (count(b.address) - count(a.address)) || a.name.localeCompare(b.name));
@@ -956,7 +957,7 @@ function pick(a) { sel = a || null; $("#tl").dataset.first = "1"; render(true); 
 // Workers this page started that are not running now (a reboot, a crash): their last settings are kept.
 function stoppedWorkers(among) {
   const running = new Set(S.launched.map(w => w.name));
-  const up = new Set(S.sessions.filter(s => s.live && s.status !== "offline" && s.address.split("/")[0] === person())
+  const up = new Set(S.sessions.filter(s => s.live && s.status !== "offline" && !s.stale && s.address.split("/")[0] === person())
     .map(s => s.name));
   return (S.workerRecords || []).filter(r => !running.has(r.name) && !up.has(r.name)
     && (!among || among.includes(`${person()}/${r.name}`)));

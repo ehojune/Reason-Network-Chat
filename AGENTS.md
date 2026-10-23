@@ -94,7 +94,9 @@ get the new token, and a newer server also triggers a reload.
   `workerRecords[]` = `{name, family, cwd, model, effort, fullAccess, started}` of every worker started here, also
   dead ones. A session of a recorded worker keeps `agent` = codex / claude-code (the database stores serve workers as
   `cli`) and gets `worker: true`; `inner` names the worker when the session is that worker's own agent session
-  (`<worker>-claude[-N]`, its warm `claude -p` registering itself), which the page folds away.
+  (`<worker>-claude[-N]`, its warm `claude -p` registering itself), which the page folds away. `stale: true` marks a
+  recorded worker that `who` shows busy/idle here although no serve process with its name runs (killed mid-turn);
+  the page shows it as stopped (only the network's entry is left). Known after the first 30 s discovery pass.
   `rooms[]` = `{id, name, members[], group, created, limits, defaultTo}`; `members` are session addresses; `limits` =
   `{hops?, budget?}` (a number, or `null` for no limit; a missing key means the default); `defaultTo` = the member
   an unmentioned message goes to, or `null`.

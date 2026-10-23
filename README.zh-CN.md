@@ -215,6 +215,7 @@ Codex 应用或 CLI 会话只有轮到自己时才读取消息。**唤醒**（�
 codex / claude-code 标记和 *worker · 离线*。右键该 worker → **重新启动**，右键聊天室 → **重新启动已停止的 worker**，
 或使用列表下方的 **重新启动 N 个已停止的 worker**。页面会列出每个 worker 的模型、推理强度和完全权限，确认前不会启动任何东西。
 worker 自己注册的内部会话（`claude-worker1-claude`、`-2` …：worker 内的 `claude -p`）在列表中折叠隐藏。
+在一轮中途被停止的 worker 显示为*已停止（网络上仅剩记录）*，而不是工作中。
 
 ## 聊天室
 

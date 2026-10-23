@@ -228,7 +228,8 @@ gone. A stopped worker keeps its codex / claude-code badge and shows *worker · 
 again**, right-click a room → **Start its stopped workers again**, or use **Start N stopped workers again** under the
 list. The page lists each worker with its model, effort and full access, and starts nothing until you confirm.
 A worker's own agent sessions (`claude-worker1-claude`, `-2`, …: its warm `claude -p` processes registering
-themselves) are folded away from the list.
+themselves) are folded away from the list. A worker stopped in the middle of a turn shows *stopped (only the
+network's entry is left)*, not busy.
 
 ## Rooms
 

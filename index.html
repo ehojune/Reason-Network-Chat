@@ -939,7 +939,9 @@ function renderTl() {
   for (const m of ms) {
     const d = fmtD(m.sent_at);
     if (d !== day) { h += `<div class="day">${esc(d)}</div>`; day = d; }
-    if (!m.rel && isFailure(m.body)) {  // the worker could not run the message: a notice, not an answer
+    // A worker's reply saying it could not run the message: a notice, not an answer. Only a reply from someone
+    // else: your own text quoting such an error stays a bubble.
+    if (!m.rel && m.reply_to && m.sender !== S.me && isFailure(m.body)) {
       h += `<div class="sysErr" role="note">⚠ ${esc(short(m.sender))} · ${fmtT(m.sent_at)} · ${esc(t("wFailed"))}<div class="errText">${
         esc(m.body.replace(/^The [A-Za-z ]+ worker failed: /, "").slice(0, 400))}</div></div>`;
       continue;

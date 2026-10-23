@@ -146,7 +146,10 @@ class Relay:
         """Compose and send one relayed message. The CLI runs without self.lock, so polling never waits on it."""
         with self.lock:
             body, newest = self.compose(room, member, me, speaker, core, skip)
-        rc, out, err = self.send_one(member, body, False)
+        try:
+            rc, out, err = self.send_one(member, body, False)
+        except Exception as e:  # e.g. the CLI timed out: a failed attempt like any other, so retries stay bounded
+            return False, f"{type(e).__name__}: {e}"
         if rc != 0:
             return False, err or out or f"rc={rc}"
         rows = self.db_rows("select id, sent_at from messages where sender = ? and recipient = ? and body = ?"

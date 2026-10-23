@@ -1,5 +1,6 @@
 """Group-room relay with a fake database and sender: python -m unittest discover tests"""
 import itertools
+import subprocess
 import sqlite3
 import sys
 import tempfile
@@ -186,6 +187,22 @@ class RelayTest(unittest.TestCase):
             self.insert("pat/elsewhere", "kim/other", f"unrelated {i}")
         self.r.post(self.room, ME, "@b-claude your view?")
         self.assertIn("a-codex: a answers q1", self.sent_to(B)[-1])
+
+    def test_send_that_raises_counts_as_a_failed_attempt(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude please check", reply_to=self.last_id_to(A))
+        calls = []
+
+        def hang(to, body, fyi):
+            calls.append(to)
+            raise subprocess.TimeoutExpired("reason", 60)
+
+        self.r.send_one = hang
+        for _ in range(relay.RETRIES + 3):
+            self.r.scan(ME)
+        self.assertEqual(calls, [B] * relay.RETRIES)
+        self.assertIn("TimeoutExpired", self.r.view(set())[2][self.room["id"]])
+        self.assertEqual(len(self.r.passes[self.room["id"]]), 0)  # failed attempts do not use the budget
 
     def test_plain_rooms_are_not_relayed(self):
         self.room["group"] = False

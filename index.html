@@ -860,7 +860,8 @@ $("#split").addEventListener("keydown", e => {
   e.preventDefault(); sideSaved = setSide(to); saveSide(sideSaved);
 });
 $("#split").addEventListener("dblclick", () => { sideSaved = setSide(SIDE.def); saveSide(sideSaved); });
-addEventListener("resize", () => setSide($("#side").getBoundingClientRect().width));
+// Re-clamp the width the user chose, not the current one, so a narrow moment does not shrink it for good.
+addEventListener("resize", () => setSide(typeof sideSaved === "number" ? sideSaved : SIDE.def));
 setSide(SIDE.def);
 
 applyLang(); render(); poll(); setInterval(poll, 3000);

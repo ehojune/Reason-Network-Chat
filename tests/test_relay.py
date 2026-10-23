@@ -479,7 +479,7 @@ class RelayTest(unittest.TestCase):
         self.assertIn("network down", notice[self.room["id"]])
         self.assertIsNone(self.queued())
 
-    def test_send_that_raises_counts_as_a_failed_attempt(self):
+    def test_send_that_raises_holds_ambiguous_outcome_without_retrying(self):
         self.r.post(self.room, ME, "@a-codex go")
         self.insert(A, ME, "@b-claude please check", reply_to=self.last_id_to(A))
         calls = []
@@ -491,9 +491,45 @@ class RelayTest(unittest.TestCase):
         self.r.send_one = hang
         for _ in range(relay.RETRIES + 3):
             self.r.scan(ME)
-        self.assertEqual(calls, [B] * relay.RETRIES)
-        self.assertIn("TimeoutExpired", self.r.view(set())[2][self.room["id"]])
-        self.assertEqual(len(self.r.passes[self.room["id"]]), 0)  # failed attempts do not use the budget
+        self.assertEqual(calls, [B])
+        self.assertIn("unknown", self.r.view(set())[2][self.room["id"]])
+        self.assertEqual(self.queued(), {"waiting": 1, "held": 0})
+        self.r.flush(self.room["id"])
+        self.r.scan(ME)
+        self.r.scan(ME)
+        self.assertEqual(calls, [B, B])  # one manual retry, then held again
+
+    def test_restart_reconciles_a_send_before_the_dequeue_was_saved(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude inspect", reply_to=self.last_id_to(A))
+        class Crash(BaseException):
+            pass
+        def delivered_then_crashed(to, body, fyi):
+            self.send(to, body, fyi)
+            raise Crash()
+        self.r.send_one = delivered_then_crashed
+        with self.assertRaises(Crash):
+            self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 1, 0])
+        self.r = self.new_relay()
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 1, 0])
+        self.assertIsNone(self.queued())
+        mid = self.last_id_to(B)
+        self.assertEqual(self.r.sent[mid]["speaker"], A)
+        self.insert(B, ME, "answer", reply_to=mid)
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [2, 1, 0])
+
+    def test_no_send_when_the_inflight_claim_cannot_be_persisted(self):
+        from unittest import mock
+        self.r.post(self.room, ME, "@a-codex go")
+        item = {"reply": "r", "to": B, "sender": A, "body": "question", "hop": 1, "at": 1}
+        self.r.queue[self.room["id"]] = [item]
+        with mock.patch.object(relay.os, "replace", side_effect=OSError("disk full")):
+            with self.assertRaises(relay.RelayError):
+                self.r.deliver(self.room, B, ME, A, "question", 1, item=item)
+        self.assertEqual(self.counts(), [1, 0, 0])
 
     # ---------- restarts ----------
     def test_cursor_moves_past_queued_hand_offs(self):

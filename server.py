@@ -341,6 +341,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(e)}, e.code)
         elif url.path == "/api/catalog":
             refresh = parse_qs(url.query).get("refresh") == ["1"]
+            if refresh and not hmac.compare_digest(self.headers.get("X-Reason-Chat-Token", ""), TOKEN):
+                return self.send_json({"error": "bad token: reload the page"}, 403)
             self.send_json({"families": CATALOG.get(refresh), "folders": folders()})
         else:
             self.send_error(404)
@@ -399,6 +401,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(LAUNCHER.launch(req, names))
             elif path == "/api/rooms/save":
                 me, known = me_and_known()
+                if not me:
+                    return self.send_json({"error": "Own address is not known yet; wait for Reason Network."}, 503)
                 self.send_json({"ok": True, "room": ROOMS.upsert(req, known, me)})
             elif path == "/api/rooms/delete":
                 ROOMS.delete(req.get("id"))

@@ -30,6 +30,7 @@ import os
 import re
 import threading
 import time
+import uuid
 from pathlib import Path
 
 
@@ -173,7 +174,7 @@ class Relay:
         except (ValueError, TypeError, AttributeError):
             pass
 
-    def save(self, unsettle=()):
+    def save(self, unsettle=(), strict=False):
         """Read, merge, write: records another writer added since are kept (call with self.lock held). `unsettle`:
         settled records to remove, which the merge would otherwise bring back from the file."""
         disk = self.read()
@@ -213,8 +214,9 @@ class Relay:
             tmp = self.path.with_suffix(".tmp")
             tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
             os.replace(tmp, self.path)
-        except OSError:
-            pass
+        except OSError as exc:
+            if strict:
+                raise RelayError(f"Could not save hand-off before sending: {exc}", 500)
 
     def view(self, ids):
         """For the page: the relay record of each listed message, queued hand-offs per room, failed hand-offs."""
@@ -347,16 +349,41 @@ class Relay:
         A queued `item` leaves the queue in the same save that records the message as sent: a restart in between
         cannot send it twice."""
         with self.lock:
-            body, newest = self.compose(room, member, me, speaker, core, skip, implicit)
+            flight = item.get("flight") if item is not None else None
+            if flight:
+                body, newest = flight["body"], flight["newest"]
+            else:
+                body, newest = self.compose(room, member, me, speaker, core, skip, implicit)
+                if item is not None:
+                    # A unique envelope identifies this exact delivery in the daemon's read-only database.
+                    body = body.replace("\nMembers:", f"\nDelivery: {uuid.uuid4().hex}\nMembers:", 1)
+                    item["flight"] = {"body": body, "newest": newest, "me": me}
+            if item is not None:
+                self.save(strict=True)  # a durable claim must precede the CLI side effect
         try:
             rc, out, err = self.send_one(member, body, False)
         except Exception as e:  # e.g. the CLI timed out: a failed attempt like any other, so retries stay bounded
+            with self.lock:
+                if item is not None:
+                    # An exception may have happened after delivery: retain the claim for reconciliation.
+                    item.pop("force", None)  # one explicit retry is not permission to retry forever
+                    self.notice[room["id"]] = "Delivery outcome unknown; inspect the queue before retrying with Send all now."
+                    self.save()
             return False, f"{type(e).__name__}: {e}"
         if rc != 0:
+            with self.lock:
+                if item is not None:
+                    item.pop("flight", None)
+                    self.save()
             return False, err or out or f"rc={rc}"
         rows = self.db_rows("select id, sent_at from messages where sender = ? and recipient = ? and body = ?"
                             " order by sent_at desc limit 1", (me, member, body))
         with self.lock:
+            if item is not None and not rows:
+                item.pop("force", None)
+                self.notice[room["id"]] = "Delivery accepted; waiting for its database receipt."
+                self.save()
+                return False, "Waiting for delivery receipt"
             if rows:
                 self.sent[rows[0]["id"]] = {"room": room["id"], "hop": hop, "core": core, "speaker": speaker,
                                             "to": member, "at": rows[0]["sent_at"], "implicit": implicit}
@@ -368,6 +395,28 @@ class Relay:
                 self.dequeue(room["id"], item)
             self.save()
         return True, ""
+
+    def reconcile(self, room, me, item):
+        """Recover a delivery whose process ended between the CLI send and saving the dequeue. Lock held."""
+        flight = item.get("flight")
+        if not flight:
+            return False
+        if flight.get("me") != me:
+            return False
+        rows = self.db_rows("select id, sent_at from messages where sender = ? and recipient = ? and body = ?"
+                            " order by sent_at desc limit 1", (me, item["to"], flight["body"]))
+        if not rows:
+            return False
+        row = rows[0]
+        self.sent[row["id"]] = {"room": room["id"], "hop": item["hop"], "core": item["body"],
+                                "speaker": item["sender"], "to": item["to"], "at": row["sent_at"],
+                                "implicit": bool(item.get("implicit"))}
+        key = f'{room["id"]}|{item["to"]}'
+        self.seen[key] = max(self.seen.get(key, 0), flight.get("newest", 0), item.get("at", 0))
+        self.dequeue(room["id"], item)
+        self.notice.pop(room["id"], None)
+        self.save()
+        return True
 
     def dequeue(self, rid, item):
         """Take one item off a room's queue (call with self.lock held)."""
@@ -534,6 +583,15 @@ class Relay:
                     item = next((i for i in self.queue.get(rid) or [] if not held(room, i)), None)
                     if not item:
                         break
+                    if item.get("flight"):
+                        if item["flight"].get("me") != me:
+                            self.notice[rid] = "Queued delivery belongs to a different sender; it was not retried."
+                            break
+                        if self.reconcile(room, me, item):
+                            continue
+                        if not item.get("force"):
+                            self.notice[rid] = "Delivery outcome unknown; Send all now explicitly retries it."
+                            break  # keep an ambiguous send; a restart must never guess and spend another turn
                     slot = self.take(room) if not item.get("force") else time.time()
                     if slot is None:
                         break  # the window is full: the rest wait for it to free up
@@ -550,6 +608,8 @@ class Relay:
             if ok:
                 self.tries.pop(key, None)
                 return True
+            if item.get("flight"):
+                return False  # ambiguous, not a failed attempt: retain it until reconciled or explicitly retried
             if slot in self.passes[rid]:
                 self.passes[rid].remove(slot)  # a failed send does not use up the budget
             self.tries[key] += 1

@@ -22,6 +22,7 @@ import threading
 import time
 import zipfile
 from pathlib import Path
+from storage import atomic_json, file_lock
 
 HOME = Path.home()
 WIN = sys.platform == "win32"
@@ -669,9 +670,18 @@ def found_workers(procs):
             if c in seen:
                 continue
             seen.add(c)
-            m, e = model_from_args(s["family"], argv_of.get(c) or [])
+            argv = argv_of.get(c) or []
+            program = re.split(r"[\\/]", argv[0])[-1].lower() if argv else ""
+            expected = ("claude", "claude.exe") if s["family"] == "claude" else ("codex", "codex.exe")
+            agent = program in expected and (any(a in argv[1:] for a in ("-p", "--print"))
+                    if s["family"] == "claude" else "exec" in argv[1:])
+            if not agent:
+                todo += kids.get(c, [])
+                continue
+            m, e = model_from_args(s["family"], argv)
             model, effort = model or m, effort or e
-            todo += kids.get(c, [])
+            # A model-less shim can wrap the real agent; never inspect tools launched by an agent.
+            todo += [k for k in kids.get(c, []) if re.split(r"[\\/]", (argv_of.get(k) or [""])[0])[-1].lower() in expected]
         out.append(dict(s, pid=pid, model=model, effort=effort))
     return out
 
@@ -838,6 +848,10 @@ class Launcher:
 
     def save(self):
         """Read, merge, write (call with self.lock held): a live worker another writer recorded is kept, not lost."""
+        with file_lock(self.reg.with_suffix(".lock")):
+            self._save_locked()
+
+    def _save_locked(self):
         try:
             disk = json.loads(self.reg.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -849,9 +863,7 @@ class Launcher:
                 self.workers[w["name"]] = w
         try:
             STATE.mkdir(parents=True, exist_ok=True)
-            tmp = self.reg.with_suffix(".tmp")
-            tmp.write_text(json.dumps(list(self.workers.values()), ensure_ascii=False, indent=1), encoding="utf-8")
-            os.replace(tmp, self.reg)
+            atomic_json(self.reg, list(self.workers.values()))
         except OSError:
             pass
 
@@ -860,18 +872,24 @@ class Launcher:
         user's shell), so no console-wide Ctrl+C and no group kill: SIGINT to the process itself on POSIX; on Windows,
         where Ctrl+C can only go to a whole console, a forced kill of its tree (the network may then show it idle)."""
         if not WIN:
+            procs = list_processes()
+            children = [(p, started_at(p)) for p, _, _, _ in descendants(procs or [], w["pid"])]
             try:
                 os.kill(w["pid"], signal.SIGINT)
             except OSError:
-                return
+                pass
             for _ in range(100):
                 if not self.alive(w):
-                    return
+                    break
                 time.sleep(0.1)
-            try:
-                os.kill(w["pid"], signal.SIGKILL)
-            except OSError:
-                pass
+            if self.alive(w):
+                try:
+                    os.kill(w["pid"], signal.SIGKILL)
+                except OSError:
+                    pass
+            for pid, born in reversed(children):
+                if born and started_at(pid) == born:
+                    kill_pid(pid)  # individual verified pids; never signal the user's shared process group
             return
         subprocess.run(["taskkill", "/PID", str(w["pid"]), "/T", "/F"], capture_output=True, creationflags=NOWIN)
 
@@ -902,6 +920,10 @@ class Launcher:
             self.save_records()
 
     def save_records(self):
+        with file_lock(self.records_path.with_suffix(".lock")):
+            self._save_records_locked()
+
+    def _save_records_locked(self):
         try:
             disk = json.loads(self.records_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -913,9 +935,7 @@ class Launcher:
         self.records = merged
         try:
             STATE.mkdir(parents=True, exist_ok=True)
-            tmp = self.records_path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(merged, ensure_ascii=False, indent=1), encoding="utf-8")
-            os.replace(tmp, self.records_path)
+            atomic_json(self.records_path, merged)
         except OSError:
             pass
 

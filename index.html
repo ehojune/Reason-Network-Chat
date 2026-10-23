@@ -1758,7 +1758,7 @@ function openRoom(room) {
   // or saving (even a rename) would drop them.
   const extra = [...chosen].filter(a => !S.sessions.some(s => s.address === a))
     .map(a => ({address: a, name: short(a), agent: "?", live: false, status: "gone"}));
-  const ss = S.sessions.filter(s => s.address !== S.me).concat(extra)
+  const ss = S.sessions.filter(s => s.address !== S.me && (S.me || !s.address.endsWith("/terminal"))).concat(extra.filter(s => S.me || !s.address.endsWith("/terminal")))
     .sort((a, b) => (chosen.has(b.address) - chosen.has(a.address)) || (up(b) - up(a)) || a.name.localeCompare(b.name));
   $("#rfMembers").innerHTML = ss.map(s => `<label class="${up(s) ? "" : "gone"}"><input type="checkbox" value="${esc(s.address)}"
     ${chosen.has(s.address) ? "checked" : ""}><span class="tag ${esc(s.agent)}">${esc(s.agent)}</span>${esc(s.name)}</label>`).join("");

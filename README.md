@@ -302,6 +302,11 @@ when it starts again.
 
 ## Good to know
 
+- **A worker's failure is not an answer.** When a worker could not run your message (its reply starts with
+  "The Codex worker failed:" or "Codex failed:"), the page shows a red notice, passes nothing on, and offers
+  **Send again** under your message once the worker runs. A message a worker read but never answered (10 minutes,
+  the worker not working) is marked *taken without an answer* with the same button. The bar above the message box
+  lists both for the room or session you are viewing: **Send all again**, or **Put aside**.
 - An idle Codex **app** session reads a message only on its next turn: Reason cannot start a turn in the Codex app,
   and nothing else can while the app has the conversation open. For an agent that should answer on its own, use
   [auto-wake](#auto-wake) on a conversation the app does not have open.

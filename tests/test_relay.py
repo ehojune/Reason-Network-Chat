@@ -227,6 +227,53 @@ class RelayTest(unittest.TestCase):
         self.r.scan(ME)
         self.assertEqual((self.counts(), self.queued()), ([0, 1, 0], {"waiting": 1, "held": 0}))
 
+    # ---------- worker failures and "Send again" ----------
+    FAIL = "The Codex worker failed: The argument 'args[6]' contains a cmd.exe special character: @b-claude"
+
+    def test_a_worker_failure_is_not_an_answer(self):
+        self.assertTrue(all(relay.worker_failure(x) for x in (
+            self.FAIL, "The Claude Code worker failed: boom", "Codex failed: rate limited", "codex exited with 1")))
+        self.assertFalse(any(relay.worker_failure(x) for x in (
+            "Done. The Codex worker failed: earlier, fixed now", "codex exited with 1 and then I retried", "")))
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, self.FAIL, reply_to=self.last_id_to(A))  # names @b-claude, but is a failure
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 0, 0])
+        self.insert(A, ME, "@b-claude real question", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        self.insert(B, ME, self.FAIL.replace("@b-claude", "x"), reply_to=self.last_id_to(B))  # not back to the asker
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 1, 0])
+        self.r.post(self.room, ME, "@c-codex anything?")
+        self.assertNotIn("worker failed", self.sent_to(C)[-1])  # nor carried as room context
+
+    def test_failures_queued_before_are_dropped(self):
+        self.r.queue[self.room["id"]] = [{"reply": "old", "to": B, "sender": A, "body": self.FAIL, "hop": 1, "at": 1}]
+        self.r.scan(ME)
+        self.assertEqual((self.counts(), self.queued()), ([0, 0, 0], None))
+
+    def test_a_failure_cannot_be_forwarded(self):
+        with self.assertRaises(relay.RelayError):
+            self.r.forward(self.room, ME, self.row(self.insert(A, ME, self.FAIL)))
+
+    def test_send_again_once(self):
+        self.r.post(self.room, ME, "@a-codex build it")
+        first = self.last_id_to(A)
+        self.assertEqual(self.r.recipient_of(first), A)
+        self.assertTrue(self.r.claim(first, "resent"))
+        self.assertFalse(self.r.claim(first, "resent"))  # a second click does nothing
+        self.assertEqual(self.r.redeliver(first, ME), A)
+        self.assertEqual(len(self.sent_to(A)), 2)
+        self.assertTrue(self.sent_to(A)[-1].endswith("---\npat: @a-codex build it"))
+        self.assertEqual(self.r.settled_view({first})[first]["how"], "resent")
+        self.assertIn(first, self.new_relay().settled_view({first}))  # kept across a restart
+        self.assertIsNone(self.r.redeliver("not-relayed", ME))
+        self.r.unclaim(first)
+        self.assertEqual(self.r.settled_view({first}), {})
+        self.room["members"] = [B, C]
+        with self.assertRaises(relay.RelayError):
+            self.r.redeliver(first, ME)  # A left the room
+
     def test_no_mention_no_wake_and_self_mention_ignored(self):
         self.r.post(self.room, ME, "@a-codex hi")
         self.insert(A, ME, "done, nothing for @a-codex or @pat", reply_to=self.last_id_to(A))

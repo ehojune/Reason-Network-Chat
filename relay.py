@@ -10,6 +10,10 @@ default recipient, else nowhere (the page asks you to mention someone). A member
 this way does not come back again). An empty or "nothing to add" answer ("-", "(해당 없음)", "N/A": no letter or digit, or
 such a placeholder) goes nowhere; a short real answer such as "4" still goes back.
 
+A 1:1 message (sent to one session, outside the room) is not relayed, and neither is the answer to it. When such an
+answer @mentions members of a group room the agent is in, you can forward it there (`forward`): it is then passed on
+as if it had answered a room message, once, within the room's limits.
+
 Loop guards, per room (env defaults, each room can set its own or none): a chain of passed-on replies holds after
 MAX_HOPS until you continue it; at most BUDGET hand-offs per BUDGET_WINDOW seconds, the rest wait in a queue and go
 out as the window frees up. Nothing is dropped: queued hand-offs, the scan cursor and what was passed on are kept in
@@ -56,6 +60,16 @@ def no_answer(text):
     text with no letter or digit ("-", "—", "...") or a placeholder phrase, never a short answer such as "4"."""
     t = " ".join(str(text or "").split()).lower()
     return not re.search(r"\w", t) or t.strip(".") in NO_ANSWER
+
+
+DM_MARK = "\n\n(1:1 message from "
+
+
+def dm_note(person):
+    """The line the page adds to a message sent to one session that is in a group room, so the agent can tell a 1:1
+    message (its answer is not relayed) from a room message (which comes in the room envelope)."""
+    return (f"{DM_MARK}{person}, not from a group room: your answer reaches only {person}. "
+            f"@mentions in it are not passed on to other members unless {person} forwards it to the room.)")
 
 
 def short(addr):
@@ -111,6 +125,7 @@ class Relay:
         self.passes = collections.defaultdict(collections.deque)  # room -> times a hand-off went out
         self.queue = {}  # room -> [{reply, to, sender, body, hop, at, held, force}] in arrival order
         self.notice = {}  # room -> the last hand-off that failed for good, shown to you
+        self.forwarded = {}  # message id -> {room, to, at}: 1:1 answers you forwarded into a room (once each)
         self.since = None  # scan cursor (ms): replies before it are settled
         self.load()
         now = int(time.time() * 1000)
@@ -136,6 +151,7 @@ class Relay:
             self.queue = {rid: [i for i in items if isinstance(i, dict) and {"reply", "to", "sender", "body", "hop"} <= set(i)]
                           for rid, items in (data.get("queue") or {}).items() if isinstance(items, list)}
             self.queue = {rid: items for rid, items in self.queue.items() if items}
+            self.forwarded = {k: v for k, v in (data.get("forwarded") or {}).items() if isinstance(v, dict)}
         except (ValueError, TypeError, AttributeError):
             pass
 
@@ -155,9 +171,15 @@ class Relay:
                 pass
         for k, v in self.seen.items():
             seen[k] = max(seen.get(k, 0), v)
-        self.sent, self.seen = sent, seen
+        fwd = {k: v for k, v in (disk.get("forwarded") or {}).items() if isinstance(v, dict)} \
+            if isinstance(disk.get("forwarded"), dict) else {}
+        fwd.update(self.forwarded)
+        if len(fwd) > KEEP:
+            for k in sorted(fwd, key=lambda k: fwd[k].get("at", 0))[: len(fwd) - KEEP]:
+                del fwd[k]
+        self.sent, self.seen, self.forwarded = sent, seen, fwd
         data = {"sent": sent, "seen": seen, "since": self.since,
-                "done": {f"{a}\t{b}": at for (a, b), at in self.done.items()}, "queue": self.queue}
+                "done": {f"{a}\t{b}": at for (a, b), at in self.done.items()}, "queue": self.queue, "forwarded": fwd}
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.path.with_suffix(".tmp")
@@ -177,6 +199,12 @@ class Relay:
                 if items:
                     queued[rid] = {"waiting": len(items) - n, "held": n}
             return rel, queued, dict(self.notice)
+
+    def forwarded_view(self, ids):
+        """For the page: {message id: {room, to}} for the listed 1:1 answers you forwarded into a room."""
+        with self.lock:
+            return {i: {"room": self.forwarded[i].get("room"), "to": self.forwarded[i].get("to") or []}
+                    for i in ids if i in self.forwarded}
 
     # ---------- composing ----------
     def lines_for(self, room, member, me, skip=None, current=None):
@@ -204,8 +232,8 @@ class Relay:
                 continue  # a passed-on reply (the reply itself is a line), a copy this member got, or this message
             if rec:
                 who, text = label(rec["speaker"], me, room), rec["core"]
-            elif r["sender"] == me:
-                who, text = f'{label(me, me, room)} → {handle(r["recipient"], room)}', r["body"]
+            elif r["sender"] == me:  # your 1:1 message, without the note meant for its recipient
+                who, text = f'{label(me, me, room)} → {handle(r["recipient"], room)}', r["body"].split(DM_MARK, 1)[0]
             else:
                 who, text = handle(r["sender"], room), r["body"]
             if (who, text) in keys:
@@ -235,7 +263,9 @@ class Relay:
                 f"Members: {names}.\n"
                 f"{back}\n"
                 "To ask anyone else, @name them; their answers come back to you. Reply `-` if no answer is needed.\n"
-                f"{person} sees the whole room. Do not message members with Reason Network tools.")
+                f"Answers to 1:1 messages are not passed on. {person} sees the whole room. "
+                "Do not message members with Reason Network tools.\n"
+                'The message to answer is after "---"; lines under "Earlier in the room" are clipped context.')
         lines = self.lines_for(room, member, me, skip, (speaker, core))
         earlier = ("\nEarlier in the room:\n" + "\n".join(f"{who}: {t}" for _, who, t in lines)) \
             if lines else ""
@@ -325,6 +355,31 @@ class Relay:
             if items:
                 self.save()
             return len(items)
+
+    # ---------- a 1:1 answer, forwarded by you ----------
+    def forward(self, room, me, msg):
+        """Pass a member's answer to a 1:1 message of yours on to the members it @mentions, as if it had answered a
+        room message: queued like any hand-off (hop 1, the member as speaker) and sent within the room's limits.
+        Once per message. Returns the members it goes to."""
+        if not room.get("group"):
+            raise RelayError("Only a group room passes answers on.")
+        if msg["recipient"] != me or msg["sender"] not in room["members"]:
+            raise RelayError("Only a room member's message to you can be forwarded.")
+        targets = self.mentioned(room, msg["body"], exclude=msg["sender"])
+        if not targets:
+            raise RelayError("It mentions no other member of this room.")
+        with self.lock:
+            if msg.get("reply_to") in self.sent:
+                raise RelayError("This answers a room message: the room passes it on by itself.", 409)
+            if msg["id"] in self.forwarded:
+                raise RelayError("Already forwarded.", 409)
+            items = self.queue.setdefault(room["id"], [])
+            for m in targets:
+                items.append({"reply": msg["id"], "to": m, "sender": msg["sender"], "body": msg["body"], "hop": 1,
+                              "at": msg["sent_at"], "implicit": False})
+            self.forwarded[msg["id"]] = {"room": room["id"], "to": targets, "at": int(time.time() * 1000)}
+            self.save()
+        return targets
 
     # ---------- passing replies on ----------
     def take(self, room):

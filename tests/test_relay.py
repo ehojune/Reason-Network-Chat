@@ -180,6 +180,53 @@ class RelayTest(unittest.TestCase):
         self.r.scan(ME)
         self.assertEqual(self.queued(), {"waiting": 1, "held": 0})
 
+    # ---------- a 1:1 answer, forwarded ----------
+    def row(self, mid):
+        return self.rows("select id, sender, recipient, reply_to, body, sent_at from messages where id = ?", (mid,))[0]
+
+    def test_a_forwarded_answer_reaches_the_members_it_mentions(self):
+        q = self.insert(ME, A, "1:1: plan the release" + relay.dm_note("pat"))
+        a = self.insert(A, ME, "@b-claude tag it, @c-codex write the notes", reply_to=q)
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 0, 0])  # only the 1:1 question: its answer is not relayed by itself
+        self.assertEqual(self.r.forward(self.room, ME, self.row(a)), [B, C])
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 1, 1])
+        body = self.sent_to(B)[-1]
+        self.assertTrue(body.endswith("---\na-codex: @b-claude tag it, @c-codex write the notes"))
+        self.assertIn("Your answer goes back to a-codex automatically;", body)
+        self.assertIn("pat → a-codex: 1:1: plan the release\n", body)  # the 1:1 question, without its note
+        self.assertNotIn("1:1 message from", body)
+        self.assertEqual(self.r.forwarded_view({a}), {a: {"room": self.room["id"], "to": [B, C]}})
+        self.insert(B, ME, "Tagged v1.2.", reply_to=self.last_id_to(B))  # as in the room: back to the asker
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [2, 1, 1])
+        with self.assertRaises(relay.RelayError) as e:
+            self.r.forward(self.room, ME, self.row(a))  # once
+        self.assertEqual(e.exception.code, 409)
+        self.assertIn(a, self.new_relay().forwarded_view({a}))  # kept across a restart
+
+    def test_forward_refuses_what_it_cannot_pass_on(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        in_room = self.insert(A, ME, "@b-claude check", reply_to=self.last_id_to(A))
+        with self.assertRaises(relay.RelayError) as e:
+            self.r.forward(self.room, ME, self.row(in_room))  # the room passes it on by itself
+        self.assertEqual(e.exception.code, 409)
+        for sender, recipient, body in [(A, ME, "no mention here"), (A, ME, "@a-codex only myself"),
+                                        ("pat/x-codex", ME, "@b-claude not a member"), (A, B, "@c-codex not to you")]:
+            with self.assertRaises(relay.RelayError):
+                self.r.forward(self.room, ME, self.row(self.insert(sender, recipient, body)))
+        plain = dict(self.room, group=False)
+        with self.assertRaises(relay.RelayError):
+            self.r.forward(plain, ME, self.row(self.insert(A, ME, "@b-claude plain room")))
+
+    def test_a_forward_waits_for_the_room_budget(self):
+        self.room["limits"] = {"budget": 1}
+        a = self.insert(A, ME, "@b-claude @c-codex both of you")
+        self.r.forward(self.room, ME, self.row(a))
+        self.r.scan(ME)
+        self.assertEqual((self.counts(), self.queued()), ([0, 1, 0], {"waiting": 1, "held": 0}))
+
     def test_no_mention_no_wake_and_self_mention_ignored(self):
         self.r.post(self.room, ME, "@a-codex hi")
         self.insert(A, ME, "done, nothing for @a-codex or @pat", reply_to=self.last_id_to(A))

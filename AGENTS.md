@@ -15,7 +15,7 @@ and starts new agent sessions.
 | `wake.py` | Wake a sleeping Codex session: `codex exec resume <thread> <fixed prompt>` in its folder; auto-wake with limits. |
 | `prefs.py` | Viewer settings in `REASON_CHAT_HOME/prefs.json` (whitelisted keys), so they survive a lost localStorage. |
 | `rooms.py` | Rooms: named sets of session addresses in `REASON_CHAT_HOME/rooms.json`. |
-| `relay.py` | Group rooms: sends your message to the members it `@mentions` (or the room's default recipient) with their missed lines, passes on `@name` replies and returns a member's answer to the member who asked (one level), queues hand-offs over the room's limits. |
+| `relay.py` | Group rooms: sends your message to the members it `@mentions` (or the room's default recipient) with their missed lines, passes on `@name` replies and returns a member's answer to the member who asked (one level), forwards a member's 1:1 answer into the room when you ask, queues hand-offs over the room's limits. |
 | `index.html` | The whole UI (one file, no build). Polls `/api/state` every 3 s. Strings in ko/en/zh. |
 | `tests/` | `python -m unittest discover tests` — request validation and catalog parsing, no agent needed. |
 | `.claude/launch.json` | Lets the Claude desktop app start the server and show the page in its Browser pane. |
@@ -79,7 +79,7 @@ written into the page) tells an open page that the server restarted: it reloads 
 get the new token, and a newer server also triggers a reload.
 
 - `GET /api/state` →
-  `{api, boot, team, me, sessions[], messages[], launched[], rooms[], relays{}, queued{}, notices{}, relayDefaults{}, prefs{}, wakes{}, whoError, now}`.
+  `{api, boot, team, me, sessions[], messages[], launched[], rooms[], relays{}, queued{}, notices{}, forwarded{}, relayDefaults{}, prefs{}, wakes{}, whoError, now}`.
   Each session also has `resumable` (a Codex session of yours on this computer) and `appOpen` (another Codex process,
   usually the desktop app, holds the thread's writer lock, so it cannot be woken); `wakes{}` = address →
   `{status: running|done|failed, at, error, auto, limitUntil?}` (`limitUntil`: auto-wake rests until then).
@@ -105,7 +105,9 @@ get the new token, and a newer server also triggers a reload.
   `{waiting, held}`: hand-offs over the budget waiting to go out in order, and those held past the hop limit.
   `relayDefaults` = `{hops, budget, window}` from the environment.
   `notices{}` = room → the last hand-off that still failed after 3 tries.
-- `POST /api/send` `{to, body, fyi}` → runs `reason network send <to> <body> [--fyi]`.
+  `forwarded{}` = message id → `{room, to[]}` for 1:1 answers you forwarded into a group room.
+- `POST /api/send` `{to, body, fyi}` → runs `reason network send <to> <body> [--fyi]`. When `to` is a member of a
+  group room, `relay.dm_note()` is added to the body (also for each member of a plain room).
   Returns `{ok, rc, out, err}`; HTTP 502 when the CLI fails.
 - `GET /api/catalog[?refresh=1]` → `{families[], folders[]}`. Each family: `id` (`claude`/`codex`/`antigravity`),
   `installed`, `models[]` (`id, label, efforts[], defaultEffort`), `defaultModel`, `defaultEffort`, `note`, and
@@ -140,6 +142,10 @@ get the new token, and a newer server also triggers a reload.
   the members the body `@mentions` (`@all`, `@everyone`, `@모두`, `@전체` = every member), else to `defaultTo`, else
   HTTP 400 (nothing is sent to everyone by default); each copy carries the room envelope; `fyi` is ignored. Returns
   `{ok, sent, results[{to, ok, err}]}`; `ok` when at least one member got it.
+- `POST /api/rooms/forward` `{id, message}` → passes a member's message to you (an answer to a 1:1 message) on to
+  the members of group room `id` it `@mentions`, as a hand-off with that member as speaker (hop 1, queued within the
+  room's limits). Once per message (409 after that, or when it answers a relayed room message: the room passes those
+  on itself); 400 when it mentions no other member or its sender is not a member. Returns `{ok, to[]}`.
 - `POST /api/rooms/flush` `{id}` → marks every queued hand-off of the room to go out now, past its budget and hop
   limit ("Send all now"); the relay loop sends them within a few seconds. Returns `{ok, released}`.
 - `POST /api/prefs` `{key, value}` → saves one whitelisted setting: `hideOffline` (bool), `favorites` (up to 100
@@ -208,9 +214,17 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
   toward the budget and hops like any hand-off. `compose` tells each agent where its answer goes; keep the envelope
   and `answer_targets` saying the same thing.
 - **The page's ↩ reply** puts one quoted line before the user's text with every `@` turned into `＠`, and works out
-  recipients from the typed text only, so quoting a message never wakes the members it named.
+  recipients from the typed text only, so quoting a message never wakes the members it named. A reply belongs to its
+  author: picking another recipient ends it, and cancelling removes the `@author` it added.
+- **A 1:1 answer is not relayed.** `scan` passes on only replies to relayed messages, so a member answering the
+  user's 1:1 message with `@mentions` reaches the user alone (on 2026-10-24 a lead's answer naming seven members went
+  nowhere). Three things cover it: the page shows a 1:1 notice with the member's rooms above the message box;
+  `/api/send` adds `relay.dm_note()` so the agent knows its mentions stay put (the page hides the note in the user's
+  bubble, and `lines_for` cuts it from "Earlier in the room" lines at `DM_MARK`); and **Forward to room**
+  (`Relay.forward`) passes such an answer on once, recorded in `forwarded` in `relay.json`. Keep `DM_MARK` the same
+  in `relay.py` and `index.html`.
 - **Relay state survives restarts.** `relay.json` keeps `sent` (relayed messages), `seen`, the scan cursor `since`,
-  `done` (hand-offs already queued) and `queue`. A restarted server resumes from `since` (at most `RESUME_MS`, 24 h,
+  `done` (hand-offs already queued), `queue` and `forwarded`. A restarted server resumes from `since` (at most `RESUME_MS`, 24 h,
   back), so replies that arrived while it was down are passed on once. Saves read the file and merge `sent` / `seen`
   first. Do not reset `since` to the start time: every live refresh restarts the server.
 - **Agents may also use their own Reason tools.** A Codex or Claude member with the Reason Network MCP server can

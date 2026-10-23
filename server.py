@@ -44,7 +44,7 @@ ORIGINS = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 TOKEN = secrets.token_urlsafe(32)
 # Shape of /api/state and the POSTs. Bump together with API in index.html: a page that meets a server of another
 # version (the server kept running across an update) asks for a restart instead of breaking.
-API = 17
+API = 18
 BOOT = secrets.token_hex(8)  # new each start: an open page that sees another one reloads to get the new token
 NOWIN = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
 
@@ -345,6 +345,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path in ("/", "/index.html"):
             page = STATIC.read_text(encoding="utf-8").replace("{{TOKEN}}", TOKEN).replace("{{BOOT}}", BOOT)
             self.reply(200, page.encode("utf-8"), "text/html; charset=utf-8")
+        elif url.path == "/favicon.svg":
+            self.reply(200, STATIC.with_name("favicon.svg").read_bytes(), "image/svg+xml")
         elif url.path == "/api/state":
             try:
                 self.send_json(state())

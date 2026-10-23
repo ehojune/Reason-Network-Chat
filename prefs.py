@@ -14,6 +14,7 @@ ADDR_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,128}$")
 MAX_FAVORITES = 100
 MAX_AUTO_WAKE = 50
 SIDE_MIN, SIDE_MAX = 180, 900
+SECTIONS = {"favorites", "rooms", "now", "later", "offline", "history"}
 CHECKS = {
     "hideOffline": lambda v: isinstance(v, bool),
     # session addresses and room keys, pinned to the top of the list in this order
@@ -24,8 +25,17 @@ CHECKS = {
     # Codex sessions woken automatically when a message arrives (wake.py checks each one at wake time)
     "autoWake": lambda v: isinstance(v, list) and len(v) <= MAX_AUTO_WAKE
     and all(isinstance(x, str) and ADDR_RE.match(x) for x in v) and len(set(v)) == len(v),
+    "collapsedSections": lambda v: isinstance(v, list) and len(v) <= len(SECTIONS)
+    and all(isinstance(x, str) and x in SECTIONS for x in v) and len(set(v)) == len(v),
 }
 DEFAULTS = {"hideOffline": True, "favorites": [], "sideWidth": 260, "autoWake": []}
+
+
+def view(data):
+    result = dict(DEFAULTS, **data)
+    # Preserve the old offline/history visibility until the user chooses individual sections.
+    result.setdefault("collapsedSections", ["offline", "history"] if result["hideOffline"] else [])
+    return result
 
 
 class PrefError(Exception):
@@ -46,7 +56,7 @@ class Prefs:
 
     def get(self):
         with self.lock:
-            return dict(DEFAULTS, **self.data)
+            return view(self.data)
 
     def set(self, key, value):
         if key not in CHECKS:
@@ -63,4 +73,4 @@ class Prefs:
             except OSError as e:
                 raise PrefError(f"Could not save settings: {e}", 500)
             self.data = data
-            return dict(DEFAULTS, **data)
+            return view(data)

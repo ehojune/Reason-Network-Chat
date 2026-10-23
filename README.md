@@ -109,7 +109,7 @@ Each session says how a message reaches it: on its row, in **To**, and under an 
 A message sent with **Don't wake** (`--fyi`) is not pushed and does not auto-wake anyone: under its bubble it says
 *sent without waking · read on its next turn*, even for a session that normally gets messages right away.
 
-Offline and past sessions are hidden by default; the line at the bottom of the list shows them.
+Use the gray **Collapse / Expand** text beside each sidebar section to hide or show it. Offline and history sections start collapsed; choices survive reloads.
 Sending to an offline session asks first. The setting is saved by the server (`~/.reason-network-chat/prefs.json`).
 
 ## Wake a sleeping Codex session
@@ -132,8 +132,8 @@ session's folder, so the same conversation reads its unread messages with `check
 
 ### Auto-wake
 
-Right-click a Codex session → **Turn on auto-wake**. This server then wakes it whenever it has unread messages, so
-two agents can work back and forth without you passing messages on.
+Right-click a resumable Codex conversation → **Turn on auto-wake**. The server wakes it when unread messages arrive.
+Serve workers already handle incoming messages; their menu explains this, including in Favorites.
 
 - **It spends Codex turns automatically, without asking you each time.** Every wake is one turn in that
   conversation, paid like any other. The limits are one wake a minute and 12 an hour per session; messages that

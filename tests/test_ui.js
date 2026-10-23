@@ -115,3 +115,56 @@ S.relays.separate.copyOf='original';
 assert.equal(relayOf(S.messages[1]).room,'r'); // proven aliases share one family
 console.log('UI regression checks passed');
 `, c);
+// Sidebar preferences and context menus, isolated from timeline state.
+const side = vm.createContext({assert, console});
+vm.runInContext(String.raw`
+let S, sel='';
+const nodes={};
+const $=s => nodes[s] ||= {innerHTML:'',dataset:{},style:{},hidden:false,focus(){},getBoundingClientRect(){return {left:0,bottom:0};},offsetWidth:200,offsetHeight:200};
+const document={activeElement:null}, innerWidth=1200, innerHeight=800;
+const esc=v=>String(v ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const t=k=>k, short=a=>a.split('/').pop(), st=s=>s;
+const autoOn=a=>(S.prefs.autoWake||[]).includes(a);
+const store={get:()=>null}, person=()=> 'p', isAck=()=>false, inRoom=()=>false;
+const launchedHere=()=>false, stoppedWorkers=()=>[];
+const roomOf=k=>S.rooms.find(r=>'room:'+r.id===k);
+const reach=s=>s.status==='gone'?'gone':s.status==='offline'?'offline':s.tier==='pull'?'pull':'now';
+const reachLabel=s=>reach(s), NOW=['now'], LATER=['pull'];
+`, side);
+vm.runInContext(part('const collapsedSections', '// Preferences live'), side);
+vm.runInContext(part('function pref(key)', 'async function setPref'), side);
+vm.runInContext(part('function renderSide()', 'function renderTo()'), side);
+vm.runInContext(part('let ctxKey = null;', '$("#list").addEventListener("contextmenu"'), side);
+vm.runInContext(String.raw`
+S={messages:[],team:'test',me:'p/terminal',launched:[],foreignWorkers:[],rooms:[{id:'r',name:'room',members:[]}],
+  prefs:{favorites:['p/fav'],autoWake:[],collapsedSections:[]},
+  sessions:[{address:'p/fav',name:'fav',agent:'codex',live:true,worker:true,status:'idle'},
+    {address:'p/now',name:'now',agent:'codex',live:true,status:'idle',resumable:true},
+    {address:'p/later',name:'later',agent:'codex',live:true,status:'idle',tier:'pull'},
+    {address:'p/off',name:'off',agent:'codex',live:true,status:'offline'},
+    {address:'p/gone',name:'gone',agent:'codex',live:false,status:'gone'}]};
+renderSide();
+assert.equal((nodes['#list'].innerHTML.match(/data-section=/g)||[]).length,6);
+for(const key of ['favorites','rooms','now','later','offline','history']) {
+  S.prefs.collapsedSections=[key]; renderSide();
+  assert.ok(nodes['#list'].innerHTML.includes('id="section-'+key+'" hidden></div>'));
+  assert.equal((nodes['#list'].innerHTML.match(/aria-expanded="false"/g)||[]).length,1);
+}
+S.prefs.collapsedSections=['favorites']; renderSide();
+assert.ok(!nodes['#list'].innerHTML.includes('data-a="p/fav"'));
+assert.ok(nodes['#list'].innerHTML.includes('data-a="p/now"'));
+S.prefs.collapsedSections=[]; renderSide();
+const row=a=>({dataset:{a},getBoundingClientRect(){return {left:0,bottom:0};}});
+openCtx(row('p/fav'),null);
+assert.equal(nodes['#ctxAuto'].hidden,true);
+assert.equal(nodes['#ctxAutoNote'].textContent,'workerAuto');
+openCtx(row('p/now'),null);
+assert.equal(nodes['#ctxAuto'].hidden,false); // ordinary Codex conversations still get the toggle
+assert.equal(nodes['#ctxAutoNote'].hidden,true);
+S.prefs.favorites=['p/now']; renderSide(); openCtx(row('p/now'),null);
+assert.equal(nodes['#ctxAuto'].hidden,false); // favoriting never removes the toggle
+S.sessions[0].stale=true; openCtx(row('p/fav'),null);
+assert.equal(nodes['#ctxAutoNote'].textContent,'workerStopped');
+openCtx(row('room:r'),null); assert.equal(nodes['#ctxAutoNote'].hidden,true);
+console.log('Sidebar regression checks passed');
+`, side);

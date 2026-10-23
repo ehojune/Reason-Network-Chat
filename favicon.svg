@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Reason Network Chat</title>
+  <!-- Long ears above a smaller hexagonal face; strong outlines stay visible on a tab. -->
+  <g fill="#171816" stroke="#e8e8e3" stroke-width="2.5" stroke-linejoin="round">
+    <path d="M23 32C18 24 14 5 19 3c5-2 11 17 11 26z"/>
+    <path d="M34 29C34 17 38 1 43 3c5 2 1 21-2 29z"/>
+    <path d="M22 28h20l10 17-10 17H22L12 45z"/>
+  </g>
+  <g fill="#f7f7f3">
+    <rect x="29" y="36" width="4" height="13" rx="1"/>
+    <rect x="37" y="36" width="4" height="13" rx="1"/>
+  </g>
+</svg>

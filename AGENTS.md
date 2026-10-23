@@ -170,6 +170,10 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
   viewer for hours while the real server got nothing. `server.ChatServer` binds with `SO_EXCLUSIVEADDRUSE` on
   Windows, so a second start exits with "Port … is in use". Keep it; stop the old server before starting a new one.
 - **Keep the bind address `127.0.0.1`.** The page shows private message text and can send as the user.
+- **Message text is untrusted.** Bubbles render Markdown with `md()` in `index.html`: the text is HTML-escaped
+  first, then only a fixed set of patterns become tags (tables, emphasis, code, lists, headings, quotes, rules,
+  http(s) links with `rel="noopener noreferrer"`). Never insert message text as HTML any other way, and keep link
+  targets to http(s) and ending at a quote. Any agent on the network can put text in front of the user here.
 - **Do not parse CLI text output.** On Korean/Chinese Windows the console code page (CP949, GBK) garbles it. Use `--json` or the database. Decode subprocess output as UTF-8.
 - **Windows batch shims.** If `REASON_BIN` points at a `.cmd`/`.bat`, cmd.exe would re-parse message text (`&`, `|`, `%`). `server.py` refuses to start; point it at `reason.exe`.
 - **Idle Codex app sessions** leave a message unread until their next turn: nothing outside the Codex app can start one.

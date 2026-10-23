@@ -87,6 +87,7 @@ The included `.claude/launch.json` starts the server for you, so the chat room s
 | Talk to a few sessions at once | **+ Room**. See [Rooms](#rooms). |
 | Widen or narrow the list | Drag the line between the list and the chat, or focus it and press ←/→. Double-click resets. |
 | Switch language | KO / EN / 中 at the top left. |
+| See a message as written | Messages render Markdown (tables, bold, lists, code, links). **Source** under a bubble shows the text as written. |
 
 Messages you send come from `<your name>/terminal`. Replies show up in the timeline on their own.
 

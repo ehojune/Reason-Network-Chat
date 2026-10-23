@@ -136,6 +136,10 @@ class RelayError(Exception):
         self.code = code
 
 
+class NotSentError(RelayError):
+    """The pre-send claim failed; no external send was attempted."""
+
+
 def serialized(method):
     @functools.wraps(method)
     def wrapped(self, *args, **kwargs):
@@ -414,12 +418,12 @@ class Relay:
                 forced = item.pop("force", None)  # consume one explicit retry durably before the side effect
                 try:
                     self.save(strict=True)
-                except Exception:
+                except Exception as exc:
                     if created:
                         item.pop("flight", None)  # no send was attempted; storage recovery can retry normally
                     if forced is not None:
                         item["force"] = forced
-                    raise
+                    raise NotSentError(str(exc), 500) from exc
         try:
             rc, out, err = self.send_one(member, body, False)
         except Exception as e:  # e.g. the CLI timed out: a failed attempt like any other, so retries stay bounded
@@ -693,9 +697,17 @@ class Relay:
 
     def send_item(self, room, me, item, slot):
         rid, key = room["id"], (item["reply"], item["to"])
-        ok, err = self.deliver(room, item["to"], me, item["sender"], item["body"], item["hop"],
-                               skip=item["reply"], skip_at=item.get("at", 0), item=item, implicit=bool(item.get("implicit")),
-                               post=item.get("post"))
+        try:
+            ok, err = self.deliver(room, item["to"], me, item["sender"], item["body"], item["hop"],
+                                  skip=item["reply"], skip_at=item.get("at", 0), item=item,
+                                  implicit=bool(item.get("implicit")), post=item.get("post"))
+        except NotSentError:
+            with self.lock:
+                if slot in self.passes[rid]:
+                    self.passes[rid].remove(slot)
+                self.notice[rid] = "Could not save the hand-off; no message was sent. Waiting for storage recovery."
+                self.save()
+            raise
         with self.lock:
             if ok:
                 self.tries.pop(key, None)

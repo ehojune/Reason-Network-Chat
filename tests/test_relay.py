@@ -600,6 +600,20 @@ class RelayTest(unittest.TestCase):
         self.assertEqual(self.counts(), [1, 0, 0])
         self.assertEqual(self.queued(), {"waiting": 1, "held": 0})
 
+    def test_storage_failure_releases_an_unused_rate_slot(self):
+        from unittest import mock
+        self.room["limits"] = {"budget": 1}
+        self.r.post(self.room, ME, "@a-codex go")
+        self.r.forward(self.room, ME, self.row(self.insert(A, ME, "@b-claude question")))
+        with mock.patch.object(relay, "atomic_json", side_effect=OSError("disk full")):
+            with self.assertRaises(relay.NotSentError):
+                self.r.scan(ME)
+        self.assertEqual(list(self.r.passes[self.room["id"]]), [])
+        self.assertEqual(self.counts(), [1, 0, 0])
+        self.r.scan(ME)  # storage recovered: no full-window wait for an attempt that never happened
+        self.assertEqual(self.counts(), [1, 1, 0])
+        self.assertIsNone(self.queued())
+
     # ---------- restarts ----------
     def test_cursor_moves_past_queued_hand_offs(self):
         self.r.post(self.room, ME, "@a-codex go")

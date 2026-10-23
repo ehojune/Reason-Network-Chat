@@ -131,7 +131,8 @@ Read-only SQLite (`mode=ro` URI). Checked against Reason Network 0.12.10.
 | `sessions` | `name, agent, cwd, doing, tier` (only for sessions no longer in `who`) |
 
 Live status (`busy`/`idle`/`offline`) is not in the database; it comes from `who --all --json`.
-The page turns `tier` + status into plain words (`reach()` in `index.html`). Measured here: idle Claude Code
+The page turns `tier` + status into plain words (`reach()` in `index.html`); under an unread `--fyi` message
+(`wake = 0`) to a session that would get it at once it says *sent without waking* instead, since nothing pushes it. Measured here: idle Claude Code
 sessions (`push`) read at once; Codex app sessions do not wake on a message (`push` idle: next turn; `pull`: only
 when they check); `serve` workers (`worker: true`) answer at once. Re-measure before changing those labels.
 If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQLite error; adjust the two queries in `state()`.

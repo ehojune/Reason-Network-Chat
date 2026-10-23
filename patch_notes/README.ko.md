@@ -9,6 +9,7 @@ Reason Network Chat에서 바뀐 것을 최신순으로 적는다. 시간은 한
 
 | 시간 | 변경 | 주요 변경사항 |
 |---|---|---|
+| 22:07 | [#16](https://github.com/ehojune/Reason-Network-Chat/pull/16) | **깨우지 않기**(`--fyi`)로 보낸 안 읽은 메시지에 "바로 받음" 대신 *깨우지 않고 보냄 · 다음 차례에 읽음*이 나온다. 이런 메시지는 원래 바로 전달되지 않는다. |
 | 21:41 | [#15](https://github.com/ehojune/Reason-Network-Chat/pull/15) | 화살표 뒤 받는 세션 앞에도 에이전트 표시(codex, claude-code 등)가 붙는다. |
 | 21:39 | [#14](https://github.com/ehojune/Reason-Network-Chat/pull/14) | 메시지가 오면 Codex 세션을 **자동으로 깨운다**(우클릭 → 자동 깨우기 켜기). 에이전트끼리 사람 없이 주고받는다. Codex 차례를 자동으로 쓰며, 세션마다 1분에 한 번·시간당 12번까지다. Codex 앱이 열고 있는 대화는 깨우지 못하고 표시만 한다. |
 | 19:01 | [#13](https://github.com/ehojune/Reason-Network-Chat/pull/13) | 페이지에서 잠든 Codex 세션을 **깨운다**. 그 세션의 대화에서 한 차례(`codex exec resume`)를 돌려 안 읽은 메시지를 읽고 답하게 한다. **보낸 뒤 깨우기**로도 된다. |

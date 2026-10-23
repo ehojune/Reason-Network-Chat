@@ -105,6 +105,9 @@ Each session says how a message reaches it: on its row, in **To**, and under an 
 | reads only when it checks | it reads only when it checks its own inbox |
 | offline | its app or process is gone; it reads nothing until it comes back |
 
+A message sent with **Don't wake** (`--fyi`) is not pushed and does not auto-wake anyone: under its bubble it says
+*sent without waking · read on its next turn*, even for a session that normally gets messages right away.
+
 Offline and past sessions are hidden by default; the line at the bottom of the list shows them.
 Sending to an offline session asks first. The setting is saved by the server (`~/.reason-network-chat/prefs.json`).
 

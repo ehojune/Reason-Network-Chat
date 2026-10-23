@@ -271,6 +271,8 @@ class RelayTest(unittest.TestCase):
         self.r.sent["old-failure"] = {"room": self.room["id"], "to": B, "speaker": A, "core": self.FAIL, "hop": 1}
         with self.assertRaises(relay.RelayError):
             self.r.redeliver("old-failure", ME)  # a failure an older version passed on is not sent again
+        self.r.post(self.room, ME, "@a-codex Codex failed: rate limited. Why?")  # your own text quoting an error
+        self.assertEqual(self.r.redeliver(self.last_id_to(A), ME), A)
         self.r.unclaim(first)
         self.assertEqual(self.r.settled_view({first}), {})
         self.room["members"] = [B, C]

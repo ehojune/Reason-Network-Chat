@@ -265,7 +265,7 @@ class Relay:
             rec = dict(self.sent.get(mid) or {})
         if not rec:
             return None
-        if worker_failure(rec.get("core")):  # a failure an older version passed on: not something to send again
+        if rec.get("hop", 0) > 0 and worker_failure(rec.get("core")):  # a member's failure an older version passed on
             raise RelayError("That was a worker's failure passed on, not a message to send again.", 409)
         room = self.rooms.get(rec.get("room"))
         if not room or not room.get("group") or rec.get("to") not in room["members"]:
@@ -293,7 +293,7 @@ class Relay:
         got = {(v["speaker"], v["core"]) for v in self.sent.values() if v.get("room") == room["id"] and v.get("to") == member}
         out, keys = [], set()
         for r in rows:
-            if r["id"] == skip or worker_failure(r["body"]):
+            if r["id"] == skip or (r["sender"] != me and worker_failure(r["body"])):  # your own text is kept
                 continue
             if r["sender"] not in everyone or r["recipient"] not in everyone or member in (r["sender"], r["recipient"]):
                 continue  # not room traffic, or traffic the member took part in

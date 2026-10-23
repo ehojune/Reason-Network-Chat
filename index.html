@@ -1003,7 +1003,8 @@ function troubles() {
   for (const x of S.messages) if (x.reply_to) (replies[x.reply_to] ||= []).push(x);
   for (const m of S.messages) {
     if (m.sender !== S.me || S.now - m.sent_at > RECENT_MS || (S.settled || {})[m.id]) continue;
-    if (S.relays[m.id] && isFailure(S.relays[m.id].core)) continue;  // a failure an older version passed on
+    const rel = S.relays[m.id];
+    if (rel && rel.hop > 0 && isFailure(rel.core)) continue;  // a member's failure an older version passed on
     const s = ses.get(m.recipient);
     if (!s || s.tier !== "turn") continue;
     const rs = (replies[m.id] || []).filter(x => x.sender === m.recipient);

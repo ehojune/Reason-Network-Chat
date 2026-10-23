@@ -23,11 +23,19 @@ class PrefsTest(unittest.TestCase):
             with self.assertRaises(prefs.PrefError):
                 p.set(key, value)
 
+    def test_favorites(self):
+        p = prefs.Prefs(tempfile.mkdtemp())
+        self.assertEqual(p.get()["favorites"], [])
+        self.assertEqual(p.set("favorites", ["pat/api-claude", "room:r-0123abcd"])["favorites"], ["pat/api-claude", "room:r-0123abcd"])
+        for bad in ("pat/api-claude", ["pat/a", "pat/a"], ["<script>"], ["room:x"], [5], ["a/b"] * 101, [["x"]], [{"a": 1}]):
+            with self.assertRaises(prefs.PrefError):
+                p.set("favorites", bad)
+
     def test_bad_file_and_failed_write(self):
         home = tempfile.mkdtemp()
         Path(home, "prefs.json").write_text(json.dumps({"hideOffline": "x", "evil": 1}), encoding="utf-8")
         p = prefs.Prefs(home)
-        self.assertEqual(p.get(), {"hideOffline": True})
+        self.assertEqual(p.get(), {"hideOffline": True, "favorites": []})
         Path(home, "blocked").write_text("a file where a folder must go", encoding="utf-8")
         p.path = Path(home, "blocked", "prefs.json")
         with self.assertRaises(prefs.PrefError) as e:

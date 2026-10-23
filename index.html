@@ -92,6 +92,13 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #offToggle { font: inherit; font-size: 11.5px; color: var(--muted); background: none; border: none; padding: 8px 8px 4px;
   cursor: pointer; text-align: left; }
 #offToggle:hover { color: var(--text); text-decoration: underline; }
+.ses:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.star { color: var(--accent); margin-right: 4px; }
+#ctx { position: fixed; z-index: 10; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .18); padding: 4px; min-width: 150px; }
+#ctx button { display: block; width: 100%; text-align: left; font: inherit; font-size: 13px; color: var(--text);
+  background: none; border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+#ctx button:hover, #ctx button:focus-visible { background: var(--hover); outline: none; }
 #nowake button { font: inherit; color: var(--accent); background: none; border: none; padding: 0; cursor: pointer;
   text-decoration: underline; }
 #row { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
@@ -149,6 +156,7 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
     </div>
   </form>
 </main>
+<div id="ctx" role="menu" hidden><button type="button" role="menuitem" id="ctxFav"></button></div>
 <dialog id="dlg">
   <form id="lf">
     <h2 data-t="newSessionTitle"></h2>
@@ -199,6 +207,7 @@ const T = {
     stop: "워커 중지", stopAsk: "이 워커를 중지할까요? ", stopped: "중지함: ", wk: "워커", here: "여기서 시작함",
     restart: "서버를 다시 시작하세요: 페이지와 서버의 버전이 다릅니다 (페이지 {p}, 서버 {s}).",
     reloadPage: "서버가 다시 시작됐습니다. 페이지를 새로고침하세요.",
+    fav: "★ 즐겨찾기", unfav: "☆ 즐겨찾기 해제", favs: "즐겨찾기",
     rNow: "바로 답함", rWorkerBusy: "작업 중, 끝나면 답함", rPushed: "바로 받음", rAfterTurn: "작업 중, 이번 차례 뒤에 읽음",
     rPull: "직접 확인할 때만 읽음", rNextTurn: "다음 차례에 읽음", rOffline: "오프라인", rGone: "종료됨", rCli: "일회성 질문",
     gNow: "바로 받는 세션", gLater: "나중에 읽는 세션", hideOff: "오프라인·기록 {n}개 숨김 · 보이기",
@@ -236,6 +245,7 @@ const T = {
     stop: "Stop worker", stopAsk: "Stop this worker? ", stopped: "Stopped: ", wk: "worker", here: "started here",
     restart: "Restart the server: the page and the server are different versions (page {p}, server {s}).",
     reloadPage: "The server restarted. Reload this page.",
+    fav: "★ Favorite", unfav: "☆ Remove from favorites", favs: "Favorites",
     rNow: "answers right away", rWorkerBusy: "busy, answers when done", rPushed: "gets it right away",
     rAfterTurn: "busy, reads after this turn", rPull: "reads only when it checks", rNextTurn: "reads on its next turn",
     rOffline: "offline", rGone: "gone", rCli: "one-off ask",
@@ -274,6 +284,7 @@ const T = {
     stop: "停止 worker", stopAsk: "要停止这个 worker 吗？", stopped: "已停止：", wk: "worker", here: "在此启动",
     restart: "请重启服务器：页面与服务器版本不一致（页面 {p}，服务器 {s}）。",
     reloadPage: "服务器已重启，请刷新页面。",
+    fav: "★ 收藏", unfav: "☆ 取消收藏", favs: "收藏",
     rNow: "立即回复", rWorkerBusy: "工作中，完成后回复", rPushed: "立即收到", rAfterTurn: "工作中，本轮结束后读取",
     rPull: "只在自己查看时读取", rNextTurn: "下一轮才读", rOffline: "离线", rGone: "已结束", rCli: "一次性提问",
     gNow: "立即收到的会话", gLater: "稍后读取的会话", hideOff: "已隐藏 {n} 个离线和过往会话 · 显示",
@@ -380,6 +391,7 @@ const reachLabel = s => t("r" + reach(s)[0].toUpperCase() + reach(s).slice(1));
 const NOW = ["now", "workerBusy", "pushed", "afterTurn"], LATER = ["pull", "nextTurn", "cli"];
 // Sessions that will not read soon: the composer says so and offers a worker in the same folder.
 const sleepy = s => !!s && ["offline", "pull", "nextTurn"].includes(reach(s));
+const favs = () => { const f = pref("favorites"); return Array.isArray(f) ? f : []; };
 
 // Preferences live on the server (the Browser pane can lose localStorage); localStorage only when saving fails.
 function pref(key) {
@@ -403,31 +415,41 @@ function renderSide() {
   const hide = pref("hideOffline") !== false;
   const all = [...S.sessions].sort((a, b) => group(a) - group(b) || (b.status === "busy") - (a.status === "busy")
     || (count(b.address) - count(a.address)) || a.name.localeCompare(b.name));
-  const away = all.filter(s => group(s) >= 2 && s.address !== sel);  // the selected one always shows
-  const ss = hide ? all.filter(s => !away.includes(s)) : all;
-  let h = `<div class="ses ${sel ? "" : "sel"}" data-a=""><span class="dot idle"></span><span class="nm">${t("all")}</span>
-    <span class="cnt">${S.messages.length}</span></div>`;
-  if ((S.rooms || []).length) h += `<div class="grp">${t("rooms")}</div>`;
-  for (const r of S.rooms || []) {
+  const fav = favs();
+  const away = all.filter(s => group(s) >= 2 && s.address !== sel && !fav.includes(s.address));  // selected and favorites always show
+  const ss = (hide ? all.filter(s => !away.includes(s)) : all).filter(s => !fav.includes(s.address));
+  const star = key => fav.includes(key) ? `<span class="star">★</span>` : "";
+  const roomRow = r => {
     const key = `room:${r.id}`, c = S.messages.filter(m => inRoom(m, r)).length;
-    h += `<div class="ses ${sel === key ? "sel" : ""}" data-a="${esc(key)}" title="${esc(r.members.join(", "))}">
-      <span class="hash">#</span><span class="nm">${esc(r.name)}</span><span class="cnt">${c || ""}</span>
+    return `<div class="ses ${sel === key ? "sel" : ""}" tabindex="0" data-a="${esc(key)}" title="${esc(r.members.join(", "))}">
+      <span class="hash">#</span><span class="nm">${star(key)}${esc(r.name)}</span><span class="cnt">${c || ""}</span>
       <span class="sub">${r.group ? `<span class="tag grp">${t("grp")}</span>` : ""}${esc(r.members.map(short).join(", "))}</span></div>`;
-  }
+  };
+  const sesRow = s => {
+    const c = count(s.address), sub = s.doing || s.cwd || "", here = launchedHere(s.address);
+    return `<div class="ses ${s.live ? "" : "gone"} ${sel === s.address ? "sel" : ""}" tabindex="0" data-a="${esc(s.address)}"
+      title="${esc(s.address)} · ${esc(st(s.status))}${s.tier ? " · " + esc(s.tier) : ""}${here ? " · " + esc(t("here")) : ""}">
+      <span class="dot ${esc(s.status)}"></span><span class="nm">${star(s.address)}${esc(s.name)}</span><span class="cnt">${c || ""}</span>
+      <span class="sub"><span class="tag ${esc(s.agent)}">${esc(s.agent)}</span>${s.worker ? `<span class="tag wk">${t("wk")}</span>` : ""}${esc(reachLabel(s))}${sub ? " · " + esc(sub) : ""}</span></div>`;
+  };
+  let h = `<div class="ses ${sel ? "" : "sel"}" tabindex="0" data-a=""><span class="dot idle"></span><span class="nm">${t("all")}</span>
+    <span class="cnt">${S.messages.length}</span></div>`;
+  // Favorites, in the order they were added; a favorite whose room or session no longer exists is skipped.
+  const favRows = fav.map(k => { const r = roomOf(k); if (r) return roomRow(r);
+    const s = S.sessions.find(x => x.address === k); return s ? sesRow(s) : ""; }).filter(Boolean);
+  if (favRows.length) h += `<div class="grp">${t("favs")}</div>` + favRows.join("");
+  const rooms = (S.rooms || []).filter(r => !fav.includes(`room:${r.id}`));
+  if (rooms.length) h += `<div class="grp">${t("rooms")}</div>` + rooms.map(roomRow).join("");
   let grp = null;
   for (const s of ss) {
     const g = [t("gNow"), t("gLater"), t("offline"), t("history")][group(s)];
     if (g !== grp) { h += `<div class="grp">${g}</div>`; grp = g; }
-    const c = count(s.address);
-    const sub = s.doing || s.cwd || "";
-    const here = launchedHere(s.address);
-    h += `<div class="ses ${s.live ? "" : "gone"} ${sel === s.address ? "sel" : ""}" data-a="${esc(s.address)}"
-      title="${esc(s.address)} · ${esc(st(s.status))}${s.tier ? " · " + esc(s.tier) : ""}${here ? " · " + esc(t("here")) : ""}">
-      <span class="dot ${esc(s.status)}"></span><span class="nm">${esc(s.name)}</span><span class="cnt">${c || ""}</span>
-      <span class="sub"><span class="tag ${esc(s.agent)}">${esc(s.agent)}</span>${s.worker ? `<span class="tag wk">${t("wk")}</span>` : ""}${esc(reachLabel(s))}${sub ? " · " + esc(sub) : ""}</span></div>`;
+    h += sesRow(s);
   }
+  const focused = document.activeElement && document.activeElement.closest && document.activeElement.closest("#list .ses");
   if (away.length) h += `<button type="button" id="offToggle">${esc(t(hide ? "hideOff" : "showOff").replace("{n}", away.length))}</button>`;
   $("#list").innerHTML = h;
+  if (focused) [...$("#list").querySelectorAll(".ses")].find(r => r.dataset.a === focused.dataset.a)?.focus();  // keep keyboard place
   $("#team").textContent = `${S.team || t("noTeam")}${S.me ? ` · ${t("as")} ${S.me}` : ""}`;
 }
 
@@ -549,6 +571,43 @@ $("#list").addEventListener("click", e => {
   const x = e.target.closest(".ses"); if (x) pick(x.dataset.a);
 });
 $("#tl").addEventListener("click", e => { const x = e.target.closest(".who"); if (x) pick(x.dataset.a); });
+$("#list").addEventListener("keydown", e => {
+  const x = e.target.closest(".ses"); if (!x) return;
+  if (e.key === "Enter") pick(x.dataset.a);
+  if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) { e.preventDefault(); openCtx(x, null); }
+});
+
+// Right-click (or the menu key on a focused row): pin a session or room to the top as a favorite.
+let ctxKey = null;
+function closeCtx() { $("#ctx").hidden = true; ctxKey = null; }
+function openCtx(row, pointer) {
+  if (!row.dataset.a) return;  // "All messages" has no menu
+  ctxKey = row.dataset.a;
+  $("#ctxFav").textContent = t(favs().includes(ctxKey) ? "unfav" : "fav");
+  const m = $("#ctx"), r = row.getBoundingClientRect();
+  m.hidden = false;
+  const x = pointer ? pointer.clientX : r.left + 24, y = pointer ? pointer.clientY : r.bottom;  // keyboard: below the row
+  m.style.left = Math.max(4, Math.min(x, innerWidth - m.offsetWidth - 8)) + "px";
+  m.style.top = Math.max(4, Math.min(y, innerHeight - m.offsetHeight - 8)) + "px";
+  $("#ctxFav").focus();
+}
+$("#list").addEventListener("contextmenu", e => {
+  const x = e.target.closest(".ses"); if (!x || !x.dataset.a) return;
+  e.preventDefault();
+  openCtx(x, e.clientX || e.clientY ? e : null);
+});
+$("#ctxFav").addEventListener("click", () => {
+  const f = favs(), key = ctxKey;
+  closeCtx();
+  if (key) setPref("favorites", f.includes(key) ? f.filter(k => k !== key) : [...f, key]);
+});
+document.addEventListener("click", e => { if (!e.target.closest("#ctx")) closeCtx(); });
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape" || $("#ctx").hidden) return;
+  const k = ctxKey; closeCtx();
+  [...$("#list").querySelectorAll(".ses")].find(r => r.dataset.a === k)?.focus();  // back to the row
+});
+$("#list").addEventListener("scroll", closeCtx);
 $("#langs").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   lang = b.dataset.l; store.set("reason-chat-lang", lang); applyLang(); render(true);

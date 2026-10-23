@@ -83,6 +83,7 @@ The included `.claude/launch.json` starts the server for you, so the chat room s
 | Message an agent | Pick it under **To**, type, press Enter. Shift+Enter adds a line. |
 | Leave a note without interrupting | Tick **Don't wake**. It lands in the inbox only. |
 | Start an agent | **+ New session**. See [below](#start-a-new-session). |
+| Pin a session or room to the top | Right-click it (or Shift+F10 on a focused row) → **★ Favorite**. |
 | Talk to a few sessions at once | **+ Room**. See [Rooms](#rooms). |
 | Switch language | KO / EN / 中 at the top left. |
 

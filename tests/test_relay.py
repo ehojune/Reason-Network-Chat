@@ -240,6 +240,23 @@ class RelayTest(unittest.TestCase):
         self.assertEqual(self.sent_to(queued_for), [])
         self.assertIsNone(self.queued())
 
+    def test_member_removed_during_a_send_gets_nothing_after_it(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude @c-codex look", reply_to=self.last_id_to(A))
+        real = self.r.send_one
+
+        def send_then_edit(to, body, fyi):  # the room is edited while the first hand-off is being sent
+            out = real(to, body, fyi)
+            if self.room["members"] == [A, B, C]:
+                self.room = dict(self.room, members=[A, B])
+                self.r.rooms.room = self.room
+            return out
+
+        self.r.send_one = send_then_edit
+        self.r.scan(ME)
+        self.assertEqual((len(self.sent_to(B)), len(self.sent_to(C))), (1, 0))
+        self.assertIsNone(self.queued())
+
     def test_a_lowered_hop_limit_holds_queued_hand_offs(self):
         self.room["limits"] = {"budget": 1}
         self.r.post(self.room, ME, "@a-codex go")

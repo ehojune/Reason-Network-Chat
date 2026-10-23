@@ -352,8 +352,8 @@ class Relay:
     def drain(self, me):
         """Send queued hand-offs in order, room by room, as far as each room's budget allows."""
         for rid in list(self.queue):
-            room = self.rooms.get(rid)
             while True:
+                room = self.rooms.get(rid)  # fresh before every item: the room may have been edited during a send
                 with self.lock:
                     items = self.queue.get(rid) or []
                     if not room or not room.get("group"):  # the room is gone or no longer a group: nothing to pass

@@ -45,8 +45,8 @@ Reason Network Chat은 그걸 한 화면으로 모은다.
 <td width="50%" valign="top"><img src="docs/why/ko/card-4.svg" width="100%" alt="여기서 세션을 연다: 폴더, 에이전트, 모델, 강도를 고르고 목록은 에이전트가 직접 준다"></td>
 </tr>
 <tr>
-<td width="50%" valign="top"><img src="docs/why/ko/card-5.svg" width="100%" alt="이 PC 안에서만: DB는 읽기 전용, 127.0.0.1에만, 모든 동작에 토큰 확인"></td>
-<td></td>
+<td width="50%" valign="top"><img src="docs/why/ko/card-5.svg" width="100%" alt="필요한 세션만 한 방에: 고른 세션의 대화만 보이고, 보내면 모두에게 한 통씩 간다"></td>
+<td width="50%" valign="top"><img src="docs/why/ko/card-6.svg" width="100%" alt="이 PC 안에서만: DB는 읽기 전용, 127.0.0.1에만, 모든 동작에 토큰 확인"></td>
 </tr>
 </table>
 
@@ -83,6 +83,7 @@ Reason Network Chat은 그걸 한 화면으로 모은다.
 | 에이전트에게 보내기 | **받는 세션**을 고르고 입력한 뒤 Enter. 줄바꿈은 Shift+Enter. |
 | 일을 끊지 않고 메모만 남기기 | **깨우지 않기**를 켠다. 받은편지함에만 들어간다. |
 | 에이전트 띄우기 | **+ 새 세션**. [아래](#새-세션-열기) 참고. |
+| 몇몇 세션과 한꺼번에 대화 | **+ 대화방**. [대화방](#대화방) 참고. |
 | 언어 바꾸기 | 왼쪽 위 KO / EN / 中. |
 
 보낸 메시지는 `<내 이름>/terminal` 이름으로 나가고, 답장은 알아서 타임라인에 뜬다.
@@ -119,6 +120,16 @@ Reason Network Chat은 그걸 한 화면으로 모은다.
 - 터미널 창은 에이전트가 세션을 시작하면 목록에 나타난다. Codex는 첫 프롬프트를 보낼 때 시작한다.
 - `reason network serve`에는 모델 옵션이 없다. Codex 워커는 `~/.reason-network-chat/codex-shim`의 작은 실행기로,
   Claude 워커는 `ANTHROPIC_MODEL`과 `CLAUDE_CODE_EFFORT_LEVEL`로 모델을 받는다.
+
+## 대화방
+
+**+ 대화방**은 고른 세션 묶음에 이름을 붙여 저장한다. 대화방을 고르면 그 세션들이 나와, 또 서로 주고받은
+메시지만 보인다. **받는 세션**에서 **대화방 전체**를 고르면 세션마다 한 통씩 보내고, 타임라인에는 받는 세션을
+모두 적은 말풍선 하나와 몇 명이 읽었는지가 뜬다. **대화방 편집**에서 이름과 참여 세션을 바꾸거나 방을 지운다
+(메시지는 남는다).
+
+대화방은 `~/.reason-network-chat/rooms.json`에 저장된다. Reason Network 자체에는 대화방이 없어서
+참여 세션끼리는 서로의 답을 보지 못한다.
 
 ## 알아 두면 좋은 것
 

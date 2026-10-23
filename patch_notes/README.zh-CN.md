@@ -9,6 +9,7 @@ Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（
 
 | 时间 | 变更 | 主要内容 |
 |---|---|---|
+| 17:40 | [#4](https://github.com/ehojune/Reason-Network-Chat/pull/4) | **+ 聊天室** 把几个会话放在一起：只显示它们的消息，发一次即送达全体成员。 |
 | 17:40 | [#3](https://github.com/ehojune/Reason-Network-Chat/pull/3) | **+ 新会话** 可在页面上启动智能体：选文件夹和智能体后，从该智能体自己的列表里选模型和强度，以网络 worker 或终端窗口运行。不会被消息唤醒的 Codex 会话会被标出，并可一键在同一文件夹启动 worker。 |
 | 17:32 | [#2](https://github.com/ehojune/Reason-Network-Chat/pull/2) | 新增英文、韩文、中文更新日志，并在每个 README 顶部放了徽章链接。 |
 | 16:43 | [#1](https://github.com/ehojune/Reason-Network-Chat/pull/1) | 更名为 Reason Network Chat（`ehojune/Reason-Network-Chat`）。卡片 1 和简介改为“Claude、Codex 等智能体”。 |

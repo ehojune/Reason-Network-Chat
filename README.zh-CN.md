@@ -45,8 +45,8 @@ Reason Network Chat 把它们放到同一个页面。
 <td width="50%" valign="top"><img src="docs/why/zh/card-4.svg" width="100%" alt="就地启动会话：选文件夹、智能体、模型、强度，列表都来自智能体本身"></td>
 </tr>
 <tr>
-<td width="50%" valign="top"><img src="docs/why/zh/card-5.svg" width="100%" alt="只在本机：数据库只读，只监听 127.0.0.1，每个操作都校验令牌"></td>
-<td></td>
+<td width="50%" valign="top"><img src="docs/why/zh/card-5.svg" width="100%" alt="聊天室：只看选中会话之间的对话，一条消息发给全体成员"></td>
+<td width="50%" valign="top"><img src="docs/why/zh/card-6.svg" width="100%" alt="只在本机：数据库只读，只监听 127.0.0.1，每个操作都校验令牌"></td>
 </tr>
 </table>
 
@@ -83,6 +83,7 @@ Reason Network Chat 把它们放到同一个页面。
 | 给智能体发消息 | 在 **发送给** 里选择，输入后按 Enter。Shift+Enter 换行。 |
 | 留言但不打断对方 | 勾选 **不唤醒**，消息只进收件箱。 |
 | 启动智能体 | **+ 新会话**，见[下文](#启动新会话)。 |
+| 同时和几个会话交谈 | **+ 聊天室**，见[聊天室](#聊天室)。 |
 | 切换语言 | 左上角 KO / EN / 中。 |
 
 你发的消息署名为 `<你的名字>/terminal`，回复会自动出现在时间线里。
@@ -118,6 +119,14 @@ Reason Network Chat 把它们放到同一个页面。
 - 终端窗口在智能体开始会话后出现在列表里。Codex 在你发出第一条提示时才开始会话。
 - `reason network serve` 没有模型选项。Codex worker 通过 `~/.reason-network-chat/codex-shim` 里的小启动器拿到模型，
   Claude worker 通过 `ANTHROPIC_MODEL` 和 `CLAUDE_CODE_EFFORT_LEVEL`。
+
+## 聊天室
+
+**+ 聊天室** 把选中的一组会话存成一个有名字的聊天室。选中聊天室后，只显示这些会话与你、以及彼此之间的消息。
+在 **发送给** 中选 **聊天室全体**，会给每个成员各发一条；时间线里显示为一个列出全部收件人的气泡，并标出已读人数。
+**编辑聊天室** 可以改名、调整成员或删除（消息会保留）。
+
+聊天室保存在 `~/.reason-network-chat/rooms.json`。Reason Network 本身没有聊天室，成员之间看不到彼此的回复。
 
 ## 须知
 

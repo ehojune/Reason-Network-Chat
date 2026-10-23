@@ -25,6 +25,8 @@ out as the window frees up. Nothing is dropped: queued hand-offs, the scan curso
 relay.json, so a restart neither loses nor repeats a hand-off.
 """
 import collections
+import contextlib
+import functools
 import json
 import os
 import re
@@ -32,6 +34,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from storage import atomic_json, file_lock
 
 
 def _env_int(name, default):
@@ -129,6 +132,14 @@ class RelayError(Exception):
         self.code = code
 
 
+def serialized(method):
+    @functools.wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self.transaction():
+            return method(self, *args, **kwargs)
+    return wrapped
+
+
 class Relay:
     def __init__(self, home, rooms, db_rows, send_one):
         self.path = Path(home) / "relay.json"
@@ -145,6 +156,7 @@ class Relay:
         self.forwarded = {}  # message id -> {room, to, at}: 1:1 answers you forwarded into a room (once each)
         self.settled = {}  # message id -> {how: resent|dismissed, at}: unanswered or failed messages you dealt with
         self.since = None  # scan cursor (ms): replies before it are settled
+        self.revision = None
         self.load()
         now = int(time.time() * 1000)
         # Resume where the last run stopped, so replies that came in while the server was down are passed on.
@@ -160,6 +172,7 @@ class Relay:
 
     def load(self):
         data = self.read()
+        self.revision = data.get("revision")
         try:
             self.sent = {k: v for k, v in (data.get("sent") or {}).items() if isinstance(v, dict)}
             self.seen = {k: int(v) for k, v in (data.get("seen") or {}).items()}
@@ -174,7 +187,26 @@ class Relay:
         except (ValueError, TypeError, AttributeError):
             pass
 
+    @contextlib.contextmanager
+    def transaction(self):
+        """One writer/delivery batch per home, across ports and processes. Polling stays read-only."""
+        with self.send_lock:
+            try:
+                with file_lock(self.path.with_suffix(".delivery.lock")):
+                    with self.lock:
+                        if self.read().get("revision") != self.revision:
+                            previous = self.since
+                            self.load()
+                            self.since = self.since if self.since is not None else previous
+                    yield
+            except TimeoutError as exc:
+                raise RelayError("Another server is delivering; try again shortly.", 409) from exc
+
     def save(self, unsettle=(), strict=False):
+        with file_lock(self.path.with_suffix(".state.lock")):
+            self._save_locked(unsettle, strict)
+
+    def _save_locked(self, unsettle=(), strict=False):
         """Read, merge, write: records another writer added since are kept (call with self.lock held). `unsettle`:
         settled records to remove, which the merge would otherwise bring back from the file."""
         disk = self.read()
@@ -206,14 +238,14 @@ class Relay:
             for k in sorted(settled, key=lambda k: settled[k].get("at", 0))[: len(settled) - KEEP]:
                 del settled[k]
         self.sent, self.seen, self.forwarded, self.settled = sent, seen, fwd, settled
-        data = {"sent": sent, "seen": seen, "since": self.since,
+        revision = uuid.uuid4().hex
+        data = {"revision": revision, "sent": sent, "seen": seen, "since": self.since,
                 "done": {f"{a}\t{b}": at for (a, b), at in self.done.items()}, "queue": self.queue, "forwarded": fwd,
                 "settled": settled}
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-            os.replace(tmp, self.path)
+            atomic_json(self.path, data)
+            self.revision = revision
         except OSError as exc:
             if strict:
                 raise RelayError(f"Could not save hand-off before sending: {exc}", 500)
@@ -241,6 +273,7 @@ class Relay:
         with self.lock:
             return {i: dict(self.settled[i]) for i in ids if i in self.settled}
 
+    @serialized
     def claim(self, mid, how):
         """Mark a message dealt with, unless it already is: one "Send again" per message, even from two clicks."""
         with self.lock:
@@ -250,6 +283,7 @@ class Relay:
             self.save()
             return True
 
+    @serialized
     def unclaim(self, mid):
         with self.lock:
             self.settled.pop(mid, None)
@@ -272,7 +306,7 @@ class Relay:
         room = self.rooms.get(rec.get("room"))
         if not room or not room.get("group") or rec.get("to") not in room["members"]:
             raise RelayError("That room is gone, or the member left it.", 409)
-        with self.send_lock:
+        with self.transaction():
             ok, err = self.deliver(room, rec["to"], me, rec["speaker"], rec["core"], rec.get("hop", 0),
                                    implicit=bool(rec.get("implicit")))
         if not ok:
@@ -350,6 +384,7 @@ class Relay:
         cannot send it twice."""
         with self.lock:
             flight = item.get("flight") if item is not None else None
+            created = not flight
             if flight:
                 body, newest = flight["body"], flight["newest"]
             else:
@@ -359,7 +394,15 @@ class Relay:
                     body = body.replace("\nMembers:", f"\nDelivery: {uuid.uuid4().hex}\nMembers:", 1)
                     item["flight"] = {"body": body, "newest": newest, "me": me}
             if item is not None:
-                self.save(strict=True)  # a durable claim must precede the CLI side effect
+                forced = item.pop("force", None)  # consume one explicit retry durably before the side effect
+                try:
+                    self.save(strict=True)
+                except Exception:
+                    if created:
+                        item.pop("flight", None)  # no send was attempted; storage recovery can retry normally
+                    if forced is not None:
+                        item["force"] = forced
+                    raise
         try:
             rc, out, err = self.send_one(member, body, False)
         except Exception as e:  # e.g. the CLI timed out: a failed attempt like any other, so retries stay bounded
@@ -456,7 +499,7 @@ class Relay:
         if not targets:
             raise RelayError("Mention who should receive it (@name, or @all for everyone), "
                              "or set a default recipient for this room.")
-        with self.send_lock:
+        with self.transaction():
             with self.lock:
                 self.notice.pop(room["id"], None)
                 self.passes[room["id"]].clear()  # you are back in the conversation: a fresh budget
@@ -466,6 +509,7 @@ class Relay:
                 results.append({"to": m, "ok": ok, "err": err})
         return results
 
+    @serialized
     def flush(self, rid):
         """Send everything queued in a room now, past its budget and hop limit (your explicit go-ahead)."""
         with self.lock:
@@ -477,6 +521,7 @@ class Relay:
             return len(items)
 
     # ---------- a 1:1 answer, forwarded by you ----------
+    @serialized
     def forward(self, room, me, msg):
         """Pass a member's answer to a 1:1 message of yours on to the members it @mentions, as if it had answered a
         room message: queued like any hand-off (hop 1, the member as speaker) and sent within the room's limits.
@@ -519,7 +564,7 @@ class Relay:
         """Queue member replies that @mention another member, then send what the room's limits allow."""
         if not me:
             return
-        with self.send_lock:
+        with self.transaction():
             with self.lock:
                 if not self.sent and not self.queue:
                     return

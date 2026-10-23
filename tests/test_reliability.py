@@ -44,6 +44,42 @@ class EndpointTest(unittest.TestCase):
 
 
 class RegistryTest(unittest.TestCase):
+    def test_two_relay_processes_preserve_queue_claims(self):
+        with tempfile.TemporaryDirectory() as home:
+            code = '''import json,sys,time
+from pathlib import Path
+from relay import Relay
+r=Relay(sys.argv[1],None,lambda *a: [],lambda *a: (0,'',''))
+Path(sys.argv[1],sys.argv[2]+'.ready').touch()
+while not Path(sys.argv[1],'go').exists(): time.sleep(.01)
+won=r.claim('same','resent')
+for i in range(10):
+ with r.transaction():
+  with r.lock:
+   r.queue.setdefault('room',[]).append({'reply':sys.argv[2]+str(i),'to':'p/a','sender':'p/b','body':'message','hop':1,'flight':{'body':sys.argv[2]+str(i),'me':'p/terminal','newest':0}})
+   r.save(strict=True)
+Path(sys.argv[1],sys.argv[2]+'.result').write_text(json.dumps(won))
+'''
+            children=[subprocess.Popen([sys.executable,'-c',code,home,name],cwd=Path(__file__).resolve().parents[1],stdout=subprocess.PIPE,stderr=subprocess.PIPE) for name in ('one','two')]
+            try:
+                import time
+                deadline=time.monotonic()+10
+                while not all(Path(home,n+'.ready').exists() for n in ('one','two')):
+                    if time.monotonic()>deadline: self.fail('relay writers did not start')
+                    time.sleep(.02)
+                Path(home,'go').touch()
+                for p in children:
+                    out,err=p.communicate(timeout=20)
+                    self.assertEqual(p.returncode,0,err.decode())
+                data=json.loads(Path(home,'relay.json').read_text())
+                self.assertEqual(len(data['queue']['room']),20)
+                self.assertEqual(len({x['flight']['body'] for x in data['queue']['room']}),20)
+                self.assertEqual(sum(json.loads(Path(home,n+'.result').read_text()) for n in ('one','two')),1)
+                self.assertEqual(list(Path(home).glob('*.tmp')),[])
+            finally:
+                for p in children:
+                    if p.poll() is None: p.kill(); p.communicate()
+
     def test_two_processes_keep_both_workers_and_records(self):
         with tempfile.TemporaryDirectory() as home:
             code = '''import json, sys, time

@@ -707,7 +707,10 @@ class Relay:
                         break
                     if item.get("flight"):
                         if item["flight"].get("me") != me:
-                            self.notice[rid] = "Queued delivery belongs to a different sender; it was not retried."
+                            warning = "Queued delivery belongs to a different sender; it was not retried."
+                            if self.transient_notice.get(rid) != warning:
+                                self.transient_notice[rid] = warning
+                                self.save()
                             break
                         if self.reconcile(room, me, item):
                             continue

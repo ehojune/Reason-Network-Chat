@@ -1165,11 +1165,13 @@ function troubleListHtml(list) {
       <div class="dbtn"><button type="button" data-action="jump">${esc(t("goOriginal"))}</button><button type="button" data-action="resend"${running(v.to) ? "" : ` disabled title="${esc(t("notRunning"))}"`}>${esc(t("resend"))}</button><button type="button" data-action="dismiss">${esc(t("dismissOne"))}</button></div></article>`;
   }).join("") || `<p>${esc(t("troubleEmpty"))}</p>`;
 }
+let troubleListSig = null;
 function renderTroubleList() {
   $("#troubleTitle").textContent = t("troubleTitle");
   $("#troubleHelp").textContent = t("troubleHelp");
   const html = troubleListHtml(troublesInView());
-  if ($("#troubleItems").innerHTML !== html) $("#troubleItems").innerHTML = html;
+  // Native details/focus change the DOM. Compare data renders, so polling keeps the reader's place.
+  if (troubleListSig !== html) { $("#troubleItems").innerHTML = html; troubleListSig = html; }
 }
 $("#troubleClose").addEventListener("click", () => $("#troubleDlg").close());
 $("#troubleItems").addEventListener("click", e => {
@@ -1196,6 +1198,7 @@ async function resend(ids, dismiss) {
       (bad.length ? ` · ${t("failed")}${bad.map(r => r.err).join("; ")}` : ""), !!bad.length);
   } finally {
     lastSig = "";  // redraw even if nothing changed, so a button disabled by the click comes back
+    troubleListSig = null;
     poll();
   }
 }

@@ -664,6 +664,24 @@ class RelayTest(unittest.TestCase):
                 restarted = relay.Relay(home, FakeRooms(room), self.rows, self.send)
                 self.assertEqual(restarted.view(set())[2][room["id"]], "older retries exhausted")
 
+    def test_changed_identity_warning_preserves_history_and_clears_with_queue(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.r.forward(self.room, ME, self.row(self.insert(A, ME, "@b-claude question")))
+        self.r.notice[self.room["id"]] = "older retries exhausted"
+        self.r.send_one = lambda *args: (_ for _ in ()).throw(subprocess.TimeoutExpired("reason", 60))
+        self.r.scan(ME)
+        self.r.scan("different/identity")
+        note = self.r.view(set())[2][self.room["id"]]
+        self.assertIn("older retries exhausted", note)
+        self.assertIn("different sender", note)
+        self.r = self.new_relay()
+        self.assertIn("different sender", self.r.view(set())[2][self.room["id"]])
+        self.room["group"] = False
+        self.r.scan("different/identity")
+        self.assertFalse(self.r.queue)
+        self.assertEqual(self.r.view(set())[2][self.room["id"]], "older retries exhausted")
+        self.assertEqual(self.new_relay().view(set())[2][self.room["id"]], "older retries exhausted")
+
     def test_crash_during_manual_retry_does_not_authorize_a_second_retry(self):
         self.r.post(self.room, ME, "@a-codex go")
         self.insert(A, ME, "@b-claude question", reply_to=self.last_id_to(A))

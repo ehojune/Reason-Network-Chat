@@ -152,6 +152,10 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
 ## Pitfalls
 
 - **Never write the database** or open it without `mode=ro`. The daemon owns it.
+- **One server per port.** On Windows `SO_REUSEADDR` (set by `HTTPServer`) lets a second server bind a port in use,
+  and one of them then silently gets every request: on 2026-10-23 a stray preview from a working tree served the
+  viewer for hours while the real server got nothing. `server.ChatServer` binds with `SO_EXCLUSIVEADDRUSE` on
+  Windows, so a second start exits with "Port … is in use". Keep it; stop the old server before starting a new one.
 - **Keep the bind address `127.0.0.1`.** The page shows private message text and can send as the user.
 - **Do not parse CLI text output.** On Korean/Chinese Windows the console code page (CP949, GBK) garbles it. Use `--json` or the database. Decode subprocess output as UTF-8.
 - **Windows batch shims.** If `REASON_BIN` points at a `.cmd`/`.bat`, cmd.exe would re-parse message text (`&`, `|`, `%`). `server.py` refuses to start; point it at `reason.exe`.

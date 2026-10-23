@@ -9,6 +9,7 @@ Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（
 
 | 时间 | 变更 | 主要内容 |
 |---|---|---|
+| 23:44 | [#18](https://github.com/ehojune/Reason-Network-Chat/pull/18) | 已占用的端口上无法再启动第二个服务器：Windows 上独占绑定端口，新服务器会以 "Port 8765 is in use" 退出，而不是悄悄与旧服务器共用端口。 |
 | 23:31 | [#17](https://github.com/ehojune/Reason-Network-Chat/pull/17) | 启动会话时可选择**权限**（默认，或经确认的完全权限），并可从右键菜单**更改运行中 worker 的模型、推理强度和权限**。Codex 的模型更改从下一条消息起生效，其他更改会以同一名称重启 worker。Claude worker 的推理强度现在真正生效。 |
 | 22:07 | [#16](https://github.com/ehojune/Reason-Network-Chat/pull/16) | 用**不唤醒**（`--fyi`）发送的未读消息，现在显示 *未唤醒发送 · 下一轮才读*，而不是会话平时的“立即收到”——这类消息本来就不会立即送达。 |
 | 21:41 | [#15](https://github.com/ehojune/Reason-Network-Chat/pull/15) | 箭头后的每个接收会话前也会显示智能体标记（codex、claude-code 等）。 |

@@ -9,6 +9,7 @@ Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（
 
 | 时间 | 变更 | 主要内容 |
 |---|---|---|
+| 05:44 | [#41](https://github.com/ehojune/Reason-Network-Chat/pull/41) | 聊天室只显示一次发言，下方列出转发记录；代码或引用中的 @ 不再唤醒成员，已证实的消息副本回复会关联回原聊天室。 |
 | 03:58 | [#39](https://github.com/ehojune/Reason-Network-Chat/pull/39) | 发送后崩溃会核对记录，避免重复转发；结果不明确时等待检查。加固 worker 注册表并发保存、进程清理、模型识别，以及房间身份和目录刷新验证。 |
 | 03:18 | [#36](https://github.com/ehojune/Reason-Network-Chat/pull/36) | 成员可通过 `rnc.py room send` **主动发消息**，定时报告无需等待用户先发消息。支持 Windows、Linux、macOS 的发送者验证，并在重启后保留房间授权。 |
 | 03:02 | [#38](https://github.com/ehojune/Reason-Network-Chat/pull/38) | **查看**失败或未回答消息的原文、接收者和失败详情，再逐条处理。引用可跳到原文，无回答回复折叠为确认标记；修复 Markdown 链接、列表代码块和用量限制通知的转发循环。 |

@@ -114,11 +114,78 @@ class RelayTest(unittest.TestCase):
 
     def test_handed_off_reply_appears_once(self):
         self.r.post(self.room, ME, "@a-codex start")
-        self.insert(A, ME, "@b-claude please check retry.ts", reply_to=self.last_id_to(A))
+        source = self.insert(A, ME, "@b-claude please check retry.ts", reply_to=self.last_id_to(A))
         self.r.scan(ME)
         body = self.sent_to(B)[-1]
         self.assertEqual(body.count("please check retry.ts"), 1, body)
         self.assertTrue(body.endswith("---\na-codex: @b-claude please check retry.ts"))
+        mid = self.last_id_to(B)
+        self.assertEqual(self.r.view({mid})[0][mid]['source'], source)
+        self.r = self.new_relay()
+        self.r.redeliver(mid, ME)
+        self.assertEqual(self.r.sent[self.last_id_to(B)]['source'], source)
+
+    def test_repeated_real_answers_have_distinct_delivery_sources(self):
+        sources = []
+        for _ in range(2):
+            self.r.post(self.room, ME, "@a-codex next question")
+            sources.append(self.insert(A, ME, "@b-claude result", reply_to=self.last_id_to(A)))
+            self.r.scan(ME)
+        deliveries = [rec for rec in self.new_relay().sent.values() if rec['to'] == B]
+        self.assertEqual([rec['source'] for rec in deliveries], sources)
+
+    def test_replies_to_proven_envelope_copies_retain_the_room(self):
+        self.r.post(self.room, ME, "@a-codex start")
+        original = self.last_id_to(A)
+        body = self.sent_to(A)[-1]
+        copies = [self.insert(ME, A, body) for _ in range(2)]
+        for copy in copies:
+            self.insert(A, ME, "@b-claude inspect", reply_to=copy)
+        self.r.scan(ME)
+        self.assertEqual(len(self.sent_to(B)), 2)  # both real replies remain real events
+        for copy in copies:
+            self.assertEqual(self.r.sent[copy]['copyOf'], original)
+        restarted = self.new_relay()
+        self.assertIn(copies[1], restarted.view(set(copies))[0])
+        self.r.post(self.room, ME, "@c-codex next")
+        self.assertEqual(self.sent_to(C)[-1].count('[Group room'), 1)
+
+    def test_ambiguous_or_unrelated_envelopes_are_not_invented_as_deliveries(self):
+        self.r.post(self.room, ME, "@a-codex start")
+        original = self.last_id_to(A)
+        body = self.sent_to(A)[-1]
+        copy = self.insert(ME, A, body)
+        self.r.sent[copy] = dict(self.r.sent[original])  # two recorded events, no copyOf proof
+        self.r.save()
+        unknown = self.insert(ME, A, body)
+        self.insert(A, ME, "@b-claude inspect", reply_to=unknown)
+        self.r.scan(ME)
+        self.assertNotIn(unknown, self.r.sent)
+        self.assertFalse(self.sent_to(B))
+
+        wrong_sender = self.insert(C, A, body)
+        self.insert(A, ME, "@b-claude inspect", reply_to=wrong_sender)
+        self.r.scan(ME)
+        self.assertNotIn(wrong_sender, self.r.sent)
+        self.assertFalse(self.sent_to(B))
+
+    def test_distinct_human_sends_do_not_share_an_envelope(self):
+        self.r.post(self.room, ME, "@a-codex start")
+        self.r.post(self.room, ME, "@a-codex start")
+        self.assertNotEqual(*self.sent_to(A))
+
+    def test_forward_refuses_a_proven_copy_before_the_async_scan(self):
+        self.r.post(self.room, ME, "@a-codex start")
+        copy = self.insert(ME, A, self.sent_to(A)[-1])
+        reply = self.insert(A, ME, "@b-claude inspect", reply_to=copy)
+        with self.assertRaises(relay.RelayError) as exc:
+            self.r.forward(self.room, ME, self.row(reply))
+        self.assertEqual(exc.exception.code, 409)
+        self.assertIsNone(self.queued())
+        self.assertFalse(self.r.forwarded)
+        self.r = self.new_relay()
+        self.r.scan(ME)
+        self.assertEqual(len(self.sent_to(B)), 1)
 
     def test_broadcast_is_not_repeated_as_context(self):
         self.r.post(self.room, ME, "@all hello all")
@@ -551,7 +618,7 @@ class RelayTest(unittest.TestCase):
 
     def test_restart_reconciles_a_send_before_the_dequeue_was_saved(self):
         self.r.post(self.room, ME, "@a-codex go")
-        self.insert(A, ME, "@b-claude inspect", reply_to=self.last_id_to(A))
+        source = self.insert(A, ME, "@b-claude inspect", reply_to=self.last_id_to(A))
         class Crash(BaseException):
             pass
         def delivered_then_crashed(to, body, fyi):
@@ -570,6 +637,7 @@ class RelayTest(unittest.TestCase):
         self.assertNotIn(self.room["id"], self.new_relay().view(set())[2])
         mid = self.last_id_to(B)
         self.assertEqual(self.r.sent[mid]["speaker"], A)
+        self.assertEqual(self.r.view({mid})[0][mid]['source'], source)
         self.insert(B, ME, "answer", reply_to=mid)
         self.r.scan(ME)
         self.assertEqual(self.counts(), [2, 1, 0])

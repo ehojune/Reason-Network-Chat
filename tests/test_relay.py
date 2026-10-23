@@ -86,9 +86,8 @@ class RelayTest(unittest.TestCase):
     def test_envelope_names_where_the_answer_goes(self):
         self.r.post(self.room, ME, "@a-codex hi")
         head = self.sent_to(A)[-1].split("---")[0]
-        self.assertIn("Your answer goes back to pat automatically. To reach anyone else, @name them.", head)
-        self.assertIn("Reply `-` if no answer is needed.", head)
-        self.assertIn("You will not see a reply to your answer unless it @mentions you.", head)
+        self.assertIn("Your answer goes back to pat automatically.\n", head)
+        self.assertIn("To ask anyone else, @name them; their answers come back to you. Reply `-` if no answer is needed.", head)
         self.assertNotIn("Everyone in the room reads", head)
 
     def test_members_cannot_mention_everyone(self):
@@ -134,7 +133,8 @@ class RelayTest(unittest.TestCase):
         self.r.post(self.room, ME, "@a-codex go")
         self.insert(A, ME, "@b-claude what does retry.ts do?", reply_to=self.last_id_to(A))
         self.r.scan(ME)
-        self.assertIn("Your answer goes back to a-codex automatically.", self.sent_to(B)[-1])
+        self.assertIn("Your answer goes back to a-codex automatically; a-codex's reply to it reaches you only if it "
+                      "@mentions you.", self.sent_to(B)[-1])
         self.insert(B, ME, "It retries three times with backoff.", reply_to=self.last_id_to(B))  # no @
         self.r.scan(ME)
         self.assertEqual(len(self.sent_to(A)), 2)  # came back to the asker

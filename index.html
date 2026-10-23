@@ -482,7 +482,7 @@ let lang = new URLSearchParams(location.search).get("lang") || store.get("reason
 if (!T[lang]) lang = "en";
 const t = k => T[lang][k];
 const TOKEN = document.querySelector('meta[name="reason-chat-token"]').content;
-const API = 11;  // must match API in server.py
+const API = 12;  // must match API in server.py
 const BOOT = document.querySelector('meta[name="reason-chat-boot"]').content;  // which server start served this page
 // Reload to pick up a restarted or newer server, at most once a minute so a broken setup cannot loop.
 function reloadOnce() {
@@ -576,7 +576,7 @@ const recipientOf = m => S.sessions.find(x => x.address === m.recipient) || {liv
 const unreadHow = m => fyiLabelled(m) ? t("rFyi") : reachLabel(recipientOf(m));
 const NOW = ["now", "workerBusy", "pushed", "afterTurn", "auto"], LATER = ["appOpen", "pull", "nextTurn", "cli"];
 // Sessions that will not read soon: the composer says so and offers a worker in the same folder.
-const sleepy = s => !!s && ["offline", "appOpen", "pull", "nextTurn", "gone"].includes(reach(s));
+const sleepy = s => !!s && ["offline", "stale", "appOpen", "pull", "nextTurn", "gone"].includes(reach(s));
 const autoList = () => { const a = pref("autoWake"); return Array.isArray(a) ? a : []; };
 const autoOn = a => autoList().includes(a);
 // An auto-woken session whose last wake failed or that hit the hourly limit: the composer says why.
@@ -909,7 +909,7 @@ function renderNoWake() {
   $("#nowake").hidden = !show;
   $("#wakeAfterLabel").hidden = !(sleepy(s) && s.resumable && !s.appOpen);
   if (!show) return;
-  $("#nowakeText").textContent = t({offline: "nwOffline", gone: "nwOffline", appOpen: "nwAppOpen", pull: "nwPull",
+  $("#nowakeText").textContent = t({offline: "nwOffline", stale: "nwOffline", gone: "nwOffline", appOpen: "nwAppOpen", pull: "nwPull",
     nextTurn: "nowake", auto: "nwAuto"}[reach(s)] || "nowake");
   $("#wakeBtn").hidden = !s.resumable || !!s.appOpen;  // the app holds the conversation: a wake would be refused
   $("#wakeBtn").disabled = waking(s.address) || !unreadTo(s.address);
@@ -1006,7 +1006,10 @@ function startReply(id) {
   if (room && room.group && room.members.includes(raw.sender)) {
     const tag = `@${handleOf(raw.sender, room)}`;
     if (!roomTargets(room, b.value).to.includes(raw.sender)) b.value = `${tag} ${b.value.replace(/^\s+/, "")}`;
-  } else if ([...$("#to").options].some(o => o.value === raw.sender)) {
+  } else {
+    const offered = () => [...$("#to").options].some(o => o.value === raw.sender);
+    if (!offered()) pick(raw.sender);  // e.g. an offline author under All messages, or a former room member
+    if (!offered()) { endReply(); return; }
     $("#to").value = raw.sender;
   }
   $("#replyText").textContent = `↩ ${short(raw.sender)}: ${line}`;
@@ -1115,8 +1118,8 @@ $("#comp").addEventListener("submit", async e => {
   const room = roomOf(to), target = S.sessions.find(x => x.address === to);
   const gets = room && room.group ? roomTargets(room, typed).to : room ? room.members : [];
   if (room && room.group && !gets.length) { $("#sendmsg").textContent = t("rcptNone"); $("#body").focus(); return; }
-  const off = room ? gets.filter(a => ["offline", "gone"].includes(reach(S.sessions.find(x => x.address === a) || {live: false})))
-    : target && ["offline", "gone"].includes(reach(target)) ? [to] : [];
+  const off = room ? gets.filter(a => ["offline", "stale", "gone"].includes(reach(S.sessions.find(x => x.address === a) || {live: false})))
+    : target && ["offline", "stale", "gone"].includes(reach(target)) ? [to] : [];
   if (off.length && !confirm(room ? t("roomOffline").replace("{names}", off.map(short).join(", "))
     : t("sendOffline").replace("{name}", short(to)))) return;
   $("#btn").disabled = true; $("#sendmsg").textContent = t("sending");

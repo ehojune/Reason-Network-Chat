@@ -222,15 +222,19 @@ class Relay:
     def compose(self, room, member, me, speaker, core, skip=None, implicit=False):
         """The message for one member, and the timestamp of the newest room line it includes (0 if none).
         `implicit`: this is an answer passed back to its asker, so the member's reply does not come back by itself."""
-        person = label(me, me, room)
+        person, asker = label(me, me, room), label(speaker, me, room)
         names = ", ".join([f"{person} (person)"] + [handle(m, room) for m in room["members"]])
-        back = (f"This answer was passed back to you automatically; your reply reaches only the members you @mention."
-                if implicit else
-                f"Your answer goes back to {label(speaker, me, room)} automatically. To reach anyone else, @name them.")
+        if implicit:
+            back = "This answer was passed back to you automatically. Your reply reaches only the members you @mention."
+        elif speaker == me:
+            back = f"Your answer goes back to {asker} automatically."
+        else:
+            back = (f"Your answer goes back to {asker} automatically; "
+                    f"{asker}'s reply to it reaches you only if it @mentions you.")
         head = (f'[Group room "{room["name"]}", relayed by Reason Network Chat]\n'
                 f"Members: {names}.\n"
                 f"{back}\n"
-                "Reply `-` if no answer is needed. You will not see a reply to your answer unless it @mentions you.\n"
+                "To ask anyone else, @name them; their answers come back to you. Reply `-` if no answer is needed.\n"
                 f"{person} sees the whole room. Do not message members with Reason Network tools.")
         lines = self.lines_for(room, member, me, skip, (speaker, core))
         earlier = ("\nEarlier in the room:\n" + "\n".join(f"{who}: {t}" for _, who, t in lines)) \

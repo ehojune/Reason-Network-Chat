@@ -760,22 +760,31 @@ def parse_serve(argv):
 
 def model_from_args(family, argv):
     """(model, effort) a worker's agent runs with, read from its command line (or its shim's arguments)."""
-    model = effort = None
+    model = effort = explicit_model = None
     for k, a in enumerate(argv):
+        if a == "--":
+            break
         nxt = argv[k + 1] if k + 1 < len(argv) else ""
         if a.startswith("--model="):
-            model = a.split("=", 1)[1]
+            explicit_model = a.split("=", 1)[1]
         elif a == "--model" or family == "codex" and a == "-m":
-            model = nxt
+            explicit_model = nxt
+        elif family == "codex" and a.startswith("-m") and not a.startswith("--"):
+            explicit_model = a[2:].lstrip("=")
         elif family == "claude" and a == "--effort":
             effort = nxt
-        elif family == "codex" and a in ("-c", "--config"):
-            key, _, val = nxt.partition("=")
-            val = val.strip('"')
+        elif family == "claude" and a.startswith("--effort="):
+            effort = a.split("=", 1)[1]
+        elif family == "codex" and (a in ("-c", "--config") or a.startswith("--config=")
+                                    or a.startswith("-c") and not a.startswith("--")):
+            value = nxt if a in ("-c", "--config") else a[len("--config="):] if a.startswith("--config=") else a[2:].lstrip("=")
+            key, _, val = value.partition("=")
+            key, val = key.strip(), val.strip().strip("\"'")
             if key == "model":
                 model = val
             elif key == "model_reasoning_effort":
                 effort = val
+    model = explicit_model if explicit_model is not None else model
     return (model if model and MODEL_RE.match(model) else None, effort if effort and EFFORT_RE.match(effort) else None)
 
 

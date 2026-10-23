@@ -137,6 +137,16 @@ for i in range(20):
         self.assertIsNone(launcher.agent_argv('claude',['node','tool.js','-p','--model','fake']))
         self.assertIsNone(launcher.agent_argv('claude',['node','-e','claude','--model','fake']))
 
+    def test_attached_cli_options_and_prompt_terminator(self):
+        for args in (['--config=model=gpt-6.1-sol','--config=model_reasoning_effort=high'],
+                     ['-cmodel=gpt-6.1-sol','-c=model_reasoning_effort=high'],
+                     ['--config','model=gpt-6.1-sol','-c','model_reasoning_effort=high']):
+            self.assertEqual(launcher.model_from_args('codex',['codex','exec']+args),('gpt-6.1-sol','high'))
+        self.assertEqual(launcher.model_from_args('codex',['codex','exec','-mgpt-6.1-sol']),('gpt-6.1-sol',None))
+        self.assertEqual(launcher.model_from_args('codex',['codex','--model=chosen','--config=model=other']),('chosen',None))
+        self.assertEqual(launcher.model_from_args('codex',['codex','exec','--','--config=model=fake']), (None,None))
+        self.assertEqual(launcher.model_from_args('claude',['claude','-p','--model=opus','--effort=high']),('opus','high'))
+
     def test_external_stop_cleans_only_verified_descendant_pids(self):
         l=launcher.Launcher.__new__(launcher.Launcher)
         l.alive=lambda w: False

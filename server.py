@@ -34,6 +34,9 @@ MAX_BODY = 64 * 1024  # bytes accepted by a POST
 ORIGINS = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 # Written into the page at load; every POST must echo it. Pages on other sites cannot read it.
 TOKEN = secrets.token_urlsafe(32)
+# Shape of /api/state and the POSTs. Bump together with API in index.html: a page that meets a server of another
+# version (the server kept running across an update) asks for a restart instead of breaking.
+API = 2
 NOWIN = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
 
 
@@ -116,7 +119,7 @@ def state():
                          "live": False})
         seen.add(addr)
     relays, paused, notices = RELAY.view({m["id"] for m in msgs})
-    return {"team": who.get("team"), "me": me, "sessions": sessions, "messages": msgs,
+    return {"api": API, "team": who.get("team"), "me": me, "sessions": sessions, "messages": msgs,
             "launched": LAUNCHER.list(), "rooms": ROOMS.list(), "relays": relays, "paused": paused, "notices": notices,
             "whoError": who_err, "now": int(time.time() * 1000)}
 

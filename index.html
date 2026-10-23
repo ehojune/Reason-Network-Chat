@@ -425,8 +425,9 @@ function renderModels() {
 
 function renderEfforts() {
   const f = fam(LF.agent), m = f.modes[LF.mode], id = $("#lfModel").value, keep = $("#lfEffort").value;
-  const model = f.models.find(x => x.id === (id || f.defaultModel));  // no model chosen: the default model's levels
-  const efforts = model ? model.efforts : f.efforts;
+  // Same rule as launcher.efforts_for: the chosen or default model's levels, else those every model has.
+  const model = f.models.find(x => x.id === (id || f.defaultModel));
+  const efforts = model ? model.efforts : f.efforts.filter(e => f.models.every(x => x.efforts.includes(e)));
   const d = id ? model.defaultEffort : f.defaultEffort || model?.defaultEffort;
   $("#lfEffort").innerHTML = `<option value="">${esc(d ? `${t("default")} (${d})` : t("default"))}</option>` +
     efforts.map(e => `<option value="${esc(e)}">${esc(e)}</option>`).join("");

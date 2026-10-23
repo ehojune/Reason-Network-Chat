@@ -43,6 +43,9 @@ SESSION_VARS = {"CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "AI_AGENT",
 SESSION_PREFIX = ("CODEX_SANDBOX", "CODEX_NETWORK_", "CODEX_INTERNAL_", "REASON_NETWORK_", "TINCAN_")
 # Set by a Claude host for the session it runs; only dropped when this server runs inside Claude Code.
 CLAUDE_HOST_PREFIX = ("CLAUDE_CODE_", "CLAUDE_AGENT_SDK_", "CLAUDE_PREVIEW_")
+# ...except the settings a user sets on purpose and a new Claude needs: provider, auth, client certs, shell, limits.
+CLAUDE_KEEP = re.compile(r"^CLAUDE_CODE_(USE_|SKIP_\w*AUTH|CLIENT_|GIT_BASH_PATH|SHELL|MAX_|API_KEY_HELPER"
+                         r"|DISABLE_NONESSENTIAL_TRAFFIC|EXTRA_BODY)")
 
 
 # ---------- environment ----------
@@ -70,7 +73,9 @@ def user_env():
 
 def is_session_var(name, in_claude=False):
     n = name.upper()
-    return n in SESSION_VARS or n.startswith(SESSION_PREFIX) or (in_claude and n.startswith(CLAUDE_HOST_PREFIX))
+    if n in SESSION_VARS or n.startswith(SESSION_PREFIX):
+        return True
+    return in_claude and n.startswith(CLAUDE_HOST_PREFIX) and not CLAUDE_KEEP.match(n)
 
 
 def base_env():
@@ -454,6 +459,17 @@ def spawn(args, cwd, env, flags, log=None):
         raise LaunchError("Could not start it: " + r.stderr.decode("utf-8", "replace").strip()[-300:], 500)
 
 
+def efforts_for(fam, entry):
+    """Efforts a request may name: the chosen model's; with no model, the agent's known default model's;
+    with neither, only those every listed model supports, so whatever model runs accepts it."""
+    model = entry or next((x for x in fam["models"] if x["id"] == fam["defaultModel"]), None)
+    if model:
+        return model["efforts"]
+    if not fam["models"]:
+        return fam["efforts"]
+    return [e for e in fam["efforts"] if all(e in m["efforts"] for m in fam["models"])]
+
+
 class LaunchError(Exception):
     def __init__(self, msg, code=400):
         super().__init__(msg)
@@ -542,14 +558,12 @@ class Launcher:
             entry = next((x for x in fam["models"] if x["id"] == model), None)
             if not entry:
                 raise LaunchError("That model is not in the agent's catalog.")
-        if effort:  # with no model chosen, the agent's default model decides which efforts exist
-            default = next((x for x in fam["models"] if x["id"] == fam["defaultModel"]), None)
-            allowed = (entry or default or fam)["efforts"]
-            if effort not in allowed:
+        if effort:
+            if fid == "antigravity" and not entry:
+                raise LaunchError("Pick a model to pick an effort.")
+            if effort not in efforts_for(fam, entry):
                 raise LaunchError("That effort is not offered for this model.")
         if fid == "antigravity":  # agy model ids carry the effort: gemini-4-argon-high
-            if effort and not entry:
-                raise LaunchError("Pick a model to pick an effort.")
             if entry and entry["efforts"] and not effort:
                 effort = entry.get("defaultEffort") or entry["efforts"][0]
             if entry and (f"{model}-{effort}" if effort else model) not in entry["ids"]:

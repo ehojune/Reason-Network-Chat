@@ -59,6 +59,10 @@ class CheckTest(unittest.TestCase):
         self.bad(mode="shell")
         self.bad(model=5)
 
+    def test_unknown_default_allows_only_common_efforts(self):
+        fam = family("codex", [SOL, dict(SOL, id="gpt-x", efforts=["low", "high", "xhigh"])])
+        self.assertEqual(launcher.efforts_for(fam, None), ["low", "high"])
+
     def test_default_model_limits_effort(self):
         self.bad(effort="xhigh")  # another model has it, the default model (gpt-6.1-sol) does not
         self.assertEqual(self.l.check(self.req(effort="high"), set())[5], "high")
@@ -124,6 +128,9 @@ class CatalogParsingTest(unittest.TestCase):
         # Claude host settings go only when this server itself runs inside Claude Code.
         self.assertFalse(launcher.is_session_var("CLAUDE_CODE_USE_BEDROCK"))
         self.assertTrue(launcher.is_session_var("CLAUDE_CODE_SESSION_ID", in_claude=True))
+        for keep in ("CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
+                     "CLAUDE_CODE_SKIP_BEDROCK_AUTH", "CLAUDE_CODE_GIT_BASH_PATH", "CLAUDE_CODE_CLIENT_CERT"):
+            self.assertFalse(launcher.is_session_var(keep, in_claude=True), keep)
 
     def test_shim_is_stable(self):
         a = launcher.shim_dir()

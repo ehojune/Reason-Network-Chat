@@ -919,7 +919,7 @@ function renderTl() {
       h += `<div class="relay ${open ? "open" : ""}" data-id="${esc(m.id)}">
         <button type="button" class="relayHead" aria-expanded="${open}" title="${esc(t(open ? "fold" : "unfold"))}">${open ? "▾" : "▸"} ↪ ${
           esc(short(m.rel.speaker))}${esc(t("passed"))} ${esc(m.to.map(short).join(", "))} · ${fmtT(m.sent_at)}</button>
-        <div class="bub ${raw ? "raw" : "md"}">${raw ? esc(m.body) : html}</div>${
+        <div class="bub ${raw ? "raw" : "md"}"${open ? "" : ' aria-hidden="true"'}>${raw ? esc(m.body) : html}</div>${
           open && rich ? `<div class="foot"><button type="button" class="rawBtn" data-id="${esc(m.id)}">${t(raw ? "formatted" : "raw")}</button></div>` : ""}</div>`;
       continue;
     }

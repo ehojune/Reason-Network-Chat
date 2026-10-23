@@ -14,18 +14,19 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const short = a => (a || '').split('/').pop();
 const t = k => k, fmtT = x => String(x), fmtD = x => String(Math.floor(x / 86400000));
 const $ = s => nodes[s] ||= {innerHTML:'', dataset:{}, addEventListener:() => {}, scrollHeight:0, scrollTop:0, clientHeight:0};
-const relayOf = m => S.relays[m.id] || null;
 const roomOf = k => S.rooms.find(x => k === 'room:' + x.id);
 const shown = m => {const r = roomOf(sel); return r ? r.members.includes(m.sender) || r.members.includes(m.recipient) : !sel || m.sender === sel || m.recipient === sel;};
-const agentTag = () => '', unreadHow = () => '', forwardRooms = () => [];
+const agentTag = () => '', unreadHow = () => '';
+const groupRoomsOf = a => S.rooms.filter(r => r.group && r.members.includes(a));
 const DM_MARK = '\n\n(1:1 message from ';
 const reach = s => s.live === false || s.status === 'offline' ? 'offline' : 'now';
 const base = () => ({me:'p/terminal', now:86400000, sessions:[{address:'p/a', tier:'turn', status:'idle', live:true}, {address:'p/b', tier:'turn', status:'offline', live:true}], rooms:[{id:'r', name:'Room', members:['p/a','p/b']}], messages:[], relays:{}, settled:{}});
 const msg = (id, sender, recipient, body, reply_to=null) => ({id,sender,recipient,body,reply_to,sent_at:85000000,read_at:85100000,wake:1});
 `, c);
 vm.runInContext(part('function mdEmphasis', 'const rawIds'), c);
+vm.runInContext(part('function relayOf', '// Who a group-room message'), c);
 vm.runInContext(part('const MENTION_RE', '// A message to one session'), c);
-vm.runInContext(part('function memberMentions', 'function forwardRooms'), c);
+vm.runInContext(part('function memberMentions', 'async function forwardToRoom'), c);
 vm.runInContext(part('const rawIds', 'function render(force)'), c);
 vm.runInContext(String.raw`
 assert.match(md('[**API docs**](https://example.com/page_(v2))'), /href="https:\/\/example.com\/page_\(v2\)"[^>]*><strong>API docs<\/strong>/);
@@ -102,5 +103,15 @@ S.relays={p1:{room:'r',hop:1,speaker:'p/a',core:'same post',source:'post-1',post
   p2:{room:'r',hop:1,speaker:'p/a',core:'same post',source:'post-2',post:'managed'}};
 TR=troubles(); renderTl(); assert.equal((nodes['#tl'].innerHTML.match(/class="relay /g)||[]).length,2);
 S.relays.p2.source='post-1'; renderTl(); assert.equal((nodes['#tl'].innerHTML.match(/class="relay /g)||[]).length,1);
+S=base(); S.rooms[0].group=true;
+S.messages=[msg('original','p/terminal','p/a','[Group room "test"] same complete envelope'),
+  msg('copy','p/terminal','p/a','[Group room "test"] same complete envelope')];
+S.relays={original:{room:'r',hop:0,speaker:'p/terminal',core:'@a start'}};
+assert.equal(forwardRooms({...msg('reply','p/a','p/terminal','@b result','copy'),to:['p/terminal']}).length,0);
+S.messages.push(msg('separate','p/terminal','p/a',S.messages[0].body));
+S.relays.separate={...S.relays.original};
+assert.equal(relayOf(S.messages[1]),null); // two independently recorded sends are ambiguous
+S.relays.separate.copyOf='original';
+assert.equal(relayOf(S.messages[1]).room,'r'); // proven aliases share one family
 console.log('UI regression checks passed');
 `, c);

@@ -18,5 +18,7 @@
   {"text":"> - ```\n> @a\n@b go", "to":["p/b"]},
   {"text":"````\n@a\n```\n@b\n````\n@c go", "to":["p/c"]},
   {"text":"@p/a @b. @a", "to":["p/a","p/b"]},
-  {"text":"`@모두` @c", "to":["p/c"]}
+  {"text":"`@모두` @c", "to":["p/c"]},
+  {"text":"```\r\n@a\r\n```\r\n@b go", "to":["p/b"]},
+  {"text":"~~~\r@a\r~~~\r@b go", "to":["p/b"]}
 ]

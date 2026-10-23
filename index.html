@@ -787,9 +787,16 @@ function renderTo() {
 // Reuse only a recorded relay with the same sender, recipient and complete envelope, close in time.
 function relayOf(m) {
   if (S.relays[m.id]) return S.relays[m.id];
-  const copy = S.messages.find(x => S.relays[x.id] && x.sender === m.sender
-    && x.recipient === m.recipient && x.body === m.body && Math.abs(x.sent_at - m.sent_at) < 15000);
-  return copy ? S.relays[copy.id] : null;
+  if (m.sender !== S.me || !m.body.startsWith('[Group room "')) return null;
+  const families = new Map();
+  for (const x of S.messages) {
+    const rec = S.relays[x.id];
+    if (!rec || x.sender !== m.sender || x.recipient !== m.recipient || x.body !== m.body) continue;
+    const id = rec.copyOf || x.id, root = rec.copyOf ? S.messages.find(r => r.id === id) : x;
+    if (root && root.sender === m.sender && root.recipient === m.recipient && root.body === m.body
+      && Math.abs(root.sent_at - m.sent_at) <= 15000) families.set(id, rec);
+  }
+  return families.size === 1 ? families.values().next().value : null;
 }
 
 // Who a group-room message goes to, the rule relay.targets() applies: the members it @mentions (@all / @모두:
@@ -798,7 +805,7 @@ const MENTION_RE = /(?<![A-Za-z0-9_@\/])@([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)?|
 // = relay.routing_text: quotes/code describe names without addressing their owners.
 function routingText(text) {
   let fence = null;
-  text = String(text || '').split('\n').map(line => {
+  text = String(text || '').replace(/\r\n?/g, '\n').split('\n').map(line => {
     if (fence) {
       if (new RegExp('^[ \\t]*' + fence[0] + '{' + fence.length + ',}[ \\t]*$').test(line)) fence = null;
       return '';
@@ -867,7 +874,8 @@ function memberMentions(room, body, exclude) {
 }
 function forwardRooms(m) {
   if (m.rel || m.sender === S.me || m.to.length !== 1 || m.to[0] !== S.me) return [];
-  if (m.reply_to && S.relays[m.reply_to]) return [];  // it answers a room message: the room passes it on itself
+  const parent = S.messages.find(x => x.id === m.reply_to);
+  if (m.reply_to && (S.relays[m.reply_to] || parent && relayOf(parent))) return [];  // including proven envelope copies
   return groupRoomsOf(m.sender).filter(r => memberMentions(r, m.body, m.sender).length);
 }
 async function forwardToRoom(id, rid) {

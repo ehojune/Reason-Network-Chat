@@ -174,6 +174,19 @@ class RelayTest(unittest.TestCase):
         self.r.post(self.room, ME, "@a-codex start")
         self.assertNotEqual(*self.sent_to(A))
 
+    def test_forward_refuses_a_proven_copy_before_the_async_scan(self):
+        self.r.post(self.room, ME, "@a-codex start")
+        copy = self.insert(ME, A, self.sent_to(A)[-1])
+        reply = self.insert(A, ME, "@b-claude inspect", reply_to=copy)
+        with self.assertRaises(relay.RelayError) as exc:
+            self.r.forward(self.room, ME, self.row(reply))
+        self.assertEqual(exc.exception.code, 409)
+        self.assertIsNone(self.queued())
+        self.assertFalse(self.r.forwarded)
+        self.r = self.new_relay()
+        self.r.scan(ME)
+        self.assertEqual(len(self.sent_to(B)), 1)
+
     def test_broadcast_is_not_repeated_as_context(self):
         self.r.post(self.room, ME, "@all hello all")
         for m in (A, B, C):

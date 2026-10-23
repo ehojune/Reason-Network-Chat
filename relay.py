@@ -74,7 +74,7 @@ EVERYONE = {"all", "everyone", "모두", "전체"}
 def routing_text(text):
     """Mentions in quotations/code are examples, not addressees. Keep the same rules in the UI."""
     lines, fence = [], None
-    for line in str(text or "").split("\n"):
+    for line in str(text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         if fence:
             if re.fullmatch(r"[ \t]*" + re.escape(fence[0]) + "{" + str(len(fence)) + r",}[ \t]*", line):
                 fence = None
@@ -316,7 +316,7 @@ class Relay:
     def view(self, ids):
         """For the page: the relay record of each listed message, queued hand-offs per room, failed hand-offs."""
         with self.lock:
-            rel = {i: {k: self.sent[i].get(k) for k in ("room", "hop", "core", "speaker", "post", "source")} for i in ids
+            rel = {i: {k: self.sent[i].get(k) for k in ("room", "hop", "core", "speaker", "post", "source", "copyOf")} for i in ids
                    if i in self.sent}
             queued = {}
             for rid, items in self.queue.items():
@@ -687,7 +687,11 @@ class Relay:
         if not targets:
             raise RelayError("It mentions no other member of this room.")
         with self.lock:
-            if msg.get("reply_to") in self.sent:
+            parent = msg.get("reply_to")
+            known = parent in self.sent
+            if parent and self.resolve_record(parent, me):
+                if not known:
+                    self.save()
                 raise RelayError("This answers a room message: the room passes it on by itself.", 409)
             if msg["id"] in self.forwarded:
                 raise RelayError("Already forwarded.", 409)
@@ -695,6 +699,7 @@ class Relay:
             for m in targets:
                 items.append({"reply": msg["id"], "to": m, "sender": msg["sender"], "body": msg["body"], "hop": 1,
                               "at": msg["sent_at"], "implicit": False})
+                self.done[(msg["id"], m)] = msg["sent_at"]
             self.forwarded[msg["id"]] = {"room": room["id"], "to": targets, "at": int(time.time() * 1000)}
             self.save()
         return targets

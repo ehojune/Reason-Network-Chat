@@ -9,6 +9,7 @@ message was marked read, and the turn was appended to the thread's own rollout f
 Everything that decides what runs comes from this computer, never from the page: the thread id from the Reason
 database row, the folder from that row, the prompt from WAKE_PROMPT. One wake per session at a time, with a timeout.
 """
+import json
 import os
 import re
 import subprocess
@@ -16,7 +17,7 @@ import threading
 import time
 from pathlib import Path
 
-from launcher import NOWIN, base_env, find_codex, kill_tree
+from launcher import NOWIN, base_env, find_codex, kill_tree, started_at
 
 WAKE_PROMPT = ("You have unread Reason Network messages. Read them with check_inbox and reply to each sender "
                "with send_message. Do nothing else.")
@@ -33,10 +34,57 @@ class WakeError(Exception):
 
 
 class Waker:
-    def __init__(self, db_rows):
+    def __init__(self, db_rows, home=None):
         self.db_rows = db_rows
         self.lock = threading.Lock()
         self.state = {}  # address -> {"status": "running" | "done" | "failed", "at": ms, "error": str}
+        # Running wakes on disk (pid + creation time): a restarted server still knows them, keeps their timeout
+        # and does not start a second turn in the same conversation.
+        self.path = Path(home) / "wakes.json" if home else None
+        self.running = {}  # address -> {"pid", "started", "at"}
+        for address, w in self.load().items():
+            if isinstance(w, dict) and isinstance(w.get("pid"), int) and w.get("started") \
+                    and started_at(w["pid"]) == w["started"]:
+                self.running[address] = w
+                self.state[address] = {"status": "running", "at": int(w.get("at") or 0), "error": ""}
+                threading.Thread(target=self.adopt, args=(address, w), daemon=True).start()
+        self.save()
+
+    def load(self):
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8")) if self.path else {}
+        except (OSError, ValueError):
+            data = {}
+        return data if isinstance(data, dict) else {}
+
+    def save(self):
+        if not self.path:
+            return
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self.running), encoding="utf-8")
+            os.replace(tmp, self.path)
+        except OSError:
+            pass
+
+    def adopt(self, address, w):
+        """Watch a wake a previous server started: same timeout, then mark it finished."""
+        error = ""
+        while started_at(w["pid"]) == w["started"]:
+            if time.time() * 1000 - w["at"] > TIMEOUT * 1000:
+                kill_tree(w["pid"])
+                error = f"no answer within {TIMEOUT} s"
+                break
+            time.sleep(2)
+        self.finish(address, error)
+
+    def finish(self, address, error):
+        with self.lock:
+            self.running.pop(address, None)
+            self.save()
+            self.state[address] = {"status": "failed" if error else "done", "at": int(time.time() * 1000),
+                                   "error": error[:300]}
 
     def view(self):
         with self.lock:
@@ -98,6 +146,9 @@ class Waker:
             p = subprocess.Popen(args, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE, creationflags=NOWIN,
                                  start_new_session=os.name != "nt")  # its own group, so kill_tree reaches it all
+            with self.lock:
+                self.running[address] = {"pid": p.pid, "started": started_at(p.pid) or "", "at": int(time.time() * 1000)}
+                self.save()
             try:
                 out, err = p.communicate(timeout=TIMEOUT)
                 if p.returncode != 0:
@@ -109,6 +160,4 @@ class Waker:
                 error = f"no answer within {TIMEOUT} s"
         except OSError as e:
             error = str(e)
-        with self.lock:
-            self.state[address] = {"status": "failed" if error else "done", "at": int(time.time() * 1000),
-                                   "error": error[:300]}
+        self.finish(address, error)

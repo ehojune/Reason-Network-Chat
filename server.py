@@ -182,7 +182,7 @@ def folders():
 
 
 RELAY = Relay(STATE, ROOMS, db_rows, send_one)
-WAKER = Waker(db_rows)
+WAKER = Waker(db_rows, STATE)
 
 
 class Handler(BaseHTTPRequestHandler):

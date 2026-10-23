@@ -69,6 +69,35 @@ class WakeTest(unittest.TestCase):
         finally:
             wake.find_codex = old
 
+    def test_running_wake_survives_a_restart(self):
+        import subprocess
+        import time
+        home = tempfile.mkdtemp()
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        try:
+            w = wake.Waker(db_rows, home)
+            w.running["pat/sleepy-codex"] = {"pid": child.pid, "started": wake.started_at(child.pid), "at": int(time.time() * 1000)}
+            w.save()
+            again = wake.Waker(db_rows, home)  # a restarted server
+            self.assertEqual(again.view()["pat/sleepy-codex"]["status"], "running")
+            old = wake.find_codex
+            wake.find_codex = lambda: sys.executable
+            try:
+                with self.assertRaises(wake.WakeError) as e:
+                    again.wake("pat/sleepy-codex", WHO)
+                self.assertEqual(e.exception.code, 409)
+            finally:
+                wake.find_codex = old
+        finally:
+            child.kill()
+            child.wait()
+        for _ in range(50):  # the adopting thread notices the exit
+            if again.view()["pat/sleepy-codex"]["status"] != "running":
+                break
+            time.sleep(0.1)
+        self.assertEqual(again.view()["pat/sleepy-codex"]["status"], "done")
+        self.assertEqual(wake.Waker(db_rows, home).view(), {})
+
     def test_prompt_is_fixed(self):
         self.assertIn("check_inbox", wake.WAKE_PROMPT)
         self.assertIn("send_message", wake.WAKE_PROMPT)

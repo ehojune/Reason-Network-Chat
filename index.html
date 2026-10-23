@@ -956,7 +956,8 @@ function renderTl() {
         <button type="button" class="relayHead" aria-expanded="${open}" title="${esc(t(open ? "fold" : "unfold"))}">${open ? "▾" : "▸"} ↪ ${
           esc(short(m.rel.speaker))}${esc(t("passed"))} ${esc(m.to.map(short).join(", "))} · ${fmtT(m.sent_at)}</button>
         <div class="bub ${raw ? "raw" : "md"}"${open ? "" : " inert"}>${raw ? esc(m.body) : html}</div>${
-          open && rich ? `<div class="foot"><button type="button" class="rawBtn" data-id="${esc(m.id)}">${t(raw ? "formatted" : "raw")}</button></div>` : ""}</div>`;
+          (open && rich) || troubleHtml(m) ? `<div class="foot">${open && rich ? `<button type="button" class="rawBtn" data-id="${
+            esc(m.id)}">${t(raw ? "formatted" : "raw")}</button>` : ""}${troubleHtml(m)}</div>` : ""}</div>`;
       continue;
     }
     const me = m.sender === S.me;

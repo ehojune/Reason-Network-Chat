@@ -458,8 +458,9 @@ async function poll() {
     const r = await fetch("/api/state", {cache: "no-store"});
     const j = await r.json();
     if (j.error) throw new Error(j.error);
-    // Back after the server was unreachable: it restarted, so its token (and maybe its code) changed. Reload.
-    if (lost) { lost = false; if (reloadOnce()) return; }
+    // Back after the server was unreachable. With a boot id the comparison below decides (same id: a network blip,
+    // keep the page and its draft); a server too old to have one may have restarted with a new token: reload.
+    if (lost) { lost = false; if (!j.boot && reloadOnce()) return; }
     // Any other server start (it has a boot id: restarted, upgraded or rolled back) means a new token, and maybe
     // other code: a fresh page from it fits. Only a server too old to have a boot id needs a restart instead.
     if ((j.boot && j.boot !== BOOT) || j.api > API) { if (reloadOnce()) return; }

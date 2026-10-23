@@ -9,6 +9,7 @@ Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（
 
 | 时间 | 变更 | 主要内容 |
 |---|---|---|
+| 18:53 | [#12](https://github.com/ehojune/Reason-Network-Chat/pull/12) | 列表与聊天之间的分隔线可以拖动（选中后也可按 ←/→）；宽度由服务器保存，双击恢复默认。 |
 | 18:48 | [#11](https://github.com/ehojune/Reason-Network-Chat/pull/11) | 右键点击会话或聊天室（或按 Shift+F10）即可收藏并置顶在列表顶部；收藏由服务器保存。 |
 | 18:45 | [#10](https://github.com/ehojune/Reason-Network-Chat/pull/10) | 每个会话在列表、**发送给** 和未读气泡下方用浅白的话标出消息如何送达（立即回复、下一轮才读、离线……）。离线和过往会话默认隐藏；向离线会话发送前会先确认。 |
 | 18:42 | [#9](https://github.com/ehojune/Reason-Network-Chat/pull/9) | 遇到更新前启动的服务器时，页面不再因脚本错误崩溃，而是提示“请重启服务器”；缺少字段也不会出错。 |

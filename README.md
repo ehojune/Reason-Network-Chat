@@ -85,6 +85,7 @@ The included `.claude/launch.json` starts the server for you, so the chat room s
 | Start an agent | **+ New session**. See [below](#start-a-new-session). |
 | Pin a session or room to the top | Right-click it (or Shift+F10 on a focused row) → **★ Favorite**. |
 | Talk to a few sessions at once | **+ Room**. See [Rooms](#rooms). |
+| Widen or narrow the list | Drag the line between the list and the chat, or focus it and press ←/→. Double-click resets. |
 | Switch language | KO / EN / 中 at the top left. |
 
 Messages you send come from `<your name>/terminal`. Replies show up in the timeline on their own.

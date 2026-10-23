@@ -9,6 +9,7 @@ Reason Network Chat에서 바뀐 것을 최신순으로 적는다. 시간은 한
 
 | 시간 | 변경 | 주요 변경사항 |
 |---|---|---|
+| 18:53 | [#12](https://github.com/ehojune/Reason-Network-Chat/pull/12) | 목록과 대화 사이 경계선을 끌어(포커스 후 ←/→도 됨) 목록 폭을 바꾼다. 폭은 서버가 기억하고, 두 번 누르면 원래대로 돌아간다. |
 | 18:48 | [#11](https://github.com/ehojune/Reason-Network-Chat/pull/11) | 세션이나 대화방을 오른쪽 클릭(또는 Shift+F10)해 즐겨찾기로 목록 맨 위에 고정한다. 즐겨찾기는 서버가 저장한다. |
 | 18:45 | [#10](https://github.com/ehojune/Reason-Network-Chat/pull/10) | 세션마다 메시지가 어떻게 닿는지(바로 답함, 다음 차례에 읽음, 오프라인 …)를 목록, **받는 세션**, 안 읽은 말풍선 아래에 쉬운 말로 적는다. 오프라인·기록 세션은 기본으로 숨기고, 오프라인 세션에 보낼 때는 한 번 묻는다. |
 | 18:42 | [#9](https://github.com/ehojune/Reason-Network-Chat/pull/9) | 업데이트 전에 켠 서버를 만난 페이지가 스크립트 오류로 멈추지 않고 "서버를 다시 시작하세요"를 띄운다. 빠진 필드가 있어도 깨지지 않는다. |

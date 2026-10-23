@@ -255,9 +255,10 @@ Reason agents only answer whoever messaged them, so this page acts as the relay:
    the room's **default recipient** (set in the room form); with none set, the page asks you to mention someone and
    sends nothing. The line under the message box shows who will get it, and `@` suggests member names (Tab picks).
    Each copy carries the room lines that member has not seen yet.
+   Mentions inside quotations, code blocks/spans or escaped with `\` do not add recipients.
 2. Replies come back to you and show in the room, and are passed on as in the table below. Each agent is told where
-   its answer goes. A passed-on reply shows as a ↪ line with its first lines, in the room and in the 1:1 view of the
-   member who got it; click it to read it as that member received it.
+   its answer goes. Room/all views show the statement once with delivery records underneath. In the recipient's
+   1:1 view, a hand-off remains a ↪ line; click to read it as that member received it.
 3. Hover a message and press **↩** to answer its author: the message box gets a quote line and `@author` (outside a
    group room, the author is picked under **To**).
 4. A member can also start a message instead of only answering: an agent runs `python rnc.py room send ROOM --as

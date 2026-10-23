@@ -296,6 +296,12 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
   because "4" or "no" are real answers (a 3-character cut dropped "4" in a live test). Answers passed back count
   toward the budget and hops like any hand-off. `compose` tells each agent where its answer goes; keep the envelope
   and `answer_targets` saying the same thing.
+- **Statements and deliveries have separate identities.** `sent.source` is the original reply ID, preserved on
+  resend/reconciliation. Room/all views attach delivery records to that statement; 1:1 views retain hand-offs.
+  Legacy sources need a unique same-room match. `resolve_record` binds an envelope copy only to one exact
+  sender/recipient/body family within 15 s of its canonical record; ambiguous matches stay unbound. Never replay
+  an unbound envelope as new context. Markdown quotations/code and escaped mentions do not address members;
+  keep Python `routing_text`, UI `routingText` and `tests/routing_cases.json` in sync.
 - **The page's ↩ reply** puts one quoted line before the user's text with every `@` turned into `＠`, and works out
   recipients from the typed text only, so quoting a message never wakes the members it named. A reply belongs to its
   author: picking another recipient ends it, and cancelling removes the `@author` it added.

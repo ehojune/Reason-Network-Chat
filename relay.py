@@ -59,6 +59,7 @@ CONTEXT_CHARS = 4000
 LINE_CHARS = 600
 KEEP = 3000  # records of sent messages kept on disk
 RETRIES = 3  # attempts at one hand-off before it is reported as failed
+COPY_MS = 15000  # the daemon may retain a local envelope under another id; same window as UI relayOf
 STORAGE_NOTICE = "Could not save the hand-off; no message was sent. Waiting for storage recovery."
 AMBIGUOUS_NOTICE = "Delivery outcome unknown; Send all now explicitly retries it."
 RECEIPT_NOTICE = "Delivery accepted; waiting for its database receipt."
@@ -68,6 +69,41 @@ SENDER_NOTICE = "Queued delivery belongs to a different sender; it was not retri
 # b-claude; "pat@b-claude" does not).
 MENTION_RE = re.compile(r"(?<![A-Za-z0-9_@/])@([A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)?|모두|전체)")
 EVERYONE = {"all", "everyone", "모두", "전체"}
+
+
+def routing_text(text):
+    """Mentions in quotations/code are examples, not addressees. Keep the same rules in the UI."""
+    lines, fence = [], None
+    for line in str(text or "").split("\n"):
+        if fence:
+            if re.fullmatch(r"[ \t]*" + re.escape(fence[0]) + "{" + str(len(fence)) + r",}[ \t]*", line):
+                fence = None
+            lines.append("")
+        elif re.match(r"[ \t]*>", line):
+            lines.append("")
+        elif (opening := re.match(r"[ \t]*(?:(?:[-+*]|\d+[.)])[ \t]+)?(`{3,}|~{3,})", line)):
+            fence = opening[1]
+            lines.append("")
+        else:
+            lines.append(line)
+    text = "\n".join(lines)
+    runs = list(re.finditer(r"`+", text))
+    after, last = {}, {}
+    for i in range(len(runs) - 1, -1, -1):
+        length = len(runs[i][0])
+        if length in last:
+            after[i] = last[length]
+        last[length] = i
+    pieces, cursor, i = [], 0, 0
+    while i < len(runs):
+        if i not in after:
+            i += 1
+            continue
+        end = runs[after[i]].end()
+        pieces.extend((text[cursor:runs[i].start()], " " * (end - runs[i].start())))
+        cursor, i = end, after[i] + 1
+    pieces.append(text[cursor:])
+    return re.sub(r"(\\+)@", lambda m: m[1] + ("＠" if len(m[1]) % 2 else "@"), "".join(pieces))
 # Placeholders that mean "nothing to say". Short real answers ("4", "no", "없음") are answers and still go back.
 NO_ANSWER = {"(해당 없음)", "해당 없음", "n/a", "(n/a)", "(none)", "no answer", "(no answer)", "nothing to add"}
 
@@ -280,7 +316,7 @@ class Relay:
     def view(self, ids):
         """For the page: the relay record of each listed message, queued hand-offs per room, failed hand-offs."""
         with self.lock:
-            rel = {i: {k: self.sent[i].get(k) for k in ("room", "hop", "core", "speaker", "post")} for i in ids
+            rel = {i: {k: self.sent[i].get(k) for k in ("room", "hop", "core", "speaker", "post", "source")} for i in ids
                    if i in self.sent}
             queued = {}
             for rid, items in self.queue.items():
@@ -339,12 +375,41 @@ class Relay:
         if not room or not room.get("group") or rec.get("to") not in room["members"]:
             raise RelayError("That room is gone, or the member left it.", 409)
         ok, err = self.deliver(room, rec["to"], me, rec["speaker"], rec["core"], rec.get("hop", 0),
-                               implicit=bool(rec.get("implicit")), post=rec.get("post"))
+                               implicit=bool(rec.get("implicit")), post=rec.get("post"), source=rec.get("source"))
         if not ok:
             raise RelayError(err or "The message could not be sent.", 502)
         return rec["to"]
 
     # ---------- composing ----------
+    def resolve_record(self, mid, me, row=None):
+        """Recover a daemon envelope copy only from one proven delivery family. Caller holds self.lock."""
+        if mid in self.sent:
+            return self.sent[mid]
+        if row is None:
+            found = self.db_rows("select id, sender, recipient, body, sent_at from messages where id = ?", (mid,))
+            if len(found) != 1:
+                return None
+            row = found[0]
+        if row["sender"] != me or not row["body"].startswith('[Group room "'):
+            return None
+        twins = self.db_rows("select id from messages where sender = ? and recipient = ? and body = ?"
+                             " and sent_at between ? and ?", (me, row["recipient"], row["body"],
+                                                             row["sent_at"] - COPY_MS, row["sent_at"] + COPY_MS))
+        families = {}
+        for twin in twins:
+            rec = self.sent.get(twin["id"])
+            if rec and rec.get("to") == row["recipient"]:
+                original = rec.get("copyOf", twin["id"])
+                canonical = self.sent.get(original)
+                if canonical and isinstance(canonical.get("at"), (int, float)) \
+                        and abs(canonical["at"] - row["sent_at"]) <= COPY_MS:
+                    families[original] = canonical
+        if len(families) != 1:
+            return None  # two actual sends with identical text are still two events
+        original, rec = next(iter(families.items()))
+        self.sent[mid] = dict(rec, copyOf=original, at=row["sent_at"])
+        return self.sent[mid]
+
     def lines_for(self, room, member, me, skip=None, current=None):
         """Room lines the member has not seen yet, oldest first: (sent_at, label, text). Left out because they
         follow as the message itself: `skip`, the reply being handed off, and `current`, the (speaker, text) being
@@ -364,7 +429,9 @@ class Relay:
                 continue
             if r["sender"] not in everyone or r["recipient"] not in everyone or member in (r["sender"], r["recipient"]):
                 continue  # not room traffic, or traffic the member took part in
-            rec = self.sent.get(r["id"])
+            rec = self.resolve_record(r["id"], me, r)
+            if not rec and r["sender"] == me and r["body"].startswith('[Group room "'):
+                continue  # never replay an unattributed envelope as a new 1:1 instruction
             if rec and (rec.get("hop", 0) > 0 or (rec["speaker"], rec["core"]) in got
                         or (rec["speaker"], rec["core"]) == current):
                 continue  # a passed-on reply (the reply itself is a line), a copy this member got, or this message
@@ -412,7 +479,7 @@ class Relay:
             if lines else ""
         return f"{head}{earlier}\n---\n{label(speaker, me, room)}: {core}", (lines[-1][0] if lines else 0)
 
-    def deliver(self, room, member, me, speaker, core, hop, skip=None, skip_at=0, item=None, implicit=False, post=None):
+    def deliver(self, room, member, me, speaker, core, hop, skip=None, skip_at=0, item=None, implicit=False, post=None, source=None):
         """Compose and send one relayed message. The CLI runs without self.lock, so polling never waits on it.
         A queued `item` leaves the queue in the same save that records the message as sent: a restart in between
         cannot send it twice."""
@@ -423,9 +490,10 @@ class Relay:
                 body, newest = flight["body"], flight["newest"]
             else:
                 body, newest = self.compose(room, member, me, speaker, core, skip, implicit)
+                # Distinct sends have distinct envelopes, including human posts and explicit resends.
+                body = body.replace("\nMembers:", f"\nDelivery: {uuid.uuid4().hex}\nMembers:", 1)
                 if item is not None:
                     # A unique envelope identifies this exact delivery in the daemon's read-only database.
-                    body = body.replace("\nMembers:", f"\nDelivery: {uuid.uuid4().hex}\nMembers:", 1)
                     item["flight"] = {"body": body, "newest": newest, "me": me}
             if item is not None:
                 forced = item.pop("force", None)  # consume one explicit retry durably before the side effect
@@ -471,7 +539,8 @@ class Relay:
                 return False, "Waiting for delivery receipt"
             if rows:
                 self.sent[rows[0]["id"]] = {"room": room["id"], "hop": hop, "core": core, "speaker": speaker,
-                                            "to": member, "at": rows[0]["sent_at"], "implicit": implicit, "post": post}
+                                            "to": member, "at": rows[0]["sent_at"], "implicit": implicit, "post": post,
+                                            "source": source or skip}
             key = f'{room["id"]}|{member}'
             # Only as far as the lines it was given (a reply that landed while this was sent stays "missed"),
             # plus the handed-off reply itself, which it just got as the message.
@@ -495,7 +564,7 @@ class Relay:
         row = rows[0]
         self.sent[row["id"]] = {"room": room["id"], "hop": item["hop"], "core": item["body"],
                                 "speaker": item["sender"], "to": item["to"], "at": row["sent_at"],
-                                "implicit": bool(item.get("implicit")), "post": item.get("post")}
+                                "implicit": bool(item.get("implicit")), "post": item.get("post"), "source": item["reply"]}
         key = f'{room["id"]}|{item["to"]}'
         self.seen[key] = max(self.seen.get(key, 0), flight.get("newest", 0), item.get("at", 0))
         self.dequeue(room["id"], item, me)
@@ -530,7 +599,7 @@ class Relay:
         names = {handle(m, room).lower(): m for m in room["members"]}
         names.update({m.lower(): m for m in room["members"]})
         found = []
-        for n in MENTION_RE.findall(text):
+        for n in MENTION_RE.findall(routing_text(text)):
             n = n.lower().rstrip(".")
             if not everyone and n in EVERYONE:
                 continue
@@ -654,7 +723,9 @@ class Relay:
                                     " and reply_to is not null and sent_at >= ? order by sent_at", (me, self.since))
                 changed = False
                 for r in rows:
-                    rec = self.sent.get(r["reply_to"])
+                    known = r["reply_to"] in self.sent
+                    rec = self.resolve_record(r["reply_to"], me)
+                    changed |= bool(rec) and not known
                     room = self.rooms.get(rec["room"]) if rec else None
                     targets = [] if not room or not room.get("group") or r["sender"] not in room["members"] \
                         else self.answer_targets(room, rec, r)

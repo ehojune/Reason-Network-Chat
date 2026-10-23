@@ -71,6 +71,8 @@ body.resizing { cursor: col-resize; user-select: none; }
 .relay .bub { font-size: 13px; color: var(--text); background: var(--hover); border-style: dashed; margin-top: 3px;
   cursor: pointer; }
 .relay.open .bub { cursor: auto; }
+.deliveries { margin: 3px 0 0 16px; color: var(--muted); font-size: 12px; }
+.deliveries > div { margin-top: 2px; }
 .relay:not(.open) .bub { max-height: 3.1em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 55%, transparent); }
 #paused { color: var(--err); }
 #trouble { color: var(--err); font-size: 12px; }
@@ -576,13 +578,13 @@ const T = {
 };
 Object.assign(T.ko, {tNoAnswer: "읽었지만 답변 없음", viewTrouble: "보기", troubleTitle: "답을 못 받은 메시지", troubleHelp: "최근 24시간 안에 보낸 메시지입니다. 실패 답변을 받았거나, 읽은 지 10분이 지났고 worker가 작업 중이 아니면 표시합니다. 내용 확인만으로는 다시 보내지 않습니다.",
   troubleEmpty: "이 화면에 남은 항목이 없습니다.", goOriginal: "원문으로 이동", missingOriginal: "원문이 현재 불러온 기록에 없습니다.", switchedAll: "전체 메시지에서 원문을 표시합니다.",
-  ack: "✓ 확인(답 없음)", failureDetail: "실패 사유", dismissOne: "덮어 두기"});
+  ack: "✓ 확인(답 없음)", failureDetail: "실패 사유", dismissOne: "덮어 두기", deliveries: "전달 기록"});
 Object.assign(T.en, {viewTrouble: "View", troubleTitle: "Messages without an answer", troubleHelp: "Messages sent in the last 24 hours: a failure reply, or read over 10 minutes ago while the worker is not working. Viewing this list never resends a message.",
   troubleEmpty: "No remaining items in this view.", goOriginal: "Go to the original", missingOriginal: "The original is not in the loaded history.", switchedAll: "Showing the original in All messages.",
-  ack: "✓ Acknowledged (no answer)", failureDetail: "Failure details", dismissOne: "Put aside"});
+  ack: "✓ Acknowledged (no answer)", failureDetail: "Failure details", dismissOne: "Put aside", deliveries: "Delivery records"});
 Object.assign(T.zh, {viewTrouble: "查看", troubleTitle: "没有得到回答的消息", troubleHelp: "最近 24 小时内发送的消息：收到失败回复，或已读超过 10 分钟且 worker 未在工作。查看列表不会再次发送消息。",
   troubleEmpty: "当前视图没有剩余项目。", goOriginal: "跳转到原文", missingOriginal: "已加载的记录中没有原文。", switchedAll: "已在全部消息中显示原文。",
-  ack: "✓ 已确认（无回答）", failureDetail: "失败详情", dismissOne: "搁置"});
+  ack: "✓ 已确认（无回答）", failureDetail: "失败详情", dismissOne: "搁置", deliveries: "转发记录"});
 const LOCALE = {ko: "ko-KR", en: "en-US", zh: "zh-CN"};
 const store = {get: k => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
@@ -592,7 +594,7 @@ let lang = new URLSearchParams(location.search).get("lang") || store.get("reason
 if (!T[lang]) lang = "en";
 const t = k => T[lang][k];
 const TOKEN = document.querySelector('meta[name="reason-chat-token"]').content;
-const API = 16;  // must match API in server.py
+const API = 17;  // must match API in server.py
 const BOOT = document.querySelector('meta[name="reason-chat-boot"]').content;  // which server start served this page
 // Reload to pick up a restarted or newer server, at most once a minute so a broken setup cannot loop.
 function reloadOnce() {
@@ -778,6 +780,7 @@ function renderTo() {
   const want = room ? (live.some(s => s.address === cur) ? cur : `room:${room.id}`)
     : sel && live.some(s => s.address === sel) ? sel : cur;
   if (want && [...$("#to").options].some(o => o.value === want)) $("#to").value = want;
+  renderRcpt();
 }
 
 // The network can store a second local copy under another id after the relay records the first.
@@ -792,13 +795,42 @@ function relayOf(m) {
 // Who a group-room message goes to, the rule relay.targets() applies: the members it @mentions (@all / @모두:
 // everyone), else the room's default recipient, else nobody (the page then asks for a mention).
 const MENTION_RE = /(?<![A-Za-z0-9_@\/])@([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)?|모두|전체)/g;  // = relay.MENTION_RE
+// = relay.routing_text: quotes/code describe names without addressing their owners.
+function routingText(text) {
+  let fence = null;
+  text = String(text || '').split('\n').map(line => {
+    if (fence) {
+      if (new RegExp('^[ \\t]*' + fence[0] + '{' + fence.length + ',}[ \\t]*$').test(line)) fence = null;
+      return '';
+    }
+    if (/^[ \t]*>/.test(line)) return '';
+    const opening = line.match(/^[ \t]*(?:(?:[-+*]|\d+[.)])[ \t]+)?(`{3,}|~{3,})/);
+    if (opening) { fence = opening[1]; return ''; }
+    return line;
+  }).join('\n');
+  const runs = [...text.matchAll(/`+/g)], after = new Map(), last = new Map();
+  for (let i = runs.length - 1; i >= 0; i--) {
+    const n = runs[i][0].length;
+    if (last.has(n)) after.set(i, last.get(n));
+    last.set(n, i);
+  }
+  const pieces = []; let cursor = 0;
+  for (let i = 0; i < runs.length; i++) {
+    if (!after.has(i)) continue;
+    const j = after.get(i), end = runs[j].index + runs[j][0].length;
+    pieces.push(text.slice(cursor, runs[i].index), ' '.repeat(end - runs[i].index));
+    cursor = end; i = j;
+  }
+  pieces.push(text.slice(cursor));
+  return pieces.join('').replace(/(\\+)@/g, (_, slashes) => slashes + (slashes.length % 2 ? '＠' : '@'));
+}
 const EVERYONE = ["all", "everyone", "모두", "전체"];
 const handleOf = (addr, room) => room.members.filter(m => short(m) === short(addr)).length === 1 ? short(addr) : addr;
 function roomTargets(room, body) {
   const names = {};
   room.members.forEach(m => { names[handleOf(m, room).toLowerCase()] = m; names[m.toLowerCase()] = m; });
   const found = [];
-  for (const [, raw] of body.matchAll(MENTION_RE)) {
+  for (const [, raw] of routingText(body).matchAll(MENTION_RE)) {
     const n = raw.toLowerCase().replace(/\.+$/, "");
     for (const m of EVERYONE.includes(n) ? room.members : [names[n]]) if (m && !found.includes(m)) found.push(m);
   }
@@ -825,8 +857,10 @@ function memberMentions(room, body, exclude) {
   const names = {};
   room.members.forEach(m => { names[handleOf(m, room).toLowerCase()] = m; names[m.toLowerCase()] = m; });
   const found = [];
-  for (const [, raw] of body.matchAll(MENTION_RE)) {
-    const m = names[raw.toLowerCase().replace(/\.+$/, "")];
+  for (const [, raw] of routingText(body).matchAll(MENTION_RE)) {
+    const n = raw.toLowerCase().replace(/\.+$/, "");
+    if (EVERYONE.includes(n)) continue;
+    const m = names[n];
     if (m && m !== exclude && !found.includes(m)) found.push(m);
   }
   return found;
@@ -1019,7 +1053,47 @@ function ackHtml(ids) {
   return `<details class="ack"><summary>${esc(t("ack"))} · ${esc(names)}</summary>${replies.map(x =>
     `<div data-ids="${esc(JSON.stringify([x.id]))}">${esc(x.sender)} · ${esc(fmtD(x.sent_at))} ${fmtT(x.sent_at)}<details><summary>${esc(t("raw"))}</summary><pre>${esc(x.body)}</pre></details></div>`).join("")}</details>`;
 }
-const messageIds = m => esc(JSON.stringify(m.all.map(x => x.id)));
+const relatedIds = m => [...m.all, ...(m.deliveries || [])].map(x => x.id);
+const messageIds = m => esc(JSON.stringify(relatedIds(m)));
+function deliveryIndex(rows, byId) {
+  // The room shows a statement once; a 1:1 view still shows the exact hand-off it received.
+  const room = roomOf(sel), links = new Map(), bySource = new Map();
+  if (sel && !room?.group) return {links, bySource};
+  const rels = new Map(S.messages.map(m => [m.id, relayOf(m)])), candidates = new Map(), visible = new Set(rows.map(m => m.id));
+  for (const m of rows) if (m.sender !== S.me && m.recipient === S.me && !rels.get(m.id)) {
+    if (!candidates.has(m.body)) candidates.set(m.body, []);
+    candidates.get(m.body).push(m);
+  }
+  for (const m of rows) {
+    const rel = rels.get(m.id);
+    if (!rel || rel.hop <= 0 || rel.post || rel.speaker === S.me) continue;
+    const valid = s => s && s.id !== m.id && s.sender === rel.speaker && s.recipient === S.me
+      && s.body === rel.core && s.sent_at <= m.sent_at && !rels.get(s.id) && visible.has(s.id) && !isAck(s);
+    let src = rel.source ? byId[rel.source] : null;
+    if (rel.source) { if (!valid(src)) continue; }
+    else {
+      // Old records have no source ID. An exact, unique same-room parent is required;
+      // repeated real answers such as "4" remain distinct when attribution is ambiguous.
+      const matches = (candidates.get(rel.core) || []).filter(s => valid(s)
+        && (rels.get(s.reply_to)?.room === rel.room || S.forwarded?.[s.id]?.room === rel.room));
+      if (matches.length !== 1) continue;
+      src = matches[0];
+    }
+    links.set(m.id, src.id);
+    if (!bySource.has(src.id)) bySource.set(src.id, []);
+    bySource.get(src.id).push(m);
+  }
+  return {links, bySource};
+}
+function deliveryHtml(deliveries) {
+  if (!deliveries?.length) return '';
+  return `<div class="deliveries" role="note" aria-label="${esc(t('deliveries'))}">${deliveries.map(d => {
+    const rel = relayOf(d), room = S.rooms.find(r => r.id === rel.room);
+    const item = {...d, all: [d], to: [d.recipient]};
+    return `<div>↪ ${esc(t('deliveries'))}: #${esc(room?.name || rel.room)} → ${esc(short(d.recipient))} · ${fmtT(d.sent_at)} · ${
+      esc(t(d.read_at ? 'read' : 'unread'))}${troubleHtml(item)}</div>`;
+  }).join('')}</div>`;
+}
 function jumpOriginal(id) {
   if (!S.messages.some(x => x.id === id)) { say(t("missingOriginal"), true); return; }
   const find = () => [...$("#tl").querySelectorAll("[data-ids]")].find(x => JSON.parse(x.dataset.ids).includes(id));
@@ -1039,18 +1113,22 @@ function renderTl() {
   const tl = $("#tl");
   const atBottom = tl.scrollHeight - tl.scrollTop - tl.clientHeight < 80;
   const byId = Object.fromEntries(S.messages.map(m => [m.id, m]));
+  const rows = S.messages.filter(shown), {links, bySource} = deliveryIndex(rows, byId);
   // A room send is one row per member; show it once, with every recipient.
   // Group rooms: rows this page relayed carry the room context; show the plain message (rel.core) instead.
   const ms = [];
   // Same sender, text, quote and wake within 15 s: one send to several sessions, even with replies in between.
   const same = (g, m) => g.sender === m.sender && g.body === m.body && g.reply_to === m.reply_to && g.wake === m.wake
-    && !!g.rel === !!m.rel && m.sent_at - g.sent_at < 15000 && !g.to.includes(m.recipient);
-  for (const raw of S.messages.filter(shown)) {
+    && !!g.rel === !!m.rel && (!g.rel || g.rel.room === m.rel.room && g.rel.speaker === m.rel.speaker
+      && g.rel.hop === m.rel.hop && g.rel.source === m.rel.source && g.rel.post === m.rel.post)
+    && m.sent_at - g.sent_at < 15000 && !g.to.includes(m.recipient);
+  for (const raw of rows) {
+    if (links.has(raw.id)) continue;
     if (isAck(raw) && byId[raw.reply_to] && shown(byId[raw.reply_to])) continue;
-    const rel = relayOf(raw), m = rel ? {...raw, body: rel.core, rel} : raw;
+    const rel = relayOf(raw), m = {...raw, ...(rel ? {body: rel.core, rel} : {}), deliveries: bySource.get(raw.id) || []};
     let g = null;
     for (let i = ms.length - 1; i >= 0 && m.sent_at - ms[i].sent_at < 15000; i--) if (same(ms[i], m)) { g = ms[i]; break; }
-    if (g) { g.to.push(m.recipient); g.all.push(m); continue; }
+    if (g) { g.to.push(m.recipient); g.all.push(m); g.deliveries.push(...m.deliveries); continue; }
     ms.push({...m, to: [m.recipient], all: [m]});
   }
   if (!ms.length) { tl.innerHTML = `<div class="empty">${t("empty")}</div>`; return; }
@@ -1062,7 +1140,7 @@ function renderTl() {
     // else: your own text quoting such an error stays a bubble.
     if (!m.rel && m.reply_to && m.sender !== S.me && isFailure(m.body)) {
       h += `<div class="sysErr" role="note" data-ids="${messageIds(m)}">⚠ ${esc(short(m.sender))} · ${fmtT(m.sent_at)} · ${esc(t("wFailed"))}<div class="errText">${
-        esc(m.body.replace(/^The [A-Za-z ]+ worker failed: /, "").slice(0, 400))}</div></div>`;
+        esc(m.body.replace(/^The [A-Za-z ]+ worker failed: /, "").slice(0, 400))}</div>${deliveryHtml(m.deliveries)}</div>`;
       continue;
     }
     if (isAck(m)) { h += ackHtml([m.reply_to]); continue; }
@@ -1099,7 +1177,7 @@ function renderTl() {
         → ${m.to.map(a => `${agentTag(a, null, true)}<span class="who" data-a="${esc(a)}">${esc(short(a))}</span>`).join(", ")} · ${fmtT(m.sent_at)}${
         me ? "" : `<button type="button" class="replyBtn" data-id="${esc(m.id)}" title="${esc(t("reply"))}" aria-label="${esc(t("reply"))}">↩</button>`}</div>
       <div class="bub ${raw ? "raw" : "md"}">${m.reply_to ? `<button type="button" class="quote" data-target="${esc(m.reply_to)}" title="${esc(t("goOriginal"))}">↪ ${q ? `${esc(short(qr ? qr.speaker : q.sender))}: ${esc((qr ? qr.core : q.body).split(DM_MARK)[0].slice(0, 160))}` : esc(t("missingOriginal"))}</button>` : ""}${raw ? esc(text) : html}</div>
-      <div class="foot">${esc(flags)}${me ? troubleHtml(m) : ""}${rich ? `<button type="button" class="rawBtn" data-id="${esc(m.id)}">${t(raw ? "formatted" : "raw")}</button>` : ""}${fwdHtml(m)}</div>${ackHtml(m.all.map(x => x.id))}</div>`;
+      <div class="foot">${esc(flags)}${me ? troubleHtml(m) : ""}${rich ? `<button type="button" class="rawBtn" data-id="${esc(m.id)}">${t(raw ? "formatted" : "raw")}</button>` : ""}${fwdHtml(m)}</div>${deliveryHtml(m.deliveries)}${ackHtml(relatedIds(m))}</div>`;
   }
   tl.innerHTML = h;
   if (atBottom || tl.dataset.first !== "0") { tl.scrollTop = tl.scrollHeight; tl.dataset.first = "0"; }

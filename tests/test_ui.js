@@ -6,7 +6,8 @@ const source = fs.readFileSync(require('node:path').join(__dirname, '..', 'index
 new vm.Script(source.split('<script>')[1].split('</script>')[0]);
 const part = (from, to) => source.slice(source.indexOf(from), source.indexOf(to));
 const nodes = {};
-const c = vm.createContext({assert, console, setTimeout: () => {}, nodes});
+const routingCases = JSON.parse(fs.readFileSync(require('node:path').join(__dirname, 'routing_cases.json'), 'utf8'));
+const c = vm.createContext({assert, console, setTimeout: () => {}, nodes, routingCases});
 vm.runInContext(String.raw`
 let S, sel = '';
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -23,6 +24,8 @@ const base = () => ({me:'p/terminal', now:86400000, sessions:[{address:'p/a', ti
 const msg = (id, sender, recipient, body, reply_to=null) => ({id,sender,recipient,body,reply_to,sent_at:85000000,read_at:85100000,wake:1});
 `, c);
 vm.runInContext(part('function mdEmphasis', 'const rawIds'), c);
+vm.runInContext(part('const MENTION_RE', '// A message to one session'), c);
+vm.runInContext(part('function memberMentions', 'function forwardRooms'), c);
 vm.runInContext(part('const rawIds', 'function render(force)'), c);
 vm.runInContext(String.raw`
 assert.match(md('[**API docs**](https://example.com/page_(v2))'), /href="https:\/\/example.com\/page_\(v2\)"[^>]*><strong>API docs<\/strong>/);
@@ -62,5 +65,42 @@ assert.ok(html.includes('data-target="m"')); assert.ok(html.includes('ack8'));
 S.messages.push(msg('missing','p/a','p/terminal','answer','unloaded')); renderTl();
 assert.ok(nodes['#tl'].innerHTML.includes('missingOriginal'));
 assert.ok(!noAnswer('4')); assert.ok(!noAnswer('no')); assert.ok(noAnswer('—'));
+for (const example of routingCases) {
+  const room={members:['p/a','p/b','p/c']};
+  assert.equal(JSON.stringify(roomTargets(room,example.text).to),JSON.stringify(example.to),example.text);
+  assert.equal(JSON.stringify(memberMentions(room,example.text,'')),JSON.stringify(example.to),example.text);
+}
+assert.equal(memberMentions({members:['p/all','p/a']},'@all','').length,0);
+S=base(); sel=''; S.rooms[0].group=true;
+S.messages=[msg('seed','p/terminal','p/a','question'), msg('source','p/a','p/terminal','@b result','seed'),
+  msg('d1','p/terminal','p/b','envelope one'),msg('d2','p/terminal','p/b','envelope two'),
+  msg('answer','p/b','p/terminal','4','d1')];
+S.relays={seed:{room:'r',hop:0,speaker:'p/terminal',core:'question'},
+  d1:{room:'r',hop:1,speaker:'p/a',core:'@b result',source:'source'},
+  d2:{room:'r',hop:1,speaker:'p/a',core:'@b result',source:'source'}};
+TR=troubles(); renderTl(); html=nodes['#tl'].innerHTML;
+assert.equal((html.match(/class="relay /g)||[]).length,0); // copies are delivery records, not new statements
+assert.equal((html.match(/class="msg /g)||[]).length,3); // "4" remains a real answer
+assert.equal((html.match(/class="deliveries"/g)||[]).length,1);
+assert.ok(html.includes('data-ids="[&quot;source&quot;,&quot;d1&quot;,&quot;d2&quot;]"'));
+assert.ok(html.includes('data-target="d1"')); // a quote of a folded delivery still finds its source bubble
+sel='p/b'; renderTl(); assert.equal((nodes['#tl'].innerHTML.match(/class="relay /g)||[]).length,2);
+sel='room:r'; renderTl(); assert.equal((nodes['#tl'].innerHTML.match(/class="relay /g)||[]).length,0);
+delete S.relays.d1.source; delete S.relays.d2.source;
+renderTl(); assert.equal((nodes['#tl'].innerHTML.match(/class="relay /g)||[]).length,0); // proven legacy source
+S.messages.push(msg('separate','p/a','p/terminal','@b result','seed'));
+renderTl(); assert.equal((nodes['#tl'].innerHTML.match(/class="relay /g)||[]).length,2); // ambiguous legacy text is kept
+S.relays.d1.source='not-loaded'; S.relays.d2.source='not-loaded'; S.messages.pop();
+renderTl(); assert.equal((nodes['#tl'].innerHTML.match(/class="relay /g)||[]).length,2); // no guessing when source is absent
+S.relays.d1.source='source'; S.relays.d2.source='source';
+S.messages.push(msg('fail','p/b','p/terminal',"You've hit your session limit",'d2'));
+TR=troubles(); renderTl(); html=nodes['#tl'].innerHTML;
+assert.ok(html.includes('data-id="d2"')); // inspection/retry stays available on the folded delivery
+S=base(); sel='';
+S.messages=[msg('p1','p/terminal','p/a','envelope one'),msg('p2','p/terminal','p/b','envelope two')];
+S.relays={p1:{room:'r',hop:1,speaker:'p/a',core:'same post',source:'post-1',post:'managed'},
+  p2:{room:'r',hop:1,speaker:'p/a',core:'same post',source:'post-2',post:'managed'}};
+TR=troubles(); renderTl(); assert.equal((nodes['#tl'].innerHTML.match(/class="relay /g)||[]).length,2);
+S.relays.p2.source='post-1'; renderTl(); assert.equal((nodes['#tl'].innerHTML.match(/class="relay /g)||[]).length,1);
 console.log('UI regression checks passed');
 `, c);

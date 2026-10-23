@@ -1,0 +1,22 @@
+[
+  {"text":"@a go", "to":["p/a"]},
+  {"text":"안녕@a에게 부탁", "to":["p/a"]},
+  {"text":"email@a", "to":[]},
+  {"text":"`@a` @b go", "to":["p/b"]},
+  {"text":"> @a quoted\n@b go", "to":["p/b"]},
+  {"text":"  > @a quoted\n\n@c go", "to":["p/c"]},
+  {"text":"```shell\n@a\n```\n@b go", "to":["p/b"]},
+  {"text":"~~~\n@a\n~~~\n@b go", "to":["p/b"]},
+  {"text":"- ```python\n  @a\n  ```\n@b go", "to":["p/b"]},
+  {"text":"1. ~~~\n   @a\n   ~~~\n@b go", "to":["p/b"]},
+  {"text":"``@a ` @c`` @b go", "to":["p/b"]},
+  {"text":"@a go\n```shell\n@b example", "to":["p/a"]},
+  {"text":"\\@a @b go", "to":["p/b"]},
+  {"text":"\\\\@a go", "to":["p/a"]},
+  {"text":"`literal @a", "to":["p/a"]},
+  {"text":"`@all` @b go", "to":["p/b"]},
+  {"text":"> - ```\n> @a\n@b go", "to":["p/b"]},
+  {"text":"````\n@a\n```\n@b\n````\n@c go", "to":["p/c"]},
+  {"text":"@p/a @b. @a", "to":["p/a","p/b"]},
+  {"text":"`@모두` @c", "to":["p/c"]}
+]

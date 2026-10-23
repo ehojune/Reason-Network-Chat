@@ -210,7 +210,9 @@ def state():
         own = s["address"].split("/", 1)[0] == person and s.get("machine") in (None, who.get("machine"))
         s["inner"] = inner_of(s["name"], workers) if own else None
         # Possibly stuck: a worker of this computer busy for STUCK_MS with no new step and no new log line.
-        if own and s.get("tier") == "turn" and s.get("status") == "busy" and s.get("live"):
+        # Only a `serve` worker (recorded here, or a serve process with that name runs here), not a one-off ask.
+        serving = LAUNCHER.serving or set()
+        if own and s.get("status") == "busy" and s.get("live") and (s.get("worker") or s["name"] in serving):
             with _lock:
                 act = dict(_activity.get(s["address"]) or {})
             now_ = int(time.time() * 1000)

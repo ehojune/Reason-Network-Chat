@@ -111,6 +111,9 @@ get the new token, and a newer server also triggers a reload.
 - `POST /api/wake` `{address}` → wakes a Codex session (`wake.py`): yours, on this computer, not busy, with unread
   messages. The thread id comes from `sessions.key` (`codex:<uuid>`), the folder from `sessions.cwd`, the prompt is
   `WAKE_PROMPT`; nothing from the request is run. Answers at once; progress shows in `wakes{}`.
+  The wake starts detached (like a worker, log in `logs/wake-<name>.log`) and is judged from the database: `done`
+  when the messages unread at its start are read, else `failed` with the log's last lines. `wakes.json` lets a
+  restarted server watch running wakes to the end and judge those that ended while it was down.
 - `POST /api/stop` `{name}` → stops a worker this server started: Ctrl+C first (so the network shows it as stopped),
   then a kill after 10 s.
 

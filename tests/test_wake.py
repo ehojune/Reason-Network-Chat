@@ -1,7 +1,9 @@
 """Who may be woken, with a fake database: python -m unittest discover tests"""
 import os
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -27,10 +29,17 @@ WHO = {"person": "pat", "machine": "box", "sessions": [
 ]}
 
 
+STILL_UNREAD = {"n": 0}  # what a finished wake left unread, for judge()
+
+
 def db_rows(sql, params=()):
     if "from sessions" in sql:
         row = ROWS.get(params[0])
         return [row] if row else []
+    if "where id in" in sql:
+        return [{"n": STILL_UNREAD["n"]}]
+    if sql.startswith("select id from messages"):
+        return [{"id": f"m{i}"} for i in range(UNREAD.get(params[0], 0))]
     return [{"n": UNREAD.get(params[0], 0)}]
 
 
@@ -69,16 +78,25 @@ class WakeTest(unittest.TestCase):
         finally:
             wake.find_codex = old
 
+    def adopted(self, home, child, ids):
+        w = wake.Waker(db_rows, home)
+        w.running["pat/sleepy-codex"] = {"pid": child.pid, "started": wake.started_at(child.pid) or "x",
+                                         "at": int(time.time() * 1000), "ids": ids, "log": os.path.join(home, "none.log")}
+        w.save()
+        return wake.Waker(db_rows, home, poll=0.05)  # a restarted server
+
+    def settle(self, w):
+        for _ in range(100):
+            if w.view()["pat/sleepy-codex"]["status"] != "running":
+                break
+            time.sleep(0.05)
+        return w.view()["pat/sleepy-codex"]
+
     def test_running_wake_survives_a_restart(self):
-        import subprocess
-        import time
         home = tempfile.mkdtemp()
         child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
         try:
-            w = wake.Waker(db_rows, home)
-            w.running["pat/sleepy-codex"] = {"pid": child.pid, "started": wake.started_at(child.pid), "at": int(time.time() * 1000)}
-            w.save()
-            again = wake.Waker(db_rows, home)  # a restarted server
+            again = self.adopted(home, child, ["m1", "m2"])
             self.assertEqual(again.view()["pat/sleepy-codex"]["status"], "running")
             old = wake.find_codex
             wake.find_codex = lambda: sys.executable
@@ -91,12 +109,21 @@ class WakeTest(unittest.TestCase):
         finally:
             child.kill()
             child.wait()
-        for _ in range(50):  # the adopting thread notices the exit
-            if again.view()["pat/sleepy-codex"]["status"] != "running":
-                break
-            time.sleep(0.1)
-        self.assertEqual(again.view()["pat/sleepy-codex"]["status"], "done")
+        STILL_UNREAD["n"] = 0
+        self.assertEqual(self.settle(again)["status"], "done")  # its messages were read
         self.assertEqual(wake.Waker(db_rows, home).view(), {})
+
+    def test_outcome_is_read_from_the_database(self):
+        home = tempfile.mkdtemp()
+        child = subprocess.Popen([sys.executable, "-c", "pass"])
+        child.wait()  # ended while the server was down
+        STILL_UNREAD["n"] = 1
+        try:
+            done = self.settle(self.adopted(home, child, ["m1"]))
+        finally:
+            STILL_UNREAD["n"] = 0
+        self.assertEqual(done["status"], "failed")
+        self.assertIn("still unread", done["error"])
 
     def test_prompt_is_fixed(self):
         self.assertIn("check_inbox", wake.WAKE_PROMPT)

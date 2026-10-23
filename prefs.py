@@ -5,13 +5,19 @@ localStorage only when saving fails. Every key is whitelisted and validated.
 """
 import json
 import os
+import re
 import threading
 from pathlib import Path
 
+FAV_RE = re.compile(r"^(room:r-[0-9a-f]{8}|[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,128})$")
+MAX_FAVORITES = 100
 CHECKS = {
     "hideOffline": lambda v: isinstance(v, bool),
+    # session addresses and room keys, pinned to the top of the list in this order
+    "favorites": lambda v: isinstance(v, list) and len(v) <= MAX_FAVORITES
+    and all(isinstance(x, str) and FAV_RE.match(x) for x in v) and len(set(v)) == len(v),
 }
-DEFAULTS = {"hideOffline": True}
+DEFAULTS = {"hideOffline": True, "favorites": []}
 
 
 class PrefError(Exception):

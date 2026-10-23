@@ -102,7 +102,8 @@ get the new token, and a newer server also triggers a reload.
 - `POST /api/rooms/send` `{id, body, fyi}` → one `reason network send` per member (a group room: per member it targets,
   each with the room envelope; `fyi` is ignored). Returns
   `{ok, sent, results[{to, ok, err}]}`; `ok` when at least one member got it.
-- `POST /api/prefs` `{key, value}` → saves one whitelisted setting (`hideOffline`: bool). Returns `{ok, prefs}`.
+- `POST /api/prefs` `{key, value}` → saves one whitelisted setting: `hideOffline` (bool), `favorites` (up to 100
+  session addresses or `room:<id>` keys, no repeats). Returns `{ok, prefs}`.
 - `POST /api/stop` `{name}` → stops a worker this server started: Ctrl+C first (so the network shows it as stopped),
   then a kill after 10 s.
 

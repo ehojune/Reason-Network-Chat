@@ -9,6 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 |---|---|---|
+| 18:48 | [#11](https://github.com/ehojune/Reason-Network-Chat/pull/11) | Right-click a session or room (or Shift+F10) to pin it as a favorite at the top of the list; favorites are kept by the server. |
 | 18:45 | [#10](https://github.com/ehojune/Reason-Network-Chat/pull/10) | Each session says in plain words how a message reaches it (answers right away, reads on its next turn, offline, …) on its row, in **To** and under unread bubbles. Offline and past sessions are hidden by default; sending to an offline one asks first. |
 | 18:42 | [#9](https://github.com/ehojune/Reason-Network-Chat/pull/9) | A page that meets a server started before an update now says "Restart the server" instead of failing with a script error; missing fields no longer break it. |
 | 17:40 | [#5](https://github.com/ehojune/Reason-Network-Chat/pull/5) | Group chat: members of a group room hear each other, and `@name` in a reply hands it to that member, with hop and rate limits so agents cannot talk in circles. |

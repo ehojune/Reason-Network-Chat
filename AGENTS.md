@@ -11,7 +11,7 @@ and starts new agent sessions.
 | Part | Role |
 |---|---|
 | `server.py` | Python standard library HTTP server on `127.0.0.1:8765`. No dependencies. |
-| `launcher.py` | New sessions: model catalogs, `reason network serve` workers, terminal windows, the Codex model shim. |
+| `launcher.py` | New sessions: model catalogs, `reason network serve` workers, terminal windows, the model shims, permissions, changing a running worker. |
 | `wake.py` | Wake a sleeping Codex session: `codex exec resume <thread> <fixed prompt>` in its folder; auto-wake with limits. |
 | `prefs.py` | Viewer settings in `REASON_CHAT_HOME/prefs.json` (whitelisted keys), so they survive a lost localStorage. |
 | `rooms.py` | Rooms: named sets of session addresses in `REASON_CHAT_HOME/rooms.json`. |
@@ -62,7 +62,7 @@ then stop the worker.
 | `REASON_CHAT_DB` | `~/.reason/network/network.db` | Daemon database path. |
 | `REASON_BIN` | `%LOCALAPPDATA%\Reason\bin\reason.exe` on Windows, else `reason` on PATH | The Reason CLI. |
 | `NODE_EXTRA_CA_CERTS` | unset | Root CA file for TLS-inspecting corporate networks. The CLI (Bun) needs it there. On Windows, children get it from the stored user environment even if the server started before it was set. |
-| `REASON_CHAT_HOME` | `~/.reason-network-chat` | Rooms (`rooms.json`), relayed-message records (`relay.json`), settings (`prefs.json`), running wakes (`wakes.json`), auto-wake limits (`autowake.json`), worker registry (`workers.json`), worker logs (`logs/`), the Codex shim (`codex-shim/`). |
+| `REASON_CHAT_HOME` | `~/.reason-network-chat` | Rooms (`rooms.json`), relayed-message records (`relay.json`), settings (`prefs.json`), running wakes (`wakes.json`), auto-wake limits (`autowake.json`), worker registry (`workers.json`), worker logs (`logs/`), the model shims (`codex-shim/`, `claude-shim/`) and each worker's shim arguments (`worker-settings/<name>.json`). |
 | `REASON_CHAT_CLAUDE`, `REASON_CHAT_CODEX`, `REASON_CHAT_AGY` | found automatically | Full path to an agent CLI. On Windows it must be an `.exe`. |
 
 ## HTTP API
@@ -86,7 +86,9 @@ get the new token, and a newer server also triggers a reload.
   `sessions[]` = live entries from `who --all --json` (`address, name, agent, status, doing, cwd, tier, live: true`)
   plus addresses seen only in history (`status: "gone"`, `live: false`).
   `messages[]` = rows of the `messages` table ordered by `sent_at` (ms epoch).
-  `launched[]` = workers this server started and that are still running (`name, family, model, effort, cwd`).
+  `launched[]` = workers this server started and that are still running
+  (`name, family, model, effort, cwd, fullAccess, liveSettings`; `liveSettings`: a model or effort change applies
+  without a restart).
   `rooms[]` = `{id, name, members[], group, created}`; `members` are session addresses.
   `relays{}` = for messages this page relayed into a group room: `{room, hop, core, speaker}` (`core` is the plain
   message without the room envelope; `hop` 0 = yours, ≥1 = a member's reply passed on). `paused{}` = room → `budget`/`hops`.
@@ -95,11 +97,19 @@ get the new token, and a newer server also triggers a reload.
   Returns `{ok, rc, out, err}`; HTTP 502 when the CLI fails.
 - `GET /api/catalog[?refresh=1]` → `{families[], folders[]}`. Each family: `id` (`claude`/`codex`/`antigravity`),
   `installed`, `models[]` (`id, label, efforts[], defaultEffort`), `defaultModel`, `defaultEffort`, `note`, and
-  `modes.worker` / `modes.window` (`ok, why, models, modelsWhy`). Cached 10 minutes.
-- `POST /api/launch` `{folder, agent, mode, model, effort, name}` → `mode` is `worker` or `window`; empty
+  `modes.worker` / `modes.window` (`ok, why, models, modelsWhy, fullAccess`). Cached 10 minutes.
+- `POST /api/launch` `{folder, agent, mode, model, effort, name, fullAccess}` → `mode` is `worker` or `window`; empty
   `model`/`effort` mean the agent's own default; `name` is for workers (`[a-z0-9-]`, ≤ 48, not taken).
+  `fullAccess` (bool, default false): a worker gets `serve --full-access`, a window the CLI's own flag
+  (`launcher.FULL_ACCESS`); allowed only where the catalog's `modes.<mode>.fullAccess` is true.
   Every value is checked against the catalog; the folder must be an existing absolute local directory.
   Returns `{ok, mode, name}`; 4xx with `{error}` otherwise.
+- `POST /api/workers/configure` `{name, model, effort, fullAccess, force}` → changes a worker this server started
+  (404 otherwise); model and effort are checked against its family's catalog as for a launch. A Codex worker started
+  with a settings file gets the new model/effort written to `worker-settings/<name>.json` and uses it from its next
+  `codex exec` (`{restarted: false}`). A permission change, any Claude change, or a worker from before settings files
+  restarts it: Ctrl+C, a 1 s pause, `serve` again under the same name (`{restarted: true}`). The server asks `who`
+  first; a busy worker answers 409 unless `force` is true. `{unchanged: true}` when nothing differs.
 - `POST /api/rooms/save` `{id?, name, members[], group}` → creates a room (no `id`) or replaces its name, members and group flag.
   Members: 1–12 known session addresses, not the page's own. Returns `{ok, room}`.
 - `POST /api/rooms/delete` `{id}` → removes the room; messages are untouched.
@@ -176,10 +186,18 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
   inherits that session's markers (`CLAUDECODE`, `CODEX_THREAD_ID`, `CODEX_SANDBOX*`, and `CLAUDE_CODE_*` when inside
   Claude Code). `launcher.base_env()` removes them for children, or a new agent thinks it is nested. Credentials and
   settings (`CODEX_API_KEY`, `CODEX_HOME`, …) and anything in the stored user environment are kept.
-- **Codex workers and models.** `serve` runs `codex exec` with no model flag. For a chosen model or effort the
-  worker's PATH starts with `codex-shim/`, whose `codex` adds `-c model=… -c model_reasoning_effort=…` and runs the
-  real CLI. On Windows the shim is an `.exe` built from pip's script launcher (Bun refuses message text for `.cmd`);
-  without pip, Codex workers fall back to the user's default model and the page says so.
+- **Workers and models.** `reason network serve` (checked in 0.12.10) has no model or effort flag. `serve codex`
+  runs `codex exec --json --skip-git-repo-check (--sandbox workspace-write | --dangerously-bypass-approvals-and-sandbox)`
+  per message; `serve claude` keeps a warm `claude -p --input-format stream-json … --permission-mode (acceptEdits |
+  bypassPermissions)` per sender plus a spare, both found through PATH. So every worker's PATH starts with
+  `codex-shim/` or `claude-shim/`, whose `codex`/`claude` adds `model_args()` and runs the real CLI
+  (`REASON_CHAT_SHIM_REAL`). The arguments come from `REASON_CHAT_SHIM_SETTINGS` (the worker's file, read on every
+  run), else `REASON_CHAT_SHIM_ARGS`; the old `REASON_CHAT_CODEX_REAL`/`_ARGS` names still work for workers started
+  before. An effort in `CLAUDE_CODE_EFFORT_LEVEL` does not reach a `claude -p` stream-json child; do not go back to
+  it. On Windows the shim is an `.exe` built from pip's script launcher (Bun refuses message text for `.cmd`);
+  without pip, workers use the agent's default model and the page says so.
+- **Full access is dangerous by design.** A full-access worker runs whatever a network message (or a group-room
+  relay) asks, without approval. The page confirms it each time it is chosen; keep that confirmation.
 - **Workers and windows outlive the server.** The Claude desktop app stops a preview by killing its process tree,
   so `launcher.spawn()` starts them through a short-lived spawner and they are never the server's descendants.
   `workers.json` keeps pid + creation time, so a restarted server still recognises and stops its workers.

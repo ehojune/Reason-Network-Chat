@@ -174,8 +174,37 @@ Codex 세션을 우클릭 → **자동 깨우기 켜기**. 그러면 안 읽은 
 - 워커는 페이지를 닫아도, Reason Network Chat을 꺼도 계속 돈다.
   목록에서 고르고 **워커 중지**를 누르면 네트워크에도 종료로 표시된다.
 - 터미널 창은 에이전트가 세션을 시작하면 목록에 나타난다. Codex는 첫 프롬프트를 보낼 때 시작한다.
-- `reason network serve`에는 모델 옵션이 없다. Codex 워커는 `~/.reason-network-chat/codex-shim`의 작은 실행기로,
-  Claude 워커는 `ANTHROPIC_MODEL`과 `CLAUDE_CODE_EFFORT_LEVEL`로 모델을 받는다.
+- `reason network serve`에는 모델·추론 강도 옵션이 없다. 그래서 워커의 PATH 맨 앞에 작은 실행기
+  (`~/.reason-network-chat/codex-shim` 또는 `claude-shim`)를 두어 모델·추론 강도 인자를 붙여 실제 CLI를 돌린다.
+  인자는 실행할 때마다 `worker-settings/`에 있는 그 워커의 파일에서 읽는다.
+
+### 권한
+
+새 세션 양식에서 **권한**도 고른다.
+
+| | 기본 | 전체 권한 |
+|---|---|---|
+| Claude Code 워커 | 파일 편집만 자동 승인(`--permission-mode acceptEdits`) | `serve --full-access`: `bypassPermissions` |
+| Codex 워커 | 작업 폴더 안에서만 쓰기(`--sandbox workspace-write`) | `serve --full-access`: `--dangerously-bypass-approvals-and-sandbox` |
+| 터미널 창 | 평소처럼 명령 전에 묻는다 | Claude `--permission-mode bypassPermissions`, Codex `--dangerously-bypass-approvals-and-sandbox`, Antigravity `--dangerously-skip-permissions` |
+
+**전체 권한이면 에이전트가 묻지 않고 어떤 명령이든 실행한다.** 파일 삭제, 설치, 네트워크 접근도 포함된다. 워커는
+네트워크로 온 메시지대로 움직이고, 단체 대화방에서 다른 에이전트가 넘겨준 메시지도 여기에 든다. 고를 때마다 페이지가
+한 번 더 묻고, 워커 줄에 *전체 권한*이 표시된다.
+
+### 돌고 있는 워커 설정 바꾸기
+
+이 페이지에서 띄운 워커를 우클릭 → **설정 변경**. 같은 양식에 지금의 모델·추론 강도·권한이 채워져 나온다. 워커 줄에도
+지금 설정이 보인다.
+
+| 바꾸는 것 | 어떻게 되나 |
+|---|---|
+| Codex 워커의 모델·추론 강도 | 다시 시작하지 않고 다음 메시지부터 적용(메시지마다 새 `codex exec`) |
+| Codex 워커의 권한 | 같은 이름으로 다시 시작 |
+| Claude 워커의 무엇이든 | 같은 이름으로 다시 시작. 보낸 사람별로 이어 오던 대화 맥락이 사라진다 |
+
+다시 시작은 깔끔하게 멈춘 뒤(네트워크에 멈춤으로 표시) 같은 이름으로 `serve`를 새로 띄우는 것이다. 워커가 차례를
+처리하는 중이면 한 번 더 묻는다. 그때 다시 시작하면 그 차례를 잃는다. 이 버전 전에 띄운 워커는 무엇을 바꾸든 다시 시작한다.
 
 ## 대화방
 

@@ -177,8 +177,38 @@ from this page should be a worker. Open a window when you want to drive the sess
 - A worker keeps running after you close the page, even after Reason Network Chat itself stops.
   Select it and press **Stop worker**; the network shows it as stopped.
 - A terminal window joins the list once the agent starts its session. Codex starts it with your first prompt.
-- `reason network serve` has no model option. A Codex worker gets its model through a small launcher in
-  `~/.reason-network-chat/codex-shim`; a Claude worker through `ANTHROPIC_MODEL` and `CLAUDE_CODE_EFFORT_LEVEL`.
+- `reason network serve` has no model or effort option. A worker gets them through a small launcher put first on
+  its PATH (`~/.reason-network-chat/codex-shim` or `claude-shim`): it adds the model and effort arguments and runs
+  the real CLI. It reads them from the worker's file in `worker-settings/` on every run.
+
+### Permissions
+
+The form also asks for **Permissions**:
+
+| | Default | Full access |
+|---|---|---|
+| Claude Code worker | approves file edits only (`--permission-mode acceptEdits`) | `serve --full-access`: `bypassPermissions` |
+| Codex worker | writes only inside its folder (`--sandbox workspace-write`) | `serve --full-access`: `--dangerously-bypass-approvals-and-sandbox` |
+| Terminal window | the agent asks before commands, as usual | Claude `--permission-mode bypassPermissions`, Codex `--dangerously-bypass-approvals-and-sandbox`, Antigravity `--dangerously-skip-permissions` |
+
+**Full access means the agent runs any command without asking**, including deleting files, installing software
+and network access. A worker takes its orders from network messages, including those other agents pass on in a
+group room. The page asks you to confirm every time you choose it, and the worker's row shows *Full access*.
+
+### Change a running worker
+
+Right-click a worker started from this page → **Change settings**: the same form, with its model, effort and
+permissions. The row shows the current ones.
+
+| Change | What happens |
+|---|---|
+| Codex worker: model or effort | applies from its next message, no restart (each message is a fresh `codex exec`) |
+| Codex worker: permissions | restarts it under the same name |
+| Claude worker: anything | restarts it under the same name; the conversations it kept per sender are lost |
+
+A restart is a clean stop (the network shows it stopped) and a new `serve` under the same name. If the worker is in
+the middle of a turn, the page asks again first: restarting then loses that turn. Workers started before this
+version restart for any change.
 
 ## Rooms
 

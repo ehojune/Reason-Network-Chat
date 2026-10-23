@@ -56,6 +56,10 @@ body { background: var(--bg); color: var(--text); display: flex; overflow: hidde
   font-size: 13px; cursor: pointer; }
 .mem label:hover { background: var(--hover); }
 .mem label.gone { opacity: .55; }
+.chk { flex-direction: row; align-items: center; gap: 8px; color: var(--text); font-size: 13px; }
+.tag.grp { background: none; color: var(--accent); border: 1px solid var(--accent); font-weight: 600; }
+.relay { text-align: center; color: var(--muted); font-size: 12px; margin: 4px 0; }
+#paused { color: var(--err); }
 main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #head { padding: 12px 18px; border-bottom: 1px solid var(--line); background: var(--panel); display: flex;
   justify-content: space-between; align-items: center; gap: 8px; }
@@ -128,6 +132,7 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
     <button type="button" id="stop" hidden data-t="stop"></button><span id="status"></span></span></div>
   <div id="tl"></div>
   <form id="comp">
+    <div id="paused"></div>
     <div id="nowake" hidden><span data-t="nowake"></span> <button type="button" id="toWorker" data-t="toWorker"></button></div>
     <div id="row">
       <span data-t="to"></span><select id="to"></select>
@@ -165,6 +170,7 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
     <label class="fld"><span data-t="roomName"></span>
       <input id="rfName" required maxlength="60" autocomplete="off"></label>
     <div class="fld"><span data-t="roomMembers"></span><div class="mem" id="rfMembers"></div></div>
+    <label class="fld chk"><input type="checkbox" id="rfGroup"> <span data-t="groupChat"></span></label>
     <p class="hint" id="rfHint"></p>
     <div class="dbtn"><button type="button" class="plain danger" id="rfDelete" data-t="deleteRoom"></button>
       <span style="flex:1"></span>
@@ -194,7 +200,12 @@ const T = {
     deleteRoom: "대화방 삭제", save: "저장", rooms: "대화방", everyone: "대화방 전체", sentTo: "보냄", of: "/",
     deleteAsk: "이 대화방을 지울까요? 메시지는 그대로 남습니다.", pickMembers: "세션을 하나 이상 고르세요.",
     roomHint: "이 세션들이 나와, 또 서로 주고받은 메시지만 보입니다. 대화방 전체로 보내면 세션마다 한 통씩 갑니다.",
-    memberCount: "명" },
+    memberCount: "명", groupChat: "단체 대화: 참여 세션끼리도 서로의 말을 듣는다", grp: "단체",
+    groupHint: "각 세션은 놓친 대화를 함께 받고, @이름이 들어간 답은 그 세션에게 넘어간다(최대 3번, 10분에 20통).\n"
+      + "내가 보낸 메시지는 참여 세션을 모두 깨운다(@이름을 쓰면 그 세션만). 세션마다 에이전트 한 턴씩 쓴다.",
+    passed: "의 답을 넘김 →", pausedBudget: "넘겨주기가 10분 한도에 걸려 멈췄습니다. 다음 메시지를 보내면 다시 시작합니다.",
+    pausedHops: "@로 이어진 답이 3번을 넘어 멈췄습니다. 다음 메시지를 보내면 다시 시작합니다.",
+    groupPh: "메시지 (@이름: 그 세션만 깨움)" },
   en: { all: "All messages", connecting: "Connecting…", loading: "Loading…", empty: "No messages",
     to: "To", fyi: "Don't wake", fyiTip: "--fyi: drop it in the inbox without waking the session",
     ph: "Message (Enter to send, Shift+Enter for a new line)", send: "Send", sending: "Sending…", sent: "Sent →",
@@ -215,7 +226,12 @@ const T = {
     deleteRoom: "Delete room", save: "Save", rooms: "Rooms", everyone: "Everyone in this room", sentTo: "Sent to", of: "/",
     deleteAsk: "Delete this room? Its messages stay.", pickMembers: "Pick at least one session.",
     roomHint: "Shows only messages these sessions exchange with you and with each other. Sending to the whole room sends one message to each.",
-    memberCount: "" },
+    memberCount: "", groupChat: "Group chat: members hear each other too", grp: "group",
+    groupHint: "Each member also gets the room lines it missed, and a reply that @mentions a member is passed on to it "
+      + "(at most 3 hops, 20 per 10 minutes).\nYour message wakes every member (or only those you @mention): one agent turn each.",
+    passed: "'s reply passed to", pausedBudget: "Passing replies on hit the 10-minute limit and paused. Your next message restarts it.",
+    pausedHops: "A chain of @mentions went past 3 hops and stopped. Your next message restarts it.",
+    groupPh: "Message (@name wakes only that member)" },
   zh: { all: "全部消息", connecting: "连接中…", loading: "加载中…", empty: "暂无消息",
     to: "发送给", fyi: "不唤醒", fyiTip: "--fyi：只放进收件箱，不唤醒对方会话",
     ph: "输入消息（Enter 发送，Shift+Enter 换行）", send: "发送", sending: "发送中…", sent: "已发送 →",
@@ -236,7 +252,12 @@ const T = {
     deleteRoom: "删除聊天室", save: "保存", rooms: "聊天室", everyone: "聊天室全体", sentTo: "已发送", of: "/",
     deleteAsk: "删除这个聊天室？消息会保留。", pickMembers: "请至少选择一个会话。",
     roomHint: "只显示这些会话与你、以及彼此之间的消息。发给全体时，每个成员各收到一条。",
-    memberCount: "" },
+    memberCount: "", groupChat: "群聊：成员之间也能听到彼此", grp: "群聊",
+    groupHint: "每个成员还会收到它错过的聊天内容；回复里 @某成员 时会转给该成员（最多 3 跳，每 10 分钟 20 条）。\n"
+      + "你发的消息会唤醒全部成员（若 @了成员则只唤醒他们），每个成员消耗一次智能体回合。",
+    passed: " 的回复已转给", pausedBudget: "转发达到 10 分钟上限，已暂停。你发下一条消息即可恢复。",
+    pausedHops: "@ 接力超过 3 跳，已停止。你发下一条消息即可恢复。",
+    groupPh: "输入消息（@名称 只唤醒该成员）" },
 };
 const LOCALE = {ko: "ko-KR", en: "en-US", zh: "zh-CN"};
 const store = {get: k => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -306,7 +327,7 @@ function renderSide() {
     const key = `room:${r.id}`, c = S.messages.filter(m => inRoom(m, r)).length;
     h += `<div class="ses ${sel === key ? "sel" : ""}" data-a="${esc(key)}" title="${esc(r.members.join(", "))}">
       <span class="hash">#</span><span class="nm">${esc(r.name)}</span><span class="cnt">${c || ""}</span>
-      <span class="sub">${esc(r.members.map(short).join(", "))}</span></div>`;
+      <span class="sub">${r.group ? `<span class="tag grp">${t("grp")}</span>` : ""}${esc(r.members.map(short).join(", "))}</span></div>`;
   }
   let grp = null;
   for (const s of ss) {
@@ -340,11 +361,13 @@ function renderTl() {
   const atBottom = tl.scrollHeight - tl.scrollTop - tl.clientHeight < 80;
   const byId = Object.fromEntries(S.messages.map(m => [m.id, m]));
   // A room send is one row per member; show it once, with every recipient.
+  // Group rooms: rows this page relayed carry the room context; show the plain message (rel.core) instead.
   const ms = [];
   // Same sender, text, quote and wake within 15 s: one send to several sessions, even with replies in between.
   const same = (g, m) => g.sender === m.sender && g.body === m.body && g.reply_to === m.reply_to && g.wake === m.wake
-    && m.sent_at - g.sent_at < 15000 && !g.to.includes(m.recipient);
-  for (const m of S.messages.filter(shown)) {
+    && !!g.rel === !!m.rel && m.sent_at - g.sent_at < 15000 && !g.to.includes(m.recipient);
+  for (const raw of S.messages.filter(shown)) {
+    const rel = S.relays[raw.id], m = rel ? {...raw, body: rel.core, rel} : raw;
     let g = null;
     for (let i = ms.length - 1; i >= 0 && m.sent_at - ms[i].sent_at < 15000; i--) if (same(ms[i], m)) { g = ms[i]; break; }
     if (g) { g.to.push(m.recipient); g.all.push(m); continue; }
@@ -355,8 +378,12 @@ function renderTl() {
   for (const m of ms) {
     const d = fmtD(m.sent_at);
     if (d !== day) { h += `<div class="day">${esc(d)}</div>`; day = d; }
+    if (m.rel && m.rel.hop > 0) {  // a member's reply passed on to the members it @mentioned
+      h += `<div class="relay">↪ ${esc(short(m.rel.speaker))}${esc(t("passed"))} ${esc(m.to.map(short).join(", "))} · ${fmtT(m.sent_at)}</div>`;
+      continue;
+    }
     const me = m.sender === S.me;
-    const q = m.reply_to && byId[m.reply_to];
+    const q = m.reply_to && byId[m.reply_to], qr = q && S.relays[q.id];  // quote the plain message, not the envelope
     const ag = agentOf(m.sender, m.sender_agent);
     // Replies to the page's own address are read here, not through an inbox, so skip the read mark.
     const nread = m.all.filter(x => x.read_at).length;
@@ -366,7 +393,7 @@ function renderTl() {
     h += `<div class="msg ${me ? "me" : ""}">
       <div class="meta"><span class="tag ${esc(ag)}">${esc(ag)}</span><span class="who" data-a="${esc(m.sender)}">${esc(short(m.sender))}</span>
         → ${m.to.map(a => `<span class="who" data-a="${esc(a)}">${esc(short(a))}</span>`).join(", ")} · ${fmtT(m.sent_at)}</div>
-      <div class="bub">${q ? `<div class="quote">↪ ${esc(short(q.sender))}: ${esc(q.body.slice(0, 160))}</div>` : ""}${esc(m.body)}</div>
+      <div class="bub">${q ? `<div class="quote">↪ ${esc(short(qr ? qr.speaker : q.sender))}: ${esc((qr ? qr.core : q.body).slice(0, 160))}</div>` : ""}${esc(m.body)}</div>
       <div class="foot">${esc(flags)}</div></div>`;
   }
   tl.innerHTML = h;
@@ -376,7 +403,11 @@ function renderTl() {
 function render(force) {
   const room = roomOf(sel);
   $("#title").textContent = room ? `# ${room.name}` : sel && !sel.startsWith("room:") ? short(sel) : t("all");
-  $("#members").textContent = room ? room.members.map(short).join(", ") : "";
+  $("#members").textContent = room ? (room.group ? `${t("grp")} · ` : "") + room.members.map(short).join(", ") : "";
+  const pz = room && S && S.paused[room.id];
+  $("#paused").textContent = pz ? t(pz === "budget" ? "pausedBudget" : "pausedHops") : "";
+  $("#body").placeholder = room && room.group ? t("groupPh") : t("ph");
+  $("#fyiLabel").hidden = !!(room && room.group);  // a group message always wakes its targets
   $("#editRoom").hidden = !room;
   if (!S) return;
   if (sel && sel.startsWith("room:") && !room) sel = null;  // deleted elsewhere
@@ -384,7 +415,8 @@ function render(force) {
     sel = pendingAddr; pendingAddr = null; $("#tl").dataset.first = "1"; force = true;
   }
   $("#stop").hidden = !(sel && launchedHere(sel));
-  const sig = JSON.stringify([S.sessions, S.launched, S.rooms, S.messages.map(m => [m.id, m.read_at, m.held]), sel, lang]);
+  const sig = JSON.stringify([S.sessions, S.launched, S.rooms, S.paused, Object.keys(S.relays).length,
+    S.messages.map(m => [m.id, m.read_at, m.held]), sel, lang]);
   if (!force && sig === lastSig) return;
   lastSig = sig;
   renderSide(); renderTo(); renderTl(); renderNoWake();
@@ -427,7 +459,7 @@ $("#comp").addEventListener("submit", async e => {
   $("#btn").disabled = true; $("#sendmsg").textContent = t("sending");
   try {
     if (to.startsWith("room:")) {
-      const j = await post("/api/rooms/send", {id: to.slice(5), body, fyi: $("#fyi").checked});
+      const j = await post("/api/rooms/send", {id: to.slice(5), body, fyi: !$("#fyiLabel").hidden && $("#fyi").checked});
       const bad = j.results.filter(r => !r.ok);
       $("#body").value = "";
       $("#sendmsg").textContent = `${t("sentTo")} ${j.sent}${t("of")}${j.results.length}` +
@@ -566,6 +598,7 @@ function openRoom(room) {
   $("#rfTitle").textContent = t(room ? "editRoom" : "newRoomTitle");
   $("#rfName").value = room ? room.name : "";
   $("#rfDelete").hidden = !room;
+  $("#rfGroup").checked = !!(room && room.group);
   const chosen = new Set(room ? room.members : sel && !sel.startsWith("room:") ? [sel] : []);
   const up = s => s.live && s.status !== "offline";
   // Saved members whose traffic fell out of the message window are not in S.sessions; list them anyway,
@@ -576,10 +609,11 @@ function openRoom(room) {
     .sort((a, b) => (chosen.has(b.address) - chosen.has(a.address)) || (up(b) - up(a)) || a.name.localeCompare(b.name));
   $("#rfMembers").innerHTML = ss.map(s => `<label class="${up(s) ? "" : "gone"}"><input type="checkbox" value="${esc(s.address)}"
     ${chosen.has(s.address) ? "checked" : ""}><span class="tag ${esc(s.agent)}">${esc(s.agent)}</span>${esc(s.name)}</label>`).join("");
-  rhint(t("roomHint"));
+  rhint(t($("#rfGroup").checked ? "groupHint" : "roomHint"));
   $("#rdlg").showModal();
 }
 $("#newRoom").addEventListener("click", () => openRoom(null));
+$("#rfGroup").addEventListener("change", () => rhint(t($("#rfGroup").checked ? "groupHint" : "roomHint")));
 $("#editRoom").addEventListener("click", () => openRoom(roomOf(sel)));
 $("#rfCancel").addEventListener("click", () => $("#rdlg").close());
 $("#rf").addEventListener("submit", async e => {
@@ -588,7 +622,8 @@ $("#rf").addEventListener("submit", async e => {
   if (!members.length) return rhint(t("pickMembers"), true);
   $("#rfGo").disabled = true;
   try {
-    const j = await post("/api/rooms/save", {id: editing ? editing.id : undefined, name: $("#rfName").value, members});
+    const j = await post("/api/rooms/save", {id: editing ? editing.id : undefined, name: $("#rfName").value, members,
+      group: $("#rfGroup").checked});
     S.rooms = [...S.rooms.filter(r => r.id !== j.room.id), j.room];  // show it now, before the next poll
     $("#rdlg").close(); sel = `room:${j.room.id}`; $("#tl").dataset.first = "1"; render(true);
   } catch (err) { rhint(t("failed") + err.message, true); }

@@ -1,7 +1,7 @@
 """Generate the README figures in ko/en/zh: python docs/tools/make_figures.py
 
-Writes docs/how-it-works.<lang>.svg, docs/screen.<lang>.svg, docs/launcher.<lang>.svg and
-docs/why/<lang>/card-<n>.svg. Edit the TEXT table and rerun; never hand-edit the SVGs.
+Writes docs/how-it-works.<lang>.svg, docs/screen.<lang>.svg, docs/launcher.<lang>.svg,
+docs/group-chat.<lang>.svg and docs/why/<lang>/card-<n>.svg. Edit the TEXT table and rerun; never hand-edit the SVGs.
 All data in the pictures is made up.
 """
 from pathlib import Path
@@ -27,7 +27,7 @@ TEXT = {
             "status": ("누가 일하는지 보인다", "작업 중인지 대기 중인지,", "무슨 일을 하는지 왼쪽에"),
             "send": ("여기서 바로 보낸다", "보내기 칸이 reason network", "send를 대신 불러 준다"),
             "launch": ("여기서 세션을 연다", "폴더·에이전트·모델·강도를 고른다", "목록은 에이전트가 직접 준다"),
-            "rooms": ("필요한 세션만 한 방에", "고른 세션의 대화만 보이고,", "보내면 모두에게 한 통씩 간다"),
+            "rooms": ("필요한 세션만 한 방에", "고른 세션의 대화만 보이고,", "단체 대화면 서로의 말도 듣는다"),
             "local": ("이 PC 안에서만", "DB는 읽기 전용, 127.0.0.1에만,", "모든 동작에 토큰 확인"),
         },
         "flow": ("에이전트 세션", "Reason Network 데몬", "Reason Network Chat", "읽기: SQLite 읽기 전용 + who --json",
@@ -39,6 +39,8 @@ TEXT = {
         "msgs": ["결제 webhook이 5xx에 재시도해?", "응, 지수 백오프로 3번. retry.ts 42행 참고.",
                  "README 설치 표 갱신 부탁해", "갱신했어. 3줄 바뀜."],
         "day": "2026년 10월 23일 (금)", "read": "읽음", "others": "다른 에이전트",
+        "group": ("나", "① 내 메시지", "② + 각자 놓친 대화", "③ 답에 @b-codex", "④ b-codex에게 넘김 (1/3)",
+                  ["깨우는 건 나와 @이름뿐", "@로 이어지는 건 3번까지", "10분에 최대 20번 넘김"], "“@b-codex retry.ts 봐 줄래?”"),
         "lf": {"title": "새 세션 열기", "folder": "폴더", "agent": "에이전트", "runAs": "실행 방식", "model": "모델",
                "effort": "추론 강도", "name": "세션 이름", "worker": "네트워크 워커", "window": "터미널 창",
                "hint": "reason network serve로 띄우는 헤드리스 에이전트. 메시지에 바로 답한다.",
@@ -50,7 +52,7 @@ TEXT = {
             "status": ("See who's busy", "Busy or idle, and what each", "session is doing right now"),
             "send": ("Reply from here", "The send box runs", "reason network send for you"),
             "launch": ("Start a session", "Folder, agent, model, effort:", "each list comes from the agent"),
-            "rooms": ("Rooms", "Pick sessions: see only their", "talk, send one message to all"),
+            "rooms": ("Rooms and group chat", "Only the sessions you pick;", "group chat: they hear each other"),
             "local": ("Local and guarded", "Database read-only, 127.0.0.1,", "a token on every action"),
         },
         "flow": ("Agent sessions", "Reason Network daemon", "Reason Network Chat", "read: SQLite read-only + who --json",
@@ -62,6 +64,9 @@ TEXT = {
         "msgs": ["Does the billing webhook retry on 5xx?", "Yes, 3 times with backoff. See retry.ts:42.",
                  "Please update the install table in the README", "Done, 3 lines changed."],
         "day": "Fri, October 23, 2026", "read": "read", "others": "Other agents",
+        "group": ("You", "① your message", "② + lines each one missed", "③ reply names @b-codex", "④ passed on (hop 1 of 3)",
+                  ["only you and @name wake anyone", "a chain stops after 3 hops", "at most 20 hand-offs per 10 min"],
+                  "“@b-codex can you check retry.ts?”"),
         "lf": {"title": "Start a new session", "folder": "Folder", "agent": "Agent", "runAs": "Run as", "model": "Model",
                "effort": "Effort", "name": "Session name", "worker": "Network worker", "window": "Terminal window",
                "hint": "A headless agent started with reason network serve. It answers messages right away.",
@@ -73,7 +78,7 @@ TEXT = {
             "status": ("谁在忙一目了然", "工作中还是空闲、", "正在做什么，都在左栏"),
             "send": ("就地发送", "发送框替你调用", "reason network send"),
             "launch": ("就地启动会话", "选文件夹、智能体、模型、强度，", "列表都来自智能体本身"),
-            "rooms": ("聊天室", "只看选中会话之间的对话，", "一条消息发给全体成员"),
+            "rooms": ("聊天室与群聊", "只看选中会话之间的对话；", "群聊中成员彼此都能听到"),
             "local": ("只在本机", "数据库只读，只监听 127.0.0.1，", "每个操作都校验令牌"),
         },
         "flow": ("智能体会话", "Reason Network 守护进程", "Reason Network Chat", "读取：SQLite 只读 + who --json",
@@ -85,6 +90,8 @@ TEXT = {
         "msgs": ["支付 webhook 遇到 5xx 会重试吗？", "会，指数退避重试 3 次，见 retry.ts:42。",
                  "请更新 README 里的安装表格", "已更新，改了 3 行。"],
         "day": "2026年10月23日 周五", "read": "已读", "others": "其他智能体",
+        "group": ("你", "① 你的消息", "② + 各自错过的内容", "③ 回复里 @b-codex", "④ 转给 b-codex（1/3 跳）",
+                  ["只有你和 @名称 能唤醒成员", "@ 接力最多 3 跳", "每 10 分钟最多转 20 次"], "“@b-codex 帮忙看下 retry.ts？”"),
         "lf": {"title": "启动新会话", "folder": "文件夹", "agent": "智能体", "runAs": "运行方式", "model": "模型",
                "effort": "推理强度", "name": "会话名称", "worker": "网络 worker", "window": "终端窗口",
                "hint": "用 reason network serve 启动的无界面智能体，收到消息立即回复。",
@@ -207,9 +214,9 @@ def card(n, lang):
             y = 92 + i * 36
             parts.append(f'<circle cx="324" cy="{y + 8}" r="6" fill="{C[k]}"/>'
                          f'<text class="m" x="338" y="{y + 12}" style="fill:{C["ink"]}">{name}</text>')
-        parts.append('<rect x="252" y="190" width="40" height="22" rx="8" fill="#F0E6DC" stroke="#D0D7DE"/>'
-                     '<path d="M262 201h20" stroke="#8C959F" stroke-width="3" stroke-linecap="round"/>'
-                     + "".join(f'<path d="M294 199C304 199 304 {100 + i * 36} 314 {100 + i * 36}" fill="none" stroke="#C2410C" '
+        parts.append('<rect x="252" y="210" width="40" height="22" rx="8" fill="#F0E6DC" stroke="#D0D7DE"/>'
+                     '<path d="M262 221h20" stroke="#8C959F" stroke-width="3" stroke-linecap="round"/>'
+                     + "".join(f'<path d="M294 219C304 219 304 {100 + i * 36} 314 {100 + i * 36}" fill="none" stroke="#C2410C" '
                                f'stroke-width="1.5" marker-end="url(#a-claude)"/>' for i in range(3)))
     else:  # local: read-only, localhost only, token
         parts.append('<path d="M380 44l58 22v52c0 40-26 68-58 82-32-14-58-42-58-82V66z" fill="#FFFFFF" stroke="#57606A" stroke-width="2.5" stroke-linejoin="round"/>'
@@ -364,6 +371,43 @@ def launcher(lang):
                "\n".join("  " + q for q in p), lang)
 
 
+def group(lang):
+    """Group chat: the page relays your message with missed lines, and passes on a reply that @mentions a member."""
+    you, s1, s2, s3, s4, guards, quote = TEXT[lang]["group"]
+    p = ['<rect x=".5" y=".5" width="879" height="359" rx="18" fill="#FFFFFF" stroke="#D0D7DE"/>',
+         '<rect x="24" y="128" width="120" height="56" rx="12" fill="#F0E6DC" stroke="#D0D7DE"/>',
+         f'<text class="t" x="84" y="161" text-anchor="middle">{x(you)}</text>',
+         '<rect x="300" y="36" width="230" height="248" rx="14" fill="#F0FAF3" stroke="#6CC08B"/>',
+         '<text class="t" x="415" y="64" text-anchor="middle">Reason Network Chat</text>',
+         f'<text class="s" x="415" y="100" text-anchor="middle" style="font-style:italic">{x(quote)}</text>']
+    for i, g in enumerate(guards):
+        p.append(f'<rect x="316" y="{196 + i * 26}" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/>'
+                 f'<text class="s" x="415" y="{210 + i * 26}" text-anchor="middle" style="font-size:11px">{x(g)}</text>')
+    members = [("claude", "a-claude", 56), ("codex", "b-codex", 136), ("codex", "c-codex", 216)]
+    for k, name, y in members:
+        p.append(f'<rect x="700" y="{y}" width="156" height="48" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/>'
+                 f'<rect x="700" y="{y}" width="8" height="48" rx="4" fill="{C[k]}"/>'
+                 f'<text class="m" x="722" y="{y + 29}" style="font-size:13px;fill:{C["ink"]}">{name}</text>')
+        p.append(f'<path d="M534 176C610 176 620 {y + 30} 694 {y + 30}" fill="none" stroke="#1A7F37" stroke-width="2" marker-end="url(#a-green)"/>')
+
+    def badge(cx, cy, n, color):
+        p.append(f'<circle cx="{cx}" cy="{cy}" r="10" fill="{color}"/><text class="w" x="{cx}" y="{cy + 4}" text-anchor="middle">{n}</text>')
+
+    p.append('<path d="M148 156H296" stroke="#C96442" stroke-width="2.5" marker-end="url(#a-claude)"/>'
+             '<path d="M700 70C640 70 600 84 538 88" fill="none" stroke="#C96442" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#a-claude)"/>'
+             '<path d="M534 118C610 118 630 150 694 150" fill="none" stroke="#7C3AED" stroke-width="2.5" marker-end="url(#a-agent)"/>')
+    badge(222, 156, 1, "#C96442")
+    badge(640, 230, 2, "#1A7F37")
+    badge(620, 76, 3, "#C96442")
+    badge(600, 128, 4, "#7C3AED")
+    for i, (n, text, color) in enumerate([(1, s1, "#C96442"), (2, s2, "#1A7F37"), (3, s3, "#C96442"), (4, s4, "#7C3AED")]):
+        cx, cy = 60 + (i % 2) * 400, 312 + (i // 2) * 26
+        badge(cx, cy, n, color)
+        p.append(f'<text class="b" x="{cx + 18}" y="{cy + 5}">{x(text.lstrip("①②③④ "))}</text>')
+    return svg(880, 360, "Group chat", f"{s1}. {s2}. {s3}. {s4}. " + "; ".join(guards),
+               "\n".join("  " + q for q in p), lang)
+
+
 def main():
     for lang in TEXT:
         (DOCS / "why" / lang).mkdir(parents=True, exist_ok=True)
@@ -372,6 +416,7 @@ def main():
         (DOCS / f"how-it-works.{lang}.svg").write_text(flow(lang), encoding="utf-8", newline="\n")
         (DOCS / f"screen.{lang}.svg").write_text(screen(lang), encoding="utf-8", newline="\n")
         (DOCS / f"launcher.{lang}.svg").write_text(launcher(lang), encoding="utf-8", newline="\n")
+        (DOCS / f"group-chat.{lang}.svg").write_text(group(lang), encoding="utf-8", newline="\n")
     print("figures written under", DOCS)
 
 

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="880" height="360" viewBox="0 0 880 360" role="img" aria-labelledby="t d" xml:lang="ko">
   <title id="t">Group chat</title>
-  <desc id="d">① @부른 멤버에게만. ② + 각자 놓친 대화. ③ 답에 @b-codex. ④ b-codex에게 넘김. 받는 건 @로 부른 멤버뿐; 한도를 넘으면 버리지 않고 대기; 한도는 대화방마다 정함</desc>
+  <desc id="d">① @부른 멤버에게만. ② + 각자 놓친 대화. ③ 답에 @b-codex. ④ b-codex에게 넘김. 답은 물어본 멤버에게 돌아감; 한도를 넘으면 버리지 않고 대기; 한도는 대화방마다 정함</desc>
   <style>
     text { font-family: "Noto Sans KR", "Noto Sans SC", "Apple SD Gothic Neo", "PingFang SC", "Segoe UI", "Malgun Gothic", "Microsoft YaHei", sans-serif; fill: #1F2328; }
     .h { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
@@ -24,7 +24,7 @@
   <rect x="300" y="36" width="230" height="248" rx="14" fill="#F0FAF3" stroke="#6CC08B"/>
   <text class="t" x="415" y="64" text-anchor="middle">Reason Network Chat</text>
   <text class="s" x="415" y="100" text-anchor="middle" style="font-style:italic">“@b-codex retry.ts 봐 줄래?”</text>
-  <rect x="316" y="196" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="210" text-anchor="middle" style="font-size:11px">받는 건 @로 부른 멤버뿐</text>
+  <rect x="316" y="196" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="210" text-anchor="middle" style="font-size:11px">답은 물어본 멤버에게 돌아감</text>
   <rect x="316" y="222" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="236" text-anchor="middle" style="font-size:11px">한도를 넘으면 버리지 않고 대기</text>
   <rect x="316" y="248" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="262" text-anchor="middle" style="font-size:11px">한도는 대화방마다 정함</text>
   <rect x="700" y="56" width="156" height="48" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/><rect x="700" y="56" width="8" height="48" rx="4" fill="#C96442"/><text class="m" x="722" y="85" style="font-size:13px;fill:#1F2328">a-claude</text>

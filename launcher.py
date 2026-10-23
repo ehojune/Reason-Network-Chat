@@ -759,6 +759,9 @@ class Launcher:
         # the process dies (a reboot), so it can be started again with the same settings
         self.records_path = STATE / "worker-records.json"
         self.records = {}
+        # Names of serve processes running here, from the last discovery pass (None: unknown). The page uses it to
+        # tell a worker the network still shows busy or idle, after its process was killed, from a running one.
+        self.serving = None
         self.load()
         self.load_records()
 
@@ -857,6 +860,14 @@ class Launcher:
         except OSError:
             pass
 
+    def stale_names(self):
+        """Recorded workers with no serve process here (known only after a discovery pass, else empty)."""
+        with self.lock:
+            if self.serving is None:
+                return set()
+            running = {n for n, w in self.workers.items() if self.alive(w)}
+            return {n for n in self.records if n not in self.serving and n not in running}
+
     def list_records(self):
         with self.lock:
             return [dict(r) for r in self.records.values()]
@@ -899,6 +910,8 @@ class Launcher:
                     self.save()
                     self.remember(nw)
                 self.settle(nw)
+                if self.serving is not None:
+                    self.serving.add(name)
                 results.append({"name": name, "ok": True})
             except LaunchError as e:
                 results.append({"name": name, "ok": False, "error": str(e), "code": e.code})
@@ -913,8 +926,10 @@ class Launcher:
         """
         procs = list_processes() if procs is None else procs
         if procs is None:  # cannot see processes here: take nothing back, list nothing
+            self.serving = None
             return
         found = found_workers(procs)
+        self.serving = {f["name"] for f in found}
         ours = spawned_here()
         with self.lock:
             known = {w["pid"] for w in self.workers.values()}
@@ -992,6 +1007,8 @@ class Launcher:
             self.stopped.add(name)
             self.save()
         self.halt(w)
+        if self.serving is not None:
+            self.serving.discard(name)  # gone now, whatever the network still shows
 
     def halt(self, w):
         """Stop a worker's process: Ctrl+C so the network shows it stopped, a kill after 10 s."""

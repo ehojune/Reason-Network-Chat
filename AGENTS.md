@@ -15,7 +15,7 @@ and starts new agent sessions.
 | `wake.py` | Wake a sleeping Codex session: `codex exec resume <thread> <fixed prompt>` in its folder; auto-wake with limits. |
 | `prefs.py` | Viewer settings in `REASON_CHAT_HOME/prefs.json` (whitelisted keys), so they survive a lost localStorage. |
 | `rooms.py` | Rooms: named sets of session addresses in `REASON_CHAT_HOME/rooms.json`. |
-| `relay.py` | Group rooms: sends your message to the members it `@mentions` (or the room's default recipient) with their missed lines, passes on `@name` replies, queues hand-offs over the room's limits. |
+| `relay.py` | Group rooms: sends your message to the members it `@mentions` (or the room's default recipient) with their missed lines, passes on `@name` replies and returns a member's answer to the member who asked (one level), queues hand-offs over the room's limits. |
 | `index.html` | The whole UI (one file, no build). Polls `/api/state` every 3 s. Strings in ko/en/zh. |
 | `tests/` | `python -m unittest discover tests` — request validation and catalog parsing, no agent needed. |
 | `.claude/launch.json` | Lets the Claude desktop app start the server and show the page in its Browser pane. |
@@ -94,7 +94,9 @@ get the new token, and a newer server also triggers a reload.
   `workerRecords[]` = `{name, family, cwd, model, effort, fullAccess, started}` of every worker started here, also
   dead ones. A session of a recorded worker keeps `agent` = codex / claude-code (the database stores serve workers as
   `cli`) and gets `worker: true`; `inner` names the worker when the session is that worker's own agent session
-  (`<worker>-claude[-N]`, its warm `claude -p` registering itself), which the page folds away.
+  (`<worker>-claude[-N]`, its warm `claude -p` registering itself), which the page folds away. `stale: true` marks a
+  recorded worker that `who` shows busy/idle here although no serve process with its name runs (killed mid-turn);
+  the page shows it as stopped (only the network's entry is left). Known after the first 30 s discovery pass.
   `rooms[]` = `{id, name, members[], group, created, limits, defaultTo}`; `members` are session addresses; `limits` =
   `{hops?, budget?}` (a number, or `null` for no limit; a missing key means the default); `defaultTo` = the member
   an unmentioned message goes to, or `null`.
@@ -197,6 +199,16 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
   on the flow continuing. Only replies whose `reply_to` is a relayed message are passed on.
   Queued hand-offs are checked again before each send: one whose sender or recipient left the room is dropped,
   and the room's current hop limit decides whether it is held.
+- **A member's answer goes back to the member who asked.** `Relay.answer_targets`: the members the answer
+  `@mentions`, plus `sent[reply_to].speaker` when that speaker is a member (never the user, who sees the room anyway).
+  One level only: a relayed message stored with `implicit: true` (an answer passed back this way) sends its reply to
+  `@mentions` only. Drop that check and two agents thank each other until the budget runs out. `no_answer` sends
+  nothing for text with no letter or digit (`-`, `—`) or a placeholder (`(해당 없음)`, `N/A`); do not add a length cut,
+  because "4" or "no" are real answers (a 3-character cut dropped "4" in a live test). Answers passed back count
+  toward the budget and hops like any hand-off. `compose` tells each agent where its answer goes; keep the envelope
+  and `answer_targets` saying the same thing.
+- **The page's ↩ reply** puts one quoted line before the user's text with every `@` turned into `＠`, and works out
+  recipients from the typed text only, so quoting a message never wakes the members it named.
 - **Relay state survives restarts.** `relay.json` keeps `sent` (relayed messages), `seen`, the scan cursor `since`,
   `done` (hand-offs already queued) and `queue`. A restarted server resumes from `since` (at most `RESUME_MS`, 24 h,
   back), so replies that arrived while it was down are passed on once. Saves read the file and merge `sent` / `seen`

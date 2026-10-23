@@ -4,8 +4,11 @@ Reason Network agents answer only whoever sent them a message. In a group room t
 it sends a member your message together with the room lines that member has not seen yet, and when a member's
 reply names another member (@name) it passes the reply on to that member.
 
-Who receives what: only members a message @mentions (@all / @모두 for everyone, from you only). Your message with no
-mention goes to the room's default recipient; with none set, the page asks you to mention someone.
+Who receives what: your message goes to the members it @mentions (@all / @모두 for everyone), else to the room's
+default recipient, else nowhere (the page asks you to mention someone). A member's answer goes to the members it
+@mentions and, without being asked, back to the member whose message it answers (one level: an answer that came back
+this way does not come back again). An empty or "nothing to add" answer ("-", "(해당 없음)", "N/A": no letter or digit, or
+such a placeholder) goes nowhere; a short real answer such as "4" still goes back.
 
 Loop guards, per room (env defaults, each room can set its own or none): a chain of passed-on replies holds after
 MAX_HOPS until you continue it; at most BUDGET hand-offs per BUDGET_WINDOW seconds, the rest wait in a queue and go
@@ -44,6 +47,15 @@ RETRIES = 3  # attempts at one hand-off before it is reported as failed
 # b-claude; "pat@b-claude" does not).
 MENTION_RE = re.compile(r"(?<![A-Za-z0-9_@/])@([A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)?|모두|전체)")
 EVERYONE = {"all", "everyone", "모두", "전체"}
+# Placeholders that mean "nothing to say". Short real answers ("4", "no", "없음") are answers and still go back.
+NO_ANSWER = {"(해당 없음)", "해당 없음", "n/a", "(n/a)", "(none)", "no answer", "(no answer)", "nothing to add"}
+
+
+def no_answer(text):
+    """An answer that says nothing: passed on to nobody (it would only start an acknowledgement ping-pong). That is
+    text with no letter or digit ("-", "—", "...") or a placeholder phrase, never a short answer such as "4"."""
+    t = " ".join(str(text or "").split()).lower()
+    return not re.search(r"\w", t) or t.strip(".") in NO_ANSWER
 
 
 def short(addr):
@@ -207,25 +219,34 @@ class Relay:
             out.pop(0)
         return out
 
-    def compose(self, room, member, me, speaker, core, skip=None):
-        """The message for one member, and the timestamp of the newest room line it includes (0 if none)."""
-        names = ", ".join([f"{label(me, me, room)} (person)"] + [handle(m, room) for m in room["members"]])
+    def compose(self, room, member, me, speaker, core, skip=None, implicit=False):
+        """The message for one member, and the timestamp of the newest room line it includes (0 if none).
+        `implicit`: this is an answer passed back to its asker, so the member's reply does not come back by itself."""
+        person, asker = label(me, me, room), label(speaker, me, room)
+        names = ", ".join([f"{person} (person)"] + [handle(m, room) for m in room["members"]])
+        if implicit:
+            back = "This answer was passed back to you automatically. Your reply reaches only the members you @mention."
+        elif speaker == me:
+            back = f"Your answer goes back to {asker} automatically."
+        else:
+            back = (f"Your answer goes back to {asker} automatically; "
+                    f"{asker}'s reply to it reaches you only if it @mentions you.")
         head = (f'[Group room "{room["name"]}", relayed by Reason Network Chat]\n'
                 f"Members: {names}.\n"
-                f"Only the members you @mention receive your reply; {label(me, me, room)} sees the whole room. "
-                "To ask a member, write @name in your reply and the room passes it on; "
-                "do not message members with Reason Network tools. Mention nobody when no answer is needed.")
+                f"{back}\n"
+                "To ask anyone else, @name them; their answers come back to you. Reply `-` if no answer is needed.\n"
+                f"{person} sees the whole room. Do not message members with Reason Network tools.")
         lines = self.lines_for(room, member, me, skip, (speaker, core))
         earlier = ("\nEarlier in the room:\n" + "\n".join(f"{who}: {t}" for _, who, t in lines)) \
             if lines else ""
         return f"{head}{earlier}\n---\n{label(speaker, me, room)}: {core}", (lines[-1][0] if lines else 0)
 
-    def deliver(self, room, member, me, speaker, core, hop, skip=None, skip_at=0, item=None):
+    def deliver(self, room, member, me, speaker, core, hop, skip=None, skip_at=0, item=None, implicit=False):
         """Compose and send one relayed message. The CLI runs without self.lock, so polling never waits on it.
         A queued `item` leaves the queue in the same save that records the message as sent: a restart in between
         cannot send it twice."""
         with self.lock:
-            body, newest = self.compose(room, member, me, speaker, core, skip)
+            body, newest = self.compose(room, member, me, speaker, core, skip, implicit)
         try:
             rc, out, err = self.send_one(member, body, False)
         except Exception as e:  # e.g. the CLI timed out: a failed attempt like any other, so retries stay bounded
@@ -237,7 +258,7 @@ class Relay:
         with self.lock:
             if rows:
                 self.sent[rows[0]["id"]] = {"room": room["id"], "hop": hop, "core": core, "speaker": speaker,
-                                            "to": member, "at": rows[0]["sent_at"]}
+                                            "to": member, "at": rows[0]["sent_at"], "implicit": implicit}
             key = f'{room["id"]}|{member}'
             # Only as far as the lines it was given (a reply that landed while this was sent stays "missed"),
             # plus the handed-off reply itself, which it just got as the message.
@@ -332,13 +353,13 @@ class Relay:
                     rec = self.sent.get(r["reply_to"])
                     room = self.rooms.get(rec["room"]) if rec else None
                     targets = [] if not room or not room.get("group") or r["sender"] not in room["members"] \
-                        else self.mentioned(room, r["body"], exclude=r["sender"])
-                    for m in targets:
+                        else self.answer_targets(room, rec, r)
+                    for m, implicit in targets:
                         if (r["id"], m) in self.done:
                             continue
                         self.queue.setdefault(room["id"], []).append({
                             "reply": r["id"], "to": m, "sender": r["sender"], "body": r["body"], "hop": rec["hop"] + 1,
-                            "at": r["sent_at"]})
+                            "at": r["sent_at"], "implicit": implicit})
                         self.done[(r["id"], m)] = r["sent_at"]  # settled: it is in the queue now
                         changed = True
                 if rows and rows[-1]["sent_at"] > self.since:
@@ -348,6 +369,19 @@ class Relay:
                 if changed:
                     self.save()
             self.drain(me)
+
+    def answer_targets(self, room, rec, reply):
+        """Where a member's answer goes: [(member, implicit)]. The members it @mentions, and the member whose message
+        it answers (`rec`'s speaker) without being named, one level only: an answer that itself came back this way
+        does not come back again. An empty answer goes nowhere."""
+        if no_answer(reply["body"]):
+            return []
+        out = [(m, False) for m in self.mentioned(room, reply["body"], exclude=reply["sender"])]
+        asker = rec.get("speaker")
+        if not rec.get("implicit") and asker in room["members"] and asker != reply["sender"] \
+                and asker not in [m for m, _ in out]:
+            out.append((asker, True))
+        return out
 
     def drain(self, me):
         """Send queued hand-offs in order, room by room, as far as each room's budget allows."""
@@ -381,7 +415,7 @@ class Relay:
     def send_item(self, room, me, item, slot):
         rid, key = room["id"], (item["reply"], item["to"])
         ok, err = self.deliver(room, item["to"], me, item["sender"], item["body"], item["hop"],
-                               skip=item["reply"], skip_at=item.get("at", 0), item=item)
+                               skip=item["reply"], skip_at=item.get("at", 0), item=item, implicit=bool(item.get("implicit")))
         with self.lock:
             if ok:
                 self.tries.pop(key, None)

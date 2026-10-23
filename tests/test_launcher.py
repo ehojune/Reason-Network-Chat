@@ -526,6 +526,19 @@ class RecordsTest(unittest.TestCase):
         finally:
             launcher.list_processes = saved
 
+    def test_stale_names_after_discovery(self):
+        self.assertEqual(self.l.stale_names(), set())  # nothing known before a discovery pass
+        self.l.workers["lead-codex"]["pid"] = 1001  # killed
+        self.l.discover([])  # no serve processes here
+        self.assertEqual(self.l.stale_names(), {"lead-codex"})
+        saved = launcher.list_processes
+        launcher.list_processes = lambda: None
+        try:
+            self.l.discover()
+            self.assertEqual(self.l.stale_names(), set())  # unknown again: claim nothing
+        finally:
+            launcher.list_processes = saved
+
     def test_newer_record_wins(self):
         path = launcher.STATE / "worker-records.json"
         newer = dict(self.l.records["lead-codex"], effort="low", started=10**15)

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="880" height="360" viewBox="0 0 880 360" role="img" aria-labelledby="t d" xml:lang="en">
   <title id="t">Group chat</title>
-  <desc id="d">① to the @mentioned only. ② + lines each one missed. ③ reply names @b-codex. ④ passed on to b-codex. only @mentioned members receive; over a limit: queued, not dropped; limits are set per room</desc>
+  <desc id="d">① to the @mentioned only. ② + lines each one missed. ③ reply names @b-codex. ④ passed on to b-codex. answers go back to the asker; over a limit: queued, not dropped; limits are set per room</desc>
   <style>
     text { font-family: "Noto Sans KR", "Noto Sans SC", "Apple SD Gothic Neo", "PingFang SC", "Segoe UI", "Malgun Gothic", "Microsoft YaHei", sans-serif; fill: #1F2328; }
     .h { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
@@ -24,7 +24,7 @@
   <rect x="300" y="36" width="230" height="248" rx="14" fill="#F0FAF3" stroke="#6CC08B"/>
   <text class="t" x="415" y="64" text-anchor="middle">Reason Network Chat</text>
   <text class="s" x="415" y="100" text-anchor="middle" style="font-style:italic">“@b-codex can you check retry.ts?”</text>
-  <rect x="316" y="196" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="210" text-anchor="middle" style="font-size:11px">only @mentioned members receive</text>
+  <rect x="316" y="196" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="210" text-anchor="middle" style="font-size:11px">answers go back to the asker</text>
   <rect x="316" y="222" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="236" text-anchor="middle" style="font-size:11px">over a limit: queued, not dropped</text>
   <rect x="316" y="248" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="262" text-anchor="middle" style="font-size:11px">limits are set per room</text>
   <rect x="700" y="56" width="156" height="48" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/><rect x="700" y="56" width="8" height="48" rx="4" fill="#C96442"/><text class="m" x="722" y="85" style="font-size:13px;fill:#1F2328">a-claude</text>

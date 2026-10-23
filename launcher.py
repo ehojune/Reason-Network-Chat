@@ -294,6 +294,16 @@ sys.exit(subprocess.call([real] + [str(a) for a in extra] + sys.argv[1:]))
 SHIM_AGENTS = ("codex", "claude")  # the CLI names `serve` looks up on PATH
 
 
+def _shim_zip():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:  # fixed timestamp: the same Python gives the same bytes
+        z.writestr(zipfile.ZipInfo("__main__.py", date_time=(1980, 1, 1, 0, 0, 0)), SHIM_MAIN)
+    return buf.getvalue()
+
+
+SHIM_ZIP = _shim_zip()  # the end of the Windows shim .exe
+
+
 def model_args(fid, model, effort):
     """CLI arguments that pick a model and effort for one agent family."""
     if fid == "claude":
@@ -307,6 +317,21 @@ def write_settings(path, args):
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps({"args": args}), encoding="utf-8")
     os.replace(tmp, path)
+
+
+def shim_current(kind):
+    """The shim on disk is this version (it can stay older while a running turn holds the old .exe open)."""
+    target = STATE / f"{kind}-shim" / (f"{kind}.exe" if WIN else kind)
+    if not WIN:
+        target = STATE / f"{kind}-shim" / f"{kind}_shim.py"
+        try:
+            return target.read_bytes() == SHIM_MAIN
+        except OSError:
+            return False
+    try:
+        return target.read_bytes().endswith(SHIM_ZIP)
+    except OSError:
+        return False
 
 
 def shim_dir(kind="codex"):
@@ -323,10 +348,7 @@ def shim_dir(kind="codex"):
             launcher = ScriptMaker(None, None)._get_launcher("t")
         except Exception:
             return None
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w") as z:  # fixed timestamp: the same Python gives the same bytes
-            z.writestr(zipfile.ZipInfo("__main__.py", date_time=(1980, 1, 1, 0, 0, 0)), SHIM_MAIN)
-        data = launcher + b"#!" + (b'"' + exe + b'"' if b" " in exe else exe) + b"\n" + buf.getvalue()
+        data = launcher + b"#!" + (b'"' + exe + b'"' if b" " in exe else exe) + b"\n" + SHIM_ZIP
     else:  # a shebang cannot hold a path with spaces; sh can, quoted
         q = lambda b: b"'" + b.replace(b"'", b"'\\''") + b"'"
         main = d / f"{kind}_shim.py"
@@ -573,6 +595,8 @@ class Launcher:
 
     def stop(self, name):
         with self.lock:
+            if name in self.restarting:
+                raise LaunchError("It is restarting; try again in a moment.", 409)
             w = self.workers.pop(name, None)
             if not w:
                 raise LaunchError("Not a worker started here.", 404)
@@ -657,7 +681,7 @@ class Launcher:
             fam, mode, cwd, entry, model, effort, name, full = self.check(req, live_names)
             if mode == "window":
                 return self.open_window(fam, cwd, model, effort, full)
-            if len([w for w in self.workers.values() if self.alive(w)]) >= MAX_WORKERS:
+            if len({n for n, w in self.workers.items() if self.alive(w)} | self.restarting) >= MAX_WORKERS:
                 raise LaunchError(f"Already {MAX_WORKERS} workers started here; stop one first.", 429)
             w = self.start_worker(fam, cwd, model, effort, name, full)
             self.workers[name] = w
@@ -691,6 +715,8 @@ class Launcher:
         if not isinstance(full, bool) or not isinstance(force, bool):
             raise LaunchError("fullAccess and force must be true or false.")
         with self.lock:
+            if name in self.restarting:
+                raise LaunchError("It is restarting; try again in a moment.", 409)
             w = self.workers.get(name)
             if not w or not self.alive(w):
                 raise LaunchError("Not a worker started here.", 404)
@@ -714,8 +740,8 @@ class Launcher:
                 return {"ok": True, "restarted": False}
             if busy and not force:
                 raise LaunchError("It is busy: restarting it now loses the turn it is in.", 409)
-            del self.workers[name]  # out of the list while it restarts; the name stays reserved by `restarting`
-            self.save()
+            # Its record stays in workers.json until the new process replaces it, so a server that stops midway
+            # still knows the worker; `restarting` keeps the name taken and its place counted meanwhile.
             self.restarting.add(name)
         try:
             self.halt(w)
@@ -738,11 +764,14 @@ class Launcher:
         settings = None
         shim = shim_dir(fid)
         if shim:  # always, so a Codex worker can change model later without a restart
-            settings = STATE / "worker-settings" / f"{name}.json"
-            write_settings(settings, extra)
             dirs.insert(0, shim)
-            env.update(REASON_CHAT_SHIM_REAL=real, REASON_CHAT_SHIM_SETTINGS=str(settings),
-                       REASON_CHAT_SHIM_ARGS=json.dumps(extra))
+            # The old names too: a shim from before (still held open by a running turn) reads only those.
+            env.update(REASON_CHAT_SHIM_REAL=real, REASON_CHAT_SHIM_ARGS=json.dumps(extra),
+                       REASON_CHAT_CODEX_REAL=real, REASON_CHAT_CODEX_ARGS=json.dumps(extra))
+            if shim_current(fid):  # an older shim ignores the settings file: then changes restart the worker
+                settings = STATE / "worker-settings" / f"{name}.json"
+                write_settings(settings, extra)
+                env["REASON_CHAT_SHIM_SETTINGS"] = str(settings)
         elif extra:
             raise LaunchError("Could not build the model shim.", 500)
         env["PATH"] = os.pathsep.join(dirs + [env.get("PATH", "")])

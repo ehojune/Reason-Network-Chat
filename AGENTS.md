@@ -109,7 +109,9 @@ get the new token, and a newer server also triggers a reload.
   with a settings file gets the new model/effort written to `worker-settings/<name>.json` and uses it from its next
   `codex exec` (`{restarted: false}`). A permission change, any Claude change, or a worker from before settings files
   restarts it: Ctrl+C, a 1 s pause, `serve` again under the same name (`{restarted: true}`). The server asks `who`
-  first; a busy worker answers 409 unless `force` is true. `{unchanged: true}` when nothing differs.
+  first; a busy worker answers 409 unless `force` is true. `{unchanged: true}` when nothing differs. While it
+  restarts, its `workers.json` record stays until the new process replaces it, its name stays taken, it counts
+  toward `MAX_WORKERS`, and configure or stop on it answers 409.
 - `POST /api/rooms/save` `{id?, name, members[], group}` → creates a room (no `id`) or replaces its name, members and group flag.
   Members: 1–12 known session addresses, not the page's own. Returns `{ok, room}`.
 - `POST /api/rooms/delete` `{id}` → removes the room; messages are untouched.
@@ -193,7 +195,9 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
   `codex-shim/` or `claude-shim/`, whose `codex`/`claude` adds `model_args()` and runs the real CLI
   (`REASON_CHAT_SHIM_REAL`). The arguments come from `REASON_CHAT_SHIM_SETTINGS` (the worker's file, read on every
   run), else `REASON_CHAT_SHIM_ARGS`; the old `REASON_CHAT_CODEX_REAL`/`_ARGS` names still work for workers started
-  before. An effort in `CLAUDE_CODE_EFFORT_LEVEL` does not reach a `claude -p` stream-json child; do not go back to
+  before, and new workers get them too, because a running turn can hold the old shim `.exe` open so it is not
+  replaced yet. A worker gets a settings file only when the shim on disk is this version (`shim_current()`);
+  otherwise a later change restarts it. An effort in `CLAUDE_CODE_EFFORT_LEVEL` does not reach a `claude -p` stream-json child; do not go back to
   it. On Windows the shim is an `.exe` built from pip's script launcher (Bun refuses message text for `.cmd`);
   without pip, workers use the agent's default model and the page says so.
 - **Full access is dangerous by design.** A full-access worker runs whatever a network message (or a group-room

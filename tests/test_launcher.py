@@ -147,6 +147,7 @@ class CatalogParsingTest(unittest.TestCase):
             a = launcher.shim_dir(kind)
             if a is None:
                 self.skipTest("no pip launcher in this Python")
+            self.assertTrue(launcher.shim_current(kind))
             exe = Path(a) / (f"{kind}.exe" if launcher.WIN else kind)
             first = exe.read_bytes()
             launcher.shim_dir(kind)
@@ -262,6 +263,64 @@ class ConfigureTest(unittest.TestCase):
     def test_claude_restarts(self):
         self.assertTrue(self.conf(name="a-claude", fullAccess=True)["restarted"])
         self.assertEqual(self.restarts, [("claude", "", "", True)])
+
+    def test_during_a_restart(self):
+        seen = {}
+
+        def halt(w):  # what the rest of the server sees while the worker is down
+            seen["record kept"] = "a-claude" in self.l.workers
+            for call in (lambda: self.conf(name="a-claude", fullAccess=False), lambda: self.l.stop("a-claude")):
+                try:
+                    call()
+                except launcher.LaunchError as e:
+                    seen.setdefault("refused", []).append(e.code)
+            self.l.workers.update({f"w{i}": dict(self.l.workers["live-codex"], name=f"w{i}") for i in range(5)})
+            try:  # 3 + 5 = 8 workers, one of them restarting: no room for a ninth
+                self.l.launch({"agent": "codex", "mode": "worker", "folder": FOLDER, "name": "ninth"}, set())
+            except launcher.LaunchError as e:
+                seen["ninth"] = e.code
+            for i in range(5):
+                del self.l.workers[f"w{i}"]
+        self.l.halt = halt
+        self.assertTrue(self.conf(name="a-claude", fullAccess=True)["restarted"])
+        self.assertEqual(seen, {"record kept": True, "refused": [409, 409], "ninth": 429})
+        self.assertNotIn("a-claude", self.l.restarting)
+
+
+class StartWorkerTest(unittest.TestCase):
+    """What a worker process is given, with spawning faked."""
+    def setUp(self):
+        self.saved = launcher.spawn, launcher.find_codex, launcher.started_at, launcher.shim_current
+        self.spawned = []
+        launcher.spawn = lambda args, cwd, env, flags, log=None: self.spawned.append((args, env)) or 4242
+        launcher.find_codex = lambda: sys.executable
+        launcher.started_at = lambda pid: "t"
+        self.l = launcher.Launcher("reason", FakeCatalog())
+        if launcher.shim_dir("codex") is None:
+            self.skipTest("no pip launcher in this Python")
+
+    def tearDown(self):
+        launcher.spawn, launcher.find_codex, launcher.started_at, launcher.shim_current = self.saved
+
+    def test_current_shim_gets_a_settings_file(self):
+        w = self.l.start_worker(FakeCatalog().family("codex"), FOLDER, "gpt-6.1-sol", "high", "s-codex", True)
+        args, env = self.spawned[-1]
+        self.assertEqual(args[-1], "--full-access")
+        self.assertTrue(w["settings"] and env["REASON_CHAT_SHIM_SETTINGS"] == w["settings"])
+        self.assertEqual(json.loads(Path(w["settings"]).read_text(encoding="utf-8"))["args"],
+                         ["-c", "model=gpt-6.1-sol", "-c", "model_reasoning_effort=high"])
+        self.assertEqual(env["REASON_CHAT_CODEX_REAL"], env["REASON_CHAT_SHIM_REAL"])  # an older shim works too
+        self.assertTrue(env["PATH"].startswith(launcher.shim_dir("codex")))
+        self.assertTrue(launcher.Launcher.live_settings(w))
+
+    def test_an_older_shim_still_runs_but_changes_restart(self):
+        launcher.shim_current = lambda kind: False  # the old .exe is held open by a running turn
+        w = self.l.start_worker(FakeCatalog().family("codex"), FOLDER, "gpt-6.1-sol", "", "o-codex", False)
+        args, env = self.spawned[-1]
+        self.assertIsNone(w["settings"])
+        self.assertNotIn("REASON_CHAT_SHIM_SETTINGS", env)
+        self.assertEqual(json.loads(env["REASON_CHAT_CODEX_ARGS"]), ["-c", "model=gpt-6.1-sol"])
+        self.assertFalse(launcher.Launcher.live_settings(w))
 
 
 if __name__ == "__main__":

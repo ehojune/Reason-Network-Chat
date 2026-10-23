@@ -414,7 +414,7 @@ function reach(s) {
 const reachLabel = s => t("r" + reach(s)[0].toUpperCase() + reach(s).slice(1));
 const NOW = ["now", "workerBusy", "pushed", "afterTurn"], LATER = ["pull", "nextTurn", "cli"];
 // Sessions that will not read soon: the composer says so and offers a worker in the same folder.
-const sleepy = s => !!s && ["offline", "pull", "nextTurn"].includes(reach(s));
+const sleepy = s => !!s && ["offline", "pull", "nextTurn", "gone"].includes(reach(s));
 const favs = () => { const f = pref("favorites"); return Array.isArray(f) ? f : []; };
 
 // Preferences live on the server (the Browser pane can lose localStorage); localStorage only when saving fails.
@@ -570,7 +570,7 @@ function renderNoWake() {
   $("#nowake").hidden = !sleepy(s);
   $("#wakeAfterLabel").hidden = !(sleepy(s) && s.resumable);
   if (!sleepy(s)) return;
-  $("#nowakeText").textContent = t({offline: "nwOffline", pull: "nwPull", nextTurn: "nowake"}[reach(s)]);
+  $("#nowakeText").textContent = t({offline: "nwOffline", gone: "nwOffline", pull: "nwPull", nextTurn: "nowake"}[reach(s)]);
   $("#wakeBtn").hidden = !s.resumable;
   $("#wakeBtn").disabled = waking(s.address) || !unreadTo(s.address);
   $("#wakeBtn").title = unreadTo(s.address) ? "" : t("wakeNoUnread");

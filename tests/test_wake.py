@@ -36,10 +36,11 @@ def db_rows(sql, params=()):
     if "from sessions" in sql:
         row = ROWS.get(params[0])
         return [row] if row else []
-    if "where id in" in sql:
+    if "sent_at <= ?" in sql:
+        STILL_UNREAD["asked"] = params
         return [{"n": STILL_UNREAD["n"]}]
-    if sql.startswith("select id from messages"):
-        return [{"id": f"m{i}"} for i in range(UNREAD.get(params[0], 0))]
+    if sql.startswith("select max(sent_at)"):
+        return [{"t": 1000 if UNREAD.get(params[0], 0) else None}]
     return [{"n": UNREAD.get(params[0], 0)}]
 
 
@@ -78,10 +79,10 @@ class WakeTest(unittest.TestCase):
         finally:
             wake.find_codex = old
 
-    def adopted(self, home, child, ids):
+    def adopted(self, home, child, cutoff):
         w = wake.Waker(db_rows, home)
         w.running["pat/sleepy-codex"] = {"pid": child.pid, "started": wake.started_at(child.pid) or "x",
-                                         "at": int(time.time() * 1000), "ids": ids, "log": os.path.join(home, "none.log")}
+                                         "at": int(time.time() * 1000), "cutoff": cutoff, "log": os.path.join(home, "none.log")}
         w.save()
         return wake.Waker(db_rows, home, poll=0.05)  # a restarted server
 
@@ -96,7 +97,7 @@ class WakeTest(unittest.TestCase):
         home = tempfile.mkdtemp()
         child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
         try:
-            again = self.adopted(home, child, ["m1", "m2"])
+            again = self.adopted(home, child, 1000)
             self.assertEqual(again.view()["pat/sleepy-codex"]["status"], "running")
             old = wake.find_codex
             wake.find_codex = lambda: sys.executable
@@ -119,11 +120,13 @@ class WakeTest(unittest.TestCase):
         child.wait()  # ended while the server was down
         STILL_UNREAD["n"] = 1
         try:
-            done = self.settle(self.adopted(home, child, ["m1"]))
+            done = self.settle(self.adopted(home, child, 1000))
         finally:
             STILL_UNREAD["n"] = 0
         self.assertEqual(done["status"], "failed")
         self.assertIn("still unread", done["error"])
+        # judged on every message unread at the start (recipient + time cutoff), not a capped list of ids
+        self.assertEqual(STILL_UNREAD["asked"], ("pat/sleepy-codex", 1000))
 
     def test_prompt_is_fixed(self):
         self.assertIn("check_inbox", wake.WAKE_PROMPT)

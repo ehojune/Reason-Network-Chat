@@ -27,7 +27,6 @@ WAKE_PROMPT = ("You have unread Reason Network messages. Read them with check_in
                "with send_message. Do nothing else.")
 TIMEOUT = 600  # seconds for one woken turn
 MAX_RUNNING = 3
-MAX_IDS = 50  # unread messages remembered per wake to judge it
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
@@ -47,8 +46,9 @@ class Waker:
         self.path = Path(home) / "wakes.json" if home else None
         self.running = {}  # address -> {"pid", "started", "at", "ids", "log"}
         for address, w in self.load().items():
-            if not (isinstance(w, dict) and isinstance(w.get("pid"), int) and isinstance(w.get("ids"), list)):
+            if not (isinstance(w, dict) and isinstance(w.get("pid"), int) and isinstance(w.get("cutoff"), int)):
                 continue
+            w["address"] = address
             self.running[address] = w
             self.state[address] = {"status": "running", "at": int(w.get("at") or 0), "error": ""}
             threading.Thread(target=self.watch, args=(address, w), daemon=True).start()  # alive or not: it judges
@@ -114,8 +114,9 @@ class Waker:
         codex = find_codex()
         if not codex:
             raise WakeError("Codex is not installed on this computer.")
-        ids = [r["id"] for r in self.db_rows("select id from messages where recipient = ? and read_at is null"
-                                             " order by sent_at desc limit ?", (address, MAX_IDS))]
+        # Everything unread now is what this wake is for: remember the newest such message's time, not a list.
+        last = self.db_rows("select max(sent_at) as t from messages where recipient = ? and read_at is null", (address,))
+        cutoff = last[0]["t"] if last and last[0]["t"] is not None else 0
         with self.lock:
             if self.state.get(address, {}).get("status") == "running":
                 raise WakeError("Already waking it.", 409)
@@ -132,7 +133,8 @@ class Waker:
         except Exception as e:
             self.finish(address, f"could not start codex: {e}")
             raise WakeError(f"Could not start Codex: {e}", 500)
-        w = {"pid": pid, "started": started_at(pid) or "", "at": int(time.time() * 1000), "ids": ids, "log": log}
+        w = {"pid": pid, "started": started_at(pid) or "", "at": int(time.time() * 1000), "address": address,
+             "cutoff": cutoff, "log": log}
         with self.lock:
             self.running[address] = w
             self.save()
@@ -152,12 +154,10 @@ class Waker:
 
     def judge(self, w, timed_out):
         """'' when every message that was unread at the start has been read, else why not."""
-        ids = w.get("ids") or []
-        if ids:
-            marks = ",".join("?" * len(ids))
-            left = self.db_rows(f"select count(*) as n from messages where id in ({marks}) and read_at is null", tuple(ids))
-            if not left or not left[0]["n"]:
-                return ""
+        left = self.db_rows("select count(*) as n from messages where recipient = ? and read_at is null and sent_at <= ?",
+                            (w.get("address"), w["cutoff"]))
+        if not left or not left[0]["n"]:
+            return ""
         if timed_out:
             return f"no answer within {TIMEOUT} s"
         try:  # the end of codex's own output says what went wrong

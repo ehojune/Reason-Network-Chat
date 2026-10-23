@@ -179,6 +179,8 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
   `relay.py` (`MAX_HOPS` 100, `BUDGET` 300 per `BUDGET_WINDOW` 600 s, or a room's own) are what stands between two
   agents and an endless exchange; keep a default limit. Over a limit a hand-off is queued, never dropped: users rely
   on the flow continuing. Only replies whose `reply_to` is a relayed message are passed on.
+  Queued hand-offs are checked again before each send: one whose sender or recipient left the room is dropped,
+  and the room's current hop limit decides whether it is held.
 - **Relay state survives restarts.** `relay.json` keeps `sent` (relayed messages), `seen`, the scan cursor `since`,
   `done` (hand-offs already queued) and `queue`. A restarted server resumes from `since` (at most `RESUME_MS`, 24 h,
   back), so replies that arrived while it was down are passed on once. Saves read the file and merge `sent` / `seen`

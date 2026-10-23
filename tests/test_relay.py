@@ -228,6 +228,48 @@ class RelayTest(unittest.TestCase):
         self.r.scan(ME)
         self.assertIsNone(self.queued())
 
+    def test_queued_hand_off_to_a_member_who_left_is_dropped(self):
+        self.room["limits"] = {"budget": 1}
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude @c-codex look", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        queued_for = self.r.queue[self.room["id"]][0]["to"]
+        self.room["members"] = [m for m in self.room["members"] if m != queued_for]  # edited while it waits
+        self.r.post(self.room, ME, "@a-codex fresh budget")
+        self.r.scan(ME)
+        self.assertEqual(self.sent_to(queued_for), [])
+        self.assertIsNone(self.queued())
+
+    def test_a_lowered_hop_limit_holds_queued_hand_offs(self):
+        self.room["limits"] = {"budget": 1}
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude @c-codex look", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        self.room["limits"] = {"budget": 5, "hops": 0}  # hop 1 is now past the limit
+        self.r.scan(ME)
+        self.assertEqual(self.queued(), {"waiting": 0, "held": 1})
+        self.room["limits"] = {"budget": 5}  # raised again: it goes
+        self.r.scan(ME)
+        self.assertIsNone(self.queued())
+
+    def test_a_sent_hand_off_leaves_the_queue_in_the_same_save(self):
+        self.room["limits"] = {"budget": 1}
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude @c-codex look", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        self.r.flush(self.room["id"])
+        self.r.scan(ME)
+        saved = json.loads((Path(self.home) / "relay.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["queue"], {})
+        self.new_relay().scan(ME)  # a restart sends nothing again
+        self.assertEqual(len(self.sent_to(B)) + len(self.sent_to(C)), 2)
+
+    def test_mention_right_after_other_text(self):
+        self.r.post(self.room, ME, "안녕@b-claude 봐 줘")
+        self.assertEqual(self.counts(), [0, 1, 0])
+        with self.assertRaises(relay.RelayError):
+            self.r.post(self.room, ME, "mail pat@b-claude is not a mention")
+
     def test_no_limit_room(self):
         self.room["limits"] = {"hops": None, "budget": None}
         old = relay.MAX_HOPS, relay.BUDGET

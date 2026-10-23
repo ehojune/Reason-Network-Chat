@@ -622,7 +622,7 @@ function relayOf(m) {
 
 // Who a group-room message goes to, the rule relay.targets() applies: the members it @mentions (@all / @모두:
 // everyone), else the room's default recipient, else nobody (the page then asks for a mention).
-const MENTION_RE = /(?<![\w@\/])@([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)?|모두|전체)/g;
+const MENTION_RE = /(?<![A-Za-z0-9_@\/])@([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)?|모두|전체)/g;  // = relay.MENTION_RE
 const EVERYONE = ["all", "everyone", "모두", "전체"];
 const handleOf = (addr, room) => room.members.filter(m => short(m) === short(addr)).length === 1 ? short(addr) : addr;
 function roomTargets(room, body) {

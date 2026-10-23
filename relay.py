@@ -40,7 +40,9 @@ LINE_CHARS = 600
 KEEP = 3000  # records of sent messages kept on disk
 RETRIES = 3  # attempts at one hand-off before it is reported as failed
 # @name or @person/name (ASCII, so "@codex-worker1에게" still names codex-worker1), or @모두 / @전체
-MENTION_RE = re.compile(r"(?<![\w@/])@([A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)?|모두|전체)")
+# The same pattern as MENTION_RE in index.html, so the page shows who the server will send to ("안녕@b-claude" names
+# b-claude; "pat@b-claude" does not).
+MENTION_RE = re.compile(r"(?<![A-Za-z0-9_@/])@([A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)?|모두|전체)")
 EVERYONE = {"all", "everyone", "모두", "전체"}
 
 
@@ -62,6 +64,12 @@ def label(addr, me, room):
 def clip(text, n):
     text = " ".join(text.split())
     return text if len(text) <= n else text[: n - 1] + "…"
+
+
+def held(room, item):
+    """A queued hand-off past the room's current hop limit waits for you (unless you sent it on with "Send all now")."""
+    hops = limit(room, "hops")
+    return not item.get("force") and hops is not None and item["hop"] > hops
 
 
 def limit(room, key):
@@ -152,9 +160,10 @@ class Relay:
             rel = {i: {k: self.sent[i].get(k) for k in ("room", "hop", "core", "speaker")} for i in ids if i in self.sent}
             queued = {}
             for rid, items in self.queue.items():
-                held = sum(1 for i in items if i.get("held") and not i.get("force"))
+                room = self.rooms.get(rid)
+                n = sum(1 for i in items if room and held(room, i))
                 if items:
-                    queued[rid] = {"waiting": len(items) - held, "held": held}
+                    queued[rid] = {"waiting": len(items) - n, "held": n}
             return rel, queued, dict(self.notice)
 
     # ---------- composing ----------
@@ -211,8 +220,10 @@ class Relay:
             if lines else ""
         return f"{head}{earlier}\n---\n{label(speaker, me, room)}: {core}", (lines[-1][0] if lines else 0)
 
-    def deliver(self, room, member, me, speaker, core, hop, skip=None, skip_at=0):
-        """Compose and send one relayed message. The CLI runs without self.lock, so polling never waits on it."""
+    def deliver(self, room, member, me, speaker, core, hop, skip=None, skip_at=0, item=None):
+        """Compose and send one relayed message. The CLI runs without self.lock, so polling never waits on it.
+        A queued `item` leaves the queue in the same save that records the message as sent: a restart in between
+        cannot send it twice."""
         with self.lock:
             body, newest = self.compose(room, member, me, speaker, core, skip)
         try:
@@ -231,8 +242,18 @@ class Relay:
             # Only as far as the lines it was given (a reply that landed while this was sent stays "missed"),
             # plus the handed-off reply itself, which it just got as the message.
             self.seen[key] = max(self.seen.get(key, 0), newest, skip_at)
+            if item is not None:
+                self.dequeue(room["id"], item)
             self.save()
         return True, ""
+
+    def dequeue(self, rid, item):
+        """Take one item off a room's queue (call with self.lock held)."""
+        items = self.queue.get(rid) or []
+        if item in items:
+            items.remove(item)
+        if not items:
+            self.queue.pop(rid, None)
 
     @staticmethod
     def mentioned(room, text, exclude=None, everyone=False):
@@ -315,10 +336,9 @@ class Relay:
                     for m in targets:
                         if (r["id"], m) in self.done:
                             continue
-                        hops = limit(room, "hops")
                         self.queue.setdefault(room["id"], []).append({
                             "reply": r["id"], "to": m, "sender": r["sender"], "body": r["body"], "hop": rec["hop"] + 1,
-                            "at": r["sent_at"], "held": hops is not None and rec["hop"] >= hops})
+                            "at": r["sent_at"]})
                         self.done[(r["id"], m)] = r["sent_at"]  # settled: it is in the queue now
                         changed = True
                 if rows and rows[-1]["sent_at"] > self.since:
@@ -340,8 +360,14 @@ class Relay:
                         self.queue.pop(rid, None)
                         self.save()
                         break
-                    # Held items (past the hop limit) wait for you; the others go out in order.
-                    item = next((i for i in items if i.get("force") or not i.get("held")), None)
+                    # Someone who left the room gets nothing more from it, and a reply of someone who left is not passed on.
+                    gone = [i for i in items if i["to"] not in room["members"] or i["sender"] not in room["members"]]
+                    for i in gone:
+                        self.dequeue(rid, i)
+                    if gone:
+                        self.save()
+                    # Held items (past the room's current hop limit) wait for you; the others go out in order.
+                    item = next((i for i in self.queue.get(rid) or [] if not held(room, i)), None)
                     if not item:
                         break
                     slot = self.take(room) if not item.get("force") else time.time()
@@ -355,22 +381,19 @@ class Relay:
     def send_item(self, room, me, item, slot):
         rid, key = room["id"], (item["reply"], item["to"])
         ok, err = self.deliver(room, item["to"], me, item["sender"], item["body"], item["hop"],
-                               skip=item["reply"], skip_at=item.get("at", 0))
+                               skip=item["reply"], skip_at=item.get("at", 0), item=item)
         with self.lock:
-            items = self.queue.get(rid) or []
-            if not ok and slot in self.passes[rid]:
+            if ok:
+                self.tries.pop(key, None)
+                return True
+            if slot in self.passes[rid]:
                 self.passes[rid].remove(slot)  # a failed send does not use up the budget
-            if ok or self.tries[key] + 1 >= RETRIES:
-                if item in items:
-                    items.remove(item)
-                if not items:
-                    self.queue.pop(rid, None)
-                if not ok:
-                    self.notice[rid] = f"{short(item['sender'])} → {short(item['to'])}: {err}"
+            self.tries[key] += 1
+            if self.tries[key] >= RETRIES:
+                self.dequeue(rid, item)
+                self.notice[rid] = f"{short(item['sender'])} → {short(item['to'])}: {err}"
                 self.tries.pop(key, None)
                 self.save()
-                return ok
-            self.tries[key] += 1
             return False
 
     def run(self, me_fn, every=2):

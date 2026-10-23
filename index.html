@@ -207,6 +207,17 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
 @media (max-width: 640px) { #side { width: 170px !important; } #split { display: none; } .sub { display: none; }
   .two { grid-template-columns: 1fr; } }
 </style>
+<style>
+.quote { display: block; width: 100%; text-align: left; font: inherit; background: none; border: 0; border-left: 3px solid var(--line); cursor: pointer; }
+.quote:hover, .quote:focus-visible { text-decoration: underline; color: var(--accent); }
+.jumpFlash { outline: 3px solid var(--accent); outline-offset: 4px; }
+.ack { font-size: 12px; color: var(--muted); margin: 5px 0; }
+.ack summary { cursor: pointer; }
+.ack pre, .troubleText { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+#troubleDlg { width: min(760px, 92vw); max-height: 85vh; overflow: auto; }
+.troubleItem { border-top: 1px solid var(--line); padding: 12px 0; }
+.troubleItem .dbtn { justify-content: flex-start; flex-wrap: wrap; }
+</style>
 </head>
 <body>
 <aside id="side">
@@ -290,6 +301,10 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
       <button type="button" class="plain" id="rfCancel" data-t="cancel"></button>
       <button type="submit" class="go" id="rfGo" data-t="save"></button></div>
   </form>
+</dialog>
+<dialog id="troubleDlg" aria-labelledby="troubleTitle">
+  <h2 id="troubleTitle"></h2><p id="troubleHelp" class="hint"></p><div id="troubleItems"></div>
+  <div class="dbtn"><button type="button" id="troubleClose" data-t="procsClose"></button></div>
 </dialog>
 <script>
 const T = {
@@ -548,6 +563,15 @@ const T = {
     noLimit: "不限",
     noLimitAsk: "取消上限后，智能体可能无休止地互相回复并持续消耗轮次（费用）。继续吗？" },
 };
+Object.assign(T.ko, {tNoAnswer: "읽었지만 답변 없음", viewTrouble: "보기", troubleTitle: "답을 못 받은 메시지", troubleHelp: "최근 24시간 안에 보낸 메시지입니다. 실패 답변을 받았거나, 읽은 지 10분이 지났고 worker가 작업 중이 아니면 표시합니다. 내용 확인만으로는 다시 보내지 않습니다.",
+  troubleEmpty: "이 화면에 남은 항목이 없습니다.", goOriginal: "원문으로 이동", missingOriginal: "원문이 현재 불러온 기록에 없습니다.", switchedAll: "전체 메시지에서 원문을 표시합니다.",
+  ack: "✓ 확인(답 없음)", failureDetail: "실패 사유", dismissOne: "덮어 두기"});
+Object.assign(T.en, {viewTrouble: "View", troubleTitle: "Messages without an answer", troubleHelp: "Messages sent in the last 24 hours: a failure reply, or read over 10 minutes ago while the worker is not working. Viewing this list never resends a message.",
+  troubleEmpty: "No remaining items in this view.", goOriginal: "Go to the original", missingOriginal: "The original is not in the loaded history.", switchedAll: "Showing the original in All messages.",
+  ack: "✓ Acknowledged (no answer)", failureDetail: "Failure details", dismissOne: "Put aside"});
+Object.assign(T.zh, {viewTrouble: "查看", troubleTitle: "没有得到回答的消息", troubleHelp: "最近 24 小时内发送的消息：收到失败回复，或已读超过 10 分钟且 worker 未在工作。查看列表不会再次发送消息。",
+  troubleEmpty: "当前视图没有剩余项目。", goOriginal: "跳转到原文", missingOriginal: "已加载的记录中没有原文。", switchedAll: "已在全部消息中显示原文。",
+  ack: "✓ 已确认（无回答）", failureDetail: "失败详情", dismissOne: "搁置"});
 const LOCALE = {ko: "ko-KR", en: "en-US", zh: "zh-CN"};
 const store = {get: k => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
@@ -682,7 +706,8 @@ async function setPref(key, value) {
 }
 
 function renderSide() {
-  const count = a => S.messages.filter(m => m.sender === a || m.recipient === a).length;
+  const visibleMessages = S.messages.filter(m => !isAck(m));
+  const count = a => visibleMessages.filter(m => m.sender === a || m.recipient === a).length;
   const group = s => NOW.includes(reach(s)) ? 0 : LATER.includes(reach(s)) ? 1 : ["offline", "stale"].includes(reach(s)) ? 2 : 3;
   const hide = pref("hideOffline") !== false;
   const all = [...S.sessions].sort((a, b) => group(a) - group(b) || (b.status === "busy") - (a.status === "busy")
@@ -694,7 +719,7 @@ function renderSide() {
     .filter(s => !fav.includes(s.address) && !(s.inner && s.address !== sel));
   const star = key => fav.includes(key) ? `<span class="star">★</span>` : "";
   const roomRow = r => {
-    const key = `room:${r.id}`, c = S.messages.filter(m => inRoom(m, r)).length;
+    const key = `room:${r.id}`, c = visibleMessages.filter(m => inRoom(m, r)).length;
     return `<div class="ses ${sel === key ? "sel" : ""}" tabindex="0" data-a="${esc(key)}" title="${esc(r.members.join(", "))}">
       <span class="hash">#</span><span class="nm">${star(key)}${esc(r.name)}</span><span class="cnt">${c || ""}</span>
       <span class="sub">${r.group ? `<span class="tag grp">${t("grp")}</span>` : ""}${esc(r.members.map(short).join(", "))}</span></div>`;
@@ -711,7 +736,7 @@ function renderSide() {
       <span class="sub"><span class="tag ${esc(s.agent)}">${esc(s.agent)}</span>${s.worker ? `<span class="tag wk">${t("wk")}</span>` : ""}${conf}${s.stuck ? `<span class="stuck">${esc(reachLabel(s))}</span>` : esc(reachLabel(s))}${sub ? " · " + esc(sub) : ""}</span></div>`;
   };
   let h = `<div class="ses ${sel ? "" : "sel"}" tabindex="0" data-a=""><span class="dot idle"></span><span class="nm">${t("all")}</span>
-    <span class="cnt">${S.messages.length}</span></div>`;
+    <span class="cnt">${visibleMessages.length}</span></div>`;
   // Favorites, in the order they were added; a favorite whose room or session no longer exists is skipped.
   const favRows = fav.map(k => { const r = roomOf(k); if (r) return roomRow(r);
     const s = S.sessions.find(x => x.address === k); return s ? sesRow(s) : ""; }).filter(Boolean);
@@ -854,18 +879,32 @@ $("#body").addEventListener("keydown", e => {
 
 // ---- Markdown in bubbles. Everything is HTML-escaped first; only then do known patterns become tags, so raw HTML in
 // a message is never interpreted. Links: http(s) only, in a new tab without the opener. Tables scroll in the bubble.
+function mdEmphasis(s) {
+  return s.replace(/\*\*(?=\S)([^*\n]*?\S)\*\*/g, "<strong>$1</strong>").replace(/__(?=\S)([^_\n]*?\S)__/g, "<strong>$1</strong>")
+    .replace(/(^|[^*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![*\w])/g, "$1<em>$2</em>")
+    .replace(/(^|[^_\w])_(?=[^\s_])([^_\n]*?[^\s_])_(?![_\w])/g, "$1<em>$2</em>")
+    .replace(/~~(?=\S)([^~\n]*?\S)~~/g, "<del>$1</del>");
+}
+// Trim punctuation and unmatched closing parentheses, keeping balanced pairs in URLs.
+function trimUrl(url) {
+  url = url.replace(/[.,;:!?\]]+$/, "");
+  let balance = 0, end = url.length;
+  for (let i = 0; i < url.length; i++) {
+    if (url[i] === "(") balance++;
+    if (url[i] === ")" && --balance < 0) { end = i; break; }
+  }
+  return url.slice(0, end);
+}
 function mdInline(s) {  // s is already escaped
   const keep = [], stash = html => `\u0000${keep.push(html) - 1}\u0000`;
   const link = (url, text) => stash(`<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>`);
   s = s.replace(/`([^`\n]+)`/g, (_, c) => stash(`<code>${c}</code>`));
   // A URL ends at a quote (escaped as &quot; / &#39;), so nothing past one can ride along in the link.
-  s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/(?:(?!&quot;|&#39;)[^\s)])+)\)/g, (_, text, url) => link(url, text));
-  s = s.replace(/(^|[\s(])(https?:\/\/(?:(?!&quot;|&#39;)[^\s<])*(?:(?!&quot;|&#39;)[^\s<.,;:!?)\]]))/g,
-    (_, pre, url) => pre + link(url, url));
-  s = s.replace(/\*\*(?=\S)([^*\n]*?\S)\*\*/g, "<strong>$1</strong>").replace(/__(?=\S)([^_\n]*?\S)__/g, "<strong>$1</strong>");
-  s = s.replace(/(^|[^*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![*\w])/g, "$1<em>$2</em>");
-  s = s.replace(/(^|[^_\w])_(?=[^\s_])([^_\n]*?[^\s_])_(?![_\w])/g, "$1<em>$2</em>");
-  s = s.replace(/~~(?=\S)([^~\n]*?\S)~~/g, "<del>$1</del>");
+  s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/(?:(?!&quot;|&#39;)[^\s()]+|\((?:(?!&quot;|&#39;)[^\s()])*\))+)\)/g,
+    (_, text, url) => link(url, mdEmphasis(text)));
+  s = s.replace(/(^|[\s(])(https?:\/\/(?:(?!&quot;|&#39;|\u0000)[^\s<])+)/g,
+    (_, pre, full) => { const url = trimUrl(full); return pre + link(url, url) + full.slice(url.length); });
+  s = mdEmphasis(s);
   // Stashed pieces can hold other stashed pieces (code inside a link label): restore until none is left.
   for (let n = 0; n < 4 && s.includes("\u0000"); n++) s = s.replace(/\u0000(\d+)\u0000/g, (_, i) => keep[+i]);
   return s;
@@ -906,13 +945,26 @@ function mdBlocks(lines, depth = 0) {  // lines are already escaped; depth: quot
     } else if (LIST_RE.test(line)) {
       flush();
       const items = [];
+      let fence = null;
       for (; i < lines.length; i++) {
         const lm = lines[i].match(LIST_RE);
-        if (lm) items.push({indent: lm[1].replace(/\t/g, "  ").length, ordered: !!lm[3], start: +lm[3] || 1, text: lm[4]});
-        else if (lines[i].trim() && /^\s+/.test(lines[i]) && items.length) items[items.length - 1].text += "\n" + lines[i].trim();
+        const last = items[items.length - 1], indent = lines[i].match(/^\s*/)[0].replace(/\t/g, "  ").length;
+        if (fence && last && (!lines[i].trim() || indent >= last.contentIndent)) {
+          const text = lines[i].replace(/\t/g, "  ").slice(last.contentIndent);
+          last.text += "\n" + text;
+          if (text.trim().startsWith(fence)) fence = null;
+        } else if (lm) {
+          items.push({indent: lm[1].replace(/\t/g, "  ").length, contentIndent: lm[0].length - lm[4].length,
+            ordered: !!lm[3], start: +lm[3] || 1, text: lm[4]});
+          fence = lm[4].match(/^(```|~~~)/)?.[1] || null;
+        } else if (last && /^\s+/.test(lines[i]) && indent >= last.contentIndent) {
+          const text = lines[i].replace(/\t/g, "  ").slice(last.contentIndent);
+          last.text += "\n" + text;
+          fence = text.match(/^(```|~~~)/)?.[1] || null;
+        } else if (!lines[i].trim() && last && i + 1 < lines.length && /^\s+\S/.test(lines[i + 1])) last.text += "\n";
         else break;
       }
-      out += mdList(items);
+      out += depth < 8 ? mdList(items, depth) : `<p>${items.map(it => it.text).join("<br>")}</p>`;
     } else if (!line.trim()) {
       flush(); i++;
     } else {
@@ -922,7 +974,7 @@ function mdBlocks(lines, depth = 0) {  // lines are already escaped; depth: quot
   flush();
   return out;
 }
-function mdList(items) {
+function mdList(items, depth = 0) {
   let html = "";
   const stack = [];  // open lists: {indent, tag}
   for (const it of items) {
@@ -935,7 +987,7 @@ function mdList(items) {
       stack.push({indent: it.indent, tag});
     } else html += "</li>";
     const text = it.text.replace(/^\[( |x|X)\]\s+/, (_, c) => c === " " ? "☐ " : "☑ ");
-    html += `<li>${text.split("\n").map(mdInline).join("<br>")}`;
+    html += `<li>${mdBlocks(text.split("\n"), depth + 1)}`;
   }
   while (stack.length) html += `</li></${stack.pop().tag}>`;
   return html;
@@ -943,6 +995,34 @@ function mdList(items) {
 const md = text => mdBlocks(esc(String(text ?? "").replace(/\u0000/g, "")).split("\n"));
 const rawIds = new Set();  // messages shown as written (the per-bubble toggle)
 const openRelays = new Set();  // passed-on replies unfolded by a click
+
+// Same placeholders as relay.no_answer; real short answers ("4", "no") remain bubbles.
+const NO_ANSWER = new Set(["(해당 없음)", "해당 없음", "n/a", "(n/a)", "(none)", "no answer", "(no answer)", "nothing to add"]);
+const noAnswer = text => { const s = String(text || "").trim().replace(/\s+/g, " ").toLowerCase();
+  return !/[\p{L}\p{N}_]/u.test(s) || NO_ANSWER.has(s.replace(/^\.+|\.+$/g, "")); };
+const isAck = m => !!m.reply_to && m.sender !== S.me && !relayOf(m) && noAnswer(m.body);
+function ackHtml(ids) {
+  const replies = S.messages.filter(x => ids.includes(x.reply_to) && isAck(x));
+  if (!replies.length) return "";
+  const names = [...new Set(replies.map(x => short(x.sender)))].join(", ");
+  return `<details class="ack"><summary>${esc(t("ack"))} · ${esc(names)}</summary>${replies.map(x =>
+    `<div data-ids="${esc(JSON.stringify([x.id]))}">${esc(x.sender)} · ${esc(fmtD(x.sent_at))} ${fmtT(x.sent_at)}<details><summary>${esc(t("raw"))}</summary><pre>${esc(x.body)}</pre></details></div>`).join("")}</details>`;
+}
+const messageIds = m => esc(JSON.stringify(m.all.map(x => x.id)));
+function jumpOriginal(id) {
+  if (!S.messages.some(x => x.id === id)) { say(t("missingOriginal"), true); return; }
+  const find = () => [...$("#tl").querySelectorAll("[data-ids]")].find(x => JSON.parse(x.dataset.ids).includes(id));
+  let el = find();
+  if (!el) { pick(""); el = find(); say(t("switchedAll")); }
+  if (!el) { say(t("missingOriginal"), true); return; }
+  for (let p = el.parentElement; p; p = p.parentElement) if (p.tagName === "DETAILS") p.open = true;
+  if (el.classList.contains("relay") && !el.classList.contains("open")) {
+    openRelays.add(el.dataset.id); render(true); el = find();
+  }
+  el.scrollIntoView({block: "center"}); el.classList.add("jumpFlash");
+  el.tabIndex = -1; el.focus({preventScroll: true});
+  setTimeout(() => el.classList.remove("jumpFlash"), 2200);
+}
 
 function renderTl() {
   const tl = $("#tl");
@@ -955,6 +1035,7 @@ function renderTl() {
   const same = (g, m) => g.sender === m.sender && g.body === m.body && g.reply_to === m.reply_to && g.wake === m.wake
     && !!g.rel === !!m.rel && m.sent_at - g.sent_at < 15000 && !g.to.includes(m.recipient);
   for (const raw of S.messages.filter(shown)) {
+    if (isAck(raw) && byId[raw.reply_to] && shown(byId[raw.reply_to])) continue;
     const rel = relayOf(raw), m = rel ? {...raw, body: rel.core, rel} : raw;
     let g = null;
     for (let i = ms.length - 1; i >= 0 && m.sent_at - ms[i].sent_at < 15000; i--) if (same(ms[i], m)) { g = ms[i]; break; }
@@ -969,22 +1050,23 @@ function renderTl() {
     // A worker's reply saying it could not run the message: a notice, not an answer. Only a reply from someone
     // else: your own text quoting such an error stays a bubble.
     if (!m.rel && m.reply_to && m.sender !== S.me && isFailure(m.body)) {
-      h += `<div class="sysErr" role="note">⚠ ${esc(short(m.sender))} · ${fmtT(m.sent_at)} · ${esc(t("wFailed"))}<div class="errText">${
+      h += `<div class="sysErr" role="note" data-ids="${messageIds(m)}">⚠ ${esc(short(m.sender))} · ${fmtT(m.sent_at)} · ${esc(t("wFailed"))}<div class="errText">${
         esc(m.body.replace(/^The [A-Za-z ]+ worker failed: /, "").slice(0, 400))}</div></div>`;
       continue;
     }
+    if (isAck(m)) { h += ackHtml([m.reply_to]); continue; }
     if (m.rel && m.rel.hop > 0) {
       // A member's reply passed on: a header, then the reply as the members got it (core, not the envelope with its
       // "Earlier in the room" lines). Folded to its first lines; a click opens it. In a member's 1:1 view this is the
       // only place the hand-off's text shows.
       const open = openRelays.has(m.id), html = md(m.body), rich = /<(?!\/?(p|br)>)/.test(html);
       const raw = !rich || rawIds.has(m.id);
-      h += `<div class="relay ${open ? "open" : ""}" data-id="${esc(m.id)}">
+      h += `<div class="relay ${open ? "open" : ""}" data-id="${esc(m.id)}" data-ids="${messageIds(m)}">
         <button type="button" class="relayHead" aria-expanded="${open}" title="${esc(t(open ? "fold" : "unfold"))}">${open ? "▾" : "▸"} ↪ ${
           esc(short(m.rel.speaker))}${esc(t("passed"))} ${esc(m.to.map(short).join(", "))} · ${fmtT(m.sent_at)}</button>
         <div class="bub ${raw ? "raw" : "md"}"${open ? "" : " inert"}>${raw ? esc(m.body) : html}</div>${
           (open && rich) || troubleHtml(m) ? `<div class="foot">${open && rich ? `<button type="button" class="rawBtn" data-id="${
-            esc(m.id)}">${t(raw ? "formatted" : "raw")}</button>` : ""}${troubleHtml(m)}</div>` : ""}</div>`;
+            esc(m.id)}">${t(raw ? "formatted" : "raw")}</button>` : ""}${troubleHtml(m)}</div>` : ""}${ackHtml(m.all.map(x => x.id))}</div>`;
       continue;
     }
     const me = m.sender === S.me;
@@ -1000,12 +1082,12 @@ function renderTl() {
     // Markdown unless the reader asked for the source; the toggle only where formatting changed something.
     // Plain messages (no formatting found) stay exactly as written, spaces and all: logs, aligned columns, diagrams.
     const html = md(text), rich = /<(?!\/?(p|br)>)/.test(html), raw = !rich || rawIds.has(m.id);
-    h += `<div class="msg ${me ? "me" : ""}">
+    h += `<div class="msg ${me ? "me" : ""}" data-ids="${messageIds(m)}">
       <div class="meta">${agentTag(m.sender, m.sender_agent)}<span class="who" data-a="${esc(m.sender)}">${esc(short(m.sender))}</span>
         → ${m.to.map(a => `${agentTag(a, null, true)}<span class="who" data-a="${esc(a)}">${esc(short(a))}</span>`).join(", ")} · ${fmtT(m.sent_at)}${
         me ? "" : `<button type="button" class="replyBtn" data-id="${esc(m.id)}" title="${esc(t("reply"))}" aria-label="${esc(t("reply"))}">↩</button>`}</div>
-      <div class="bub ${raw ? "raw" : "md"}">${q ? `<div class="quote">↪ ${esc(short(qr ? qr.speaker : q.sender))}: ${esc((qr ? qr.core : q.body).split(DM_MARK)[0].slice(0, 160))}</div>` : ""}${raw ? esc(text) : html}</div>
-      <div class="foot">${esc(flags)}${me ? troubleHtml(m) : ""}${rich ? `<button type="button" class="rawBtn" data-id="${esc(m.id)}">${t(raw ? "formatted" : "raw")}</button>` : ""}${fwdHtml(m)}</div></div>`;
+      <div class="bub ${raw ? "raw" : "md"}">${m.reply_to ? `<button type="button" class="quote" data-target="${esc(m.reply_to)}" title="${esc(t("goOriginal"))}">↪ ${q ? `${esc(short(qr ? qr.speaker : q.sender))}: ${esc((qr ? qr.core : q.body).split(DM_MARK)[0].slice(0, 160))}` : esc(t("missingOriginal"))}</button>` : ""}${raw ? esc(text) : html}</div>
+      <div class="foot">${esc(flags)}${me ? troubleHtml(m) : ""}${rich ? `<button type="button" class="rawBtn" data-id="${esc(m.id)}">${t(raw ? "formatted" : "raw")}</button>` : ""}${fwdHtml(m)}</div>${ackHtml(m.all.map(x => x.id))}</div>`;
   }
   tl.innerHTML = h;
   if (atBottom || tl.dataset.first !== "0") { tl.scrollTop = tl.scrollHeight; tl.dataset.first = "0"; }
@@ -1020,7 +1102,7 @@ function fwdHtml(m) {
 }
 
 // A worker's failure (`serve` could not run the turn) is not an answer; = relay.FAILURE_RE.
-const FAILURE_RE = /^(The [A-Za-z][A-Za-z ]{0,30} worker failed: |Codex failed: |(codex|grok) exited with -?\d+\s*$)/;
+const FAILURE_RE = /^(The [A-Za-z][A-Za-z ]{0,30} worker failed: |Codex failed: |(codex|grok) exited with -?\d+\s*$|You've hit your (session|usage) limit\b)/;
 const isFailure = b => FAILURE_RE.test(String(b || "").trimStart());
 const NOANS_MS = 10 * 60 * 1000, RECENT_MS = 24 * 3600 * 1000;
 // Your messages to a worker (`serve`, tier "turn") from the last day that came to nothing: only failures came back
@@ -1057,8 +1139,38 @@ function renderTrouble() {
   $("#trouble").hidden = !list.length;
   if (!list.length) return;
   $("#trouble").innerHTML = esc(t("troubleBar").replace("{n}", list.length).replace("{f}", f).replace("{a}", list.length - f)) +
-    `<button type="button" class="resendAll">${esc(t("resendAll"))}</button><button type="button" class="dismissAll">${esc(t("dismissAll"))}</button>`;
+    `<button type="button" class="viewTrouble">${esc(t("viewTrouble"))}</button><button type="button" class="resendAll">${esc(t("resendAll"))}</button><button type="button" class="dismissAll">${esc(t("dismissAll"))}</button>`;
 }
+function troubleListHtml(list) {
+  return list.map(([id, v]) => {
+    const m = S.messages.find(x => x.id === id);
+    if (!m) return "";
+    const rel = relayOf(m), body = (rel ? rel.core : m.body).split(DM_MARK)[0];
+    const failures = S.messages.filter(x => x.reply_to === id && x.sender === m.recipient && isFailure(x.body));
+    return `<article class="troubleItem" data-id="${esc(id)}"><strong>${esc(t(v.kind === "failed" ? "tFailed" : "tNoAnswer"))}</strong> · ${esc(m.recipient)}
+      <div>${esc(fmtD(m.sent_at))} ${fmtT(m.sent_at)}${rel ? ` · # ${esc((S.rooms.find(r => r.id === rel.room) || {}).name || rel.room)}` : ""}</div>
+      <pre class="troubleText">${esc(body)}</pre>${failures.length ? `<details><summary>${esc(t("failureDetail"))}</summary>${failures.map(x => `<pre class="troubleText">${esc(x.body)}</pre>`).join("")}</details>` : ""}
+      <div class="dbtn"><button type="button" data-action="jump">${esc(t("goOriginal"))}</button><button type="button" data-action="resend"${running(v.to) ? "" : ` disabled title="${esc(t("notRunning"))}"`}>${esc(t("resend"))}</button><button type="button" data-action="dismiss">${esc(t("dismissOne"))}</button></div></article>`;
+  }).join("") || `<p>${esc(t("troubleEmpty"))}</p>`;
+}
+function renderTroubleList() {
+  $("#troubleTitle").textContent = t("troubleTitle");
+  $("#troubleHelp").textContent = t("troubleHelp");
+  const html = troubleListHtml(troublesInView());
+  if ($("#troubleItems").innerHTML !== html) $("#troubleItems").innerHTML = html;
+}
+$("#troubleClose").addEventListener("click", () => $("#troubleDlg").close());
+$("#troubleItems").addEventListener("click", e => {
+  const b = e.target.closest("button[data-action]"), item = b && b.closest(".troubleItem");
+  if (!item) return;
+  const id = item.dataset.id;
+  if (b.dataset.action === "jump") { $("#troubleDlg").close(); jumpOriginal(id); return; }
+  if (!TR.has(id)) { renderTroubleList(); return; }
+  const dismiss = b.dataset.action === "dismiss", v = TR.get(id);
+  if (!dismiss && !running(v.to)) return;
+  const ask = dismiss ? t("dismissAsk").replace("{n}", 1) : t("resendAsk").replace("{n}", 1).replace("{names}", short(v.to));
+  if (confirm(ask)) { b.disabled = true; resend([id], dismiss); }
+});
 async function resend(ids, dismiss) {
   let done = 0;
   const bad = [];
@@ -1076,6 +1188,7 @@ async function resend(ids, dismiss) {
   }
 }
 $("#trouble").addEventListener("click", e => {
+  if (e.target.closest(".viewTrouble")) { renderTroubleList(); $("#troubleDlg").showModal(); return; }
   const list = troublesInView();
   if (e.target.closest(".dismissAll")) {
     if (confirm(t("dismissAsk").replace("{n}", list.length))) resend(list.map(([id]) => id), true);
@@ -1127,6 +1240,7 @@ function render(force) {
   $("#wakeHead").textContent = t(ss && waking(sel) ? "waking" : "wake");
   TR = troubles();
   renderTrouble();
+  if ($("#troubleDlg").open) renderTroubleList();
   const sig = JSON.stringify([S.sessions, S.launched, S.rooms, S.queued, S.notices, S.prefs, S.wakes, Object.keys(S.relays).length,
     S.messages.map(m => [m.id, m.read_at, m.held]), sel, lang, S.settled, [...TR.keys()]]);
   if (!force && sig === lastSig) return;
@@ -1270,6 +1384,9 @@ function endReply(cancel) {
 }
 $("#replyX").addEventListener("click", () => { endReply(true); renderRcpt(); });
 $("#tl").addEventListener("click", e => {
+  const quote = e.target.closest(".quote");
+  if (quote) return jumpOriginal(quote.dataset.target);
+  if (e.target.closest(".ack")) return;  // native details toggles must not fold a relayed bubble
   const rb = e.target.closest(".replyBtn");
   if (rb) return startReply(rb.dataset.id);
   const sb = e.target.closest(".resendBtn");

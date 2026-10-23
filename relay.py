@@ -80,7 +80,7 @@ def dm_note(person):
 # What `reason network serve` (checked in 0.12.10) replies when it could not run the turn: a thrown error becomes
 # "The <Codex|Claude Code|Grok> worker failed: …"; a Codex turn that failed, "Codex failed: …"; an exit with no
 # output, "<codex|grok> exited with N".
-FAILURE_RE = re.compile(r"^(The [A-Za-z][A-Za-z ]{0,30} worker failed: |Codex failed: |(codex|grok) exited with -?\d+\s*$)")
+FAILURE_RE = re.compile(r"^(The [A-Za-z][A-Za-z ]{0,30} worker failed: |Codex failed: |(codex|grok) exited with -?\d+\s*$|You've hit your (session|usage) limit\b)")
 
 
 def worker_failure(text):

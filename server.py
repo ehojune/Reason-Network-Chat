@@ -14,6 +14,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("REASON_CHAT_PORT", "8765"))
@@ -21,6 +22,8 @@ HOME = Path.home()
 DB = Path(os.environ.get("REASON_CHAT_DB", HOME / ".reason" / "network" / "network.db"))
 STATIC = Path(__file__).with_name("index.html")
 POLL_WHO = 3  # seconds between `who` refreshes
+MAX_MESSAGES = 2000  # newest rows sent to the page per poll
+MAX_BODY = 64 * 1024  # bytes accepted by /api/send
 NOWIN = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
 
 
@@ -67,7 +70,7 @@ def who_loop():
 
 
 def db_rows(sql):
-    con = sqlite3.connect(f"file:{DB.as_posix()}?mode=ro", uri=True, timeout=2)
+    con = sqlite3.connect(f"{DB.resolve().as_uri()}?mode=ro", uri=True, timeout=2)
     con.row_factory = sqlite3.Row
     try:
         return [dict(r) for r in con.execute(sql)]
@@ -76,8 +79,8 @@ def db_rows(sql):
 
 
 def state():
-    msgs = db_rows("select id, sender, sender_agent, recipient, reply_to, body, wake, sent_at, read_at, held"
-                   " from messages order by sent_at")
+    msgs = db_rows("select * from (select id, sender, sender_agent, recipient, reply_to, body, wake, sent_at,"
+                   f" read_at, held from messages order by sent_at desc limit {MAX_MESSAGES}) order by sent_at")
     known = {r["name"]: r for r in db_rows("select name, agent, cwd, doing, tier from sessions")}
     with _lock:
         who, who_err = _who["data"] or {}, _who["error"]
@@ -127,9 +130,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self.host_ok():
             return
-        if self.path in ("/", "/index.html"):
+        path = urlsplit(self.path).path
+        if path in ("/", "/index.html"):
             self.reply(200, STATIC.read_bytes(), "text/html; charset=utf-8")
-        elif self.path.startswith("/api/state"):
+        elif path == "/api/state":
             try:
                 self.send_json(state())
             except Exception as e:
@@ -140,17 +144,29 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.host_ok():
             return
-        if self.path != "/api/send":
+        if urlsplit(self.path).path != "/api/send":
             return self.send_error(404)
         # Only same-origin JSON: a cross-site form cannot set this content type without a preflight.
         if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
             return self.send_json({"error": "json only"}, 415)
         try:
-            req = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))).decode("utf-8"))
-            to, body = str(req.get("to", "")).strip(), str(req.get("body", "")).strip()
+            n = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            return self.send_json({"error": "Content-Length required"}, 411)
+        if not 0 < n <= MAX_BODY:
+            return self.send_json({"error": "body too large"}, 413)
+        try:
+            req = json.loads(self.rfile.read(n).decode("utf-8"))
+            to, body, fyi = req.get("to"), req.get("body"), req.get("fyi", False)
+            if not (isinstance(to, str) and isinstance(body, str) and isinstance(fyi, bool)):
+                return self.send_json({"error": "to and body must be strings, fyi a boolean"}, 400)
+            to, body = to.strip(), body.strip()
             if not to or not body or to.startswith("-"):
                 return self.send_json({"error": "to and body are required"}, 400)
-            rc, out, err = run_reason("send", to, body, *(["--fyi"] if req.get("fyi") else []), timeout=60)
+            # The CLI has no `--` terminator: a body like "--help" would print help and exit 0.
+            if body.startswith("-"):
+                body = " " + body
+            rc, out, err = run_reason("send", to, body, *(["--fyi"] if fyi else []), timeout=60)
             self.send_json({"ok": rc == 0, "rc": rc, "out": out, "err": err}, 200 if rc == 0 else 502)
         except Exception as e:
             self.send_json({"error": str(e)}, 500)

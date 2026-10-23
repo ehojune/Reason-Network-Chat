@@ -217,7 +217,10 @@ function render(force) {
   renderSide(); renderTo(); renderTl();
 }
 
+let polling = false;
 async function poll() {
+  if (polling) return;  // a slow response must not land after a newer one
+  polling = true;
   try {
     const r = await fetch("/api/state", {cache: "no-store"});
     const j = await r.json();
@@ -227,7 +230,7 @@ async function poll() {
     $("#status").textContent = j.whoError ? t("whoErr") + j.whoError : `${t("updated")} ${fmtT(j.now)}`;
   } catch (e) {
     $("#status").className = "err"; $("#status").textContent = t("connErr") + e.message;
-  }
+  } finally { polling = false; }
 }
 
 function pick(a) { sel = a || null; $("#tl").dataset.first = "1"; render(true); }

@@ -325,7 +325,7 @@ let lang = new URLSearchParams(location.search).get("lang") || store.get("reason
 if (!T[lang]) lang = "en";
 const t = k => T[lang][k];
 const TOKEN = document.querySelector('meta[name="reason-chat-token"]').content;
-const API = 4;  // must match API in server.py
+const API = 5;  // must match API in server.py
 const BOOT = document.querySelector('meta[name="reason-chat-boot"]').content;  // which server start served this page
 // Reload to pick up a restarted or newer server, at most once a minute so a broken setup cannot loop.
 function reloadOnce() {

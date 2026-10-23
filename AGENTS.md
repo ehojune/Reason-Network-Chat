@@ -71,7 +71,7 @@ Every POST also needs `Origin: http://127.0.0.1:<port>` (or `localhost`), `Conte
 Responses forbid framing. To act from a script, use the `reason` CLI instead.
 
 - `GET /api/state` →
-  `{team, me, sessions[], messages[], launched[], rooms[], relays{}, paused{}, whoError, now}`.
+  `{team, me, sessions[], messages[], launched[], rooms[], relays{}, paused{}, notices{}, whoError, now}`.
   `me` is the address the page sends as (`<person>/terminal`).
   `sessions[]` = live entries from `who --all --json` (`address, name, agent, status, doing, cwd, tier, live: true`)
   plus addresses seen only in history (`status: "gone"`, `live: false`).
@@ -80,6 +80,7 @@ Responses forbid framing. To act from a script, use the `reason` CLI instead.
   `rooms[]` = `{id, name, members[], group, created}`; `members` are session addresses.
   `relays{}` = for messages this page relayed into a group room: `{room, hop, core, speaker}` (`core` is the plain
   message without the room envelope; `hop` 0 = yours, ≥1 = a member's reply passed on). `paused{}` = room → `budget`/`hops`.
+  `notices{}` = room → the last hand-off that still failed after 3 tries.
 - `POST /api/send` `{to, body, fyi}` → runs `reason network send <to> <body> [--fyi]`.
   Returns `{ok, rc, out, err}`; HTTP 502 when the CLI fails.
 - `GET /api/catalog[?refresh=1]` → `{families[], folders[]}`. Each family: `id` (`claude`/`codex`/`antigravity`),

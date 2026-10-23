@@ -115,9 +115,9 @@ def state():
                          "doing": k.get("doing"), "cwd": k.get("cwd"), "tier": k.get("tier"),
                          "live": False})
         seen.add(addr)
-    relays, paused = RELAY.view({m["id"] for m in msgs})
+    relays, paused, notices = RELAY.view({m["id"] for m in msgs})
     return {"team": who.get("team"), "me": me, "sessions": sessions, "messages": msgs,
-            "launched": LAUNCHER.list(), "rooms": ROOMS.list(), "relays": relays, "paused": paused,
+            "launched": LAUNCHER.list(), "rooms": ROOMS.list(), "relays": relays, "paused": paused, "notices": notices,
             "whoError": who_err, "now": int(time.time() * 1000)}
 
 

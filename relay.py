@@ -22,6 +22,7 @@ CONTEXT_LINES = 12
 CONTEXT_CHARS = 4000
 LINE_CHARS = 600
 KEEP = 3000  # records of sent messages kept on disk
+RETRIES = 3  # attempts at one hand-off before it is reported as failed
 MENTION_RE = re.compile(r"(?<![\w@/])@([A-Za-z0-9._-]+)")
 
 
@@ -43,12 +44,15 @@ class Relay:
     def __init__(self, home, rooms, db_rows, send_one):
         self.path = Path(home) / "relay.json"
         self.rooms, self.db_rows, self.send_one = rooms, db_rows, send_one
-        self.lock = threading.Lock()
+        self.lock = threading.Lock()  # state below; never held while a CLI send runs
+        self.send_lock = threading.Lock()  # one delivery batch at a time (your message, or a scan)
         self.sent = {}  # message id -> {room, hop, core, speaker, to, at}
         self.seen = {}  # "room|member" -> sent_at of the newest room line that member has been given
-        self.done = set()  # reply ids already looked at
+        self.done = set()  # (reply id, member): passed on, or given up
+        self.tries = collections.Counter()  # (reply id, member) -> failed attempts
         self.passes = collections.defaultdict(collections.deque)  # room -> times a reply was passed on
         self.paused = {}  # room -> "budget" | "hops"
+        self.notice = {}  # room -> the last hand-off that failed for good, shown to you
         self.since = int(time.time() * 1000)  # replies from before this server started are not passed on
         self.load()
 
@@ -74,10 +78,10 @@ class Relay:
             pass
 
     def view(self, ids):
-        """For the page: the relay record of each listed message, and which rooms are paused."""
+        """For the page: the relay record of each listed message, paused rooms, and failed hand-offs."""
         with self.lock:
             rel = {i: {k: self.sent[i].get(k) for k in ("room", "hop", "core", "speaker")} for i in ids if i in self.sent}
-            return rel, dict(self.paused)
+            return rel, dict(self.paused), dict(self.notice)
 
     # ---------- composing ----------
     def lines_for(self, room, member, me):
@@ -113,6 +117,7 @@ class Relay:
         return out
 
     def compose(self, room, member, me, speaker, core):
+        """The message for one member, and the timestamp of the newest room line it includes (0 if none)."""
         names = ", ".join([f"{label(me, me)} (person)"] + [short(m) for m in room["members"]])
         head = (f'[Group room "{room["name"]}", relayed by Reason Network Chat]\n'
                 f"Members: {names}. Everyone in the room reads your reply.\n"
@@ -124,16 +129,22 @@ class Relay:
         return f"{head}{earlier}\n---\n{label(speaker, me)}: {core}", (lines[-1][0] if lines else 0)
 
     def deliver(self, room, member, me, speaker, core, hop):
-        body, newest = self.compose(room, member, me, speaker, core)
+        """Compose and send one relayed message. The CLI runs without self.lock, so polling never waits on it."""
+        with self.lock:
+            body, newest = self.compose(room, member, me, speaker, core)
         rc, out, err = self.send_one(member, body, False)
         if rc != 0:
             return False, err or out or f"rc={rc}"
         rows = self.db_rows("select id, sent_at from messages where sender = ? and recipient = ? and body = ?"
                             " order by sent_at desc limit 1", (me, member, body))
-        if rows:
-            self.sent[rows[0]["id"]] = {"room": room["id"], "hop": hop, "core": core, "speaker": speaker,
-                                        "to": member, "at": rows[0]["sent_at"]}
-            self.seen[f'{room["id"]}|{member}'] = max(rows[0]["sent_at"], newest)
+        with self.lock:
+            if rows:
+                self.sent[rows[0]["id"]] = {"room": room["id"], "hop": hop, "core": core, "speaker": speaker,
+                                            "to": member, "at": rows[0]["sent_at"]}
+            key = f'{room["id"]}|{member}'
+            # Only as far as the lines it was given: a reply that landed while this was sent stays "missed".
+            self.seen[key] = max(self.seen.get(key, 0), newest)
+            self.save()
         return True, ""
 
     @staticmethod
@@ -150,54 +161,62 @@ class Relay:
     def post(self, room, me, body):
         """Send your message to the members it @mentions, or to every member. Clears a pause."""
         targets = self.mentioned(room, body) or room["members"]
-        with self.lock:
-            self.paused.pop(room["id"], None)
-            self.passes[room["id"]].clear()  # you are back in the conversation: a fresh budget
+        with self.send_lock:
+            with self.lock:
+                self.paused.pop(room["id"], None)
+                self.notice.pop(room["id"], None)
+                self.passes[room["id"]].clear()  # you are back in the conversation: a fresh budget
             results = []
             for m in targets:
                 ok, err = self.deliver(room, m, me, me, body, 0)
                 results.append({"to": m, "ok": ok, "err": err})
-            self.save()
         return results
 
     # ---------- passing replies on ----------
     def scan(self, me):
-        """Pass on member replies that @mention another member."""
+        """Pass on member replies that @mention another member; retry a failed hand-off a few times."""
         if not me:
             return
-        with self.lock:
-            if not self.sent:
-                return
-            rows = self.db_rows("select id, sender, reply_to, body, sent_at from messages where recipient = ?"
-                                " and reply_to is not null and sent_at > ? order by sent_at", (me, self.since))
-            changed = False
-            for r in rows:
-                rec = self.sent.get(r["reply_to"])
-                if not rec or r["id"] in self.done:
-                    continue
-                self.done.add(r["id"])
-                room = self.rooms.get(rec["room"])
-                if not room or not room.get("group") or r["sender"] not in room["members"]                         or self.paused.get(room["id"]) == "budget":
-                    continue
-                targets = self.mentioned(room, r["body"], exclude=r["sender"])
-                if not targets:
-                    continue
-                if rec["hop"] >= MAX_HOPS:
-                    self.paused[room["id"]] = "hops"  # shown to you; your next message clears it
-                    continue
-                q, now = self.passes[room["id"]], time.time()
-                while q and now - q[0] > BUDGET_WINDOW:
-                    q.popleft()
-                for m in targets:
-                    if len(q) >= BUDGET:
-                        self.paused[room["id"]] = "budget"
-                        break
-                    ok, _ = self.deliver(room, m, me, r["sender"], r["body"], rec["hop"] + 1)
+        with self.send_lock:
+            with self.lock:
+                if not self.sent:
+                    return
+                rows = self.db_rows("select id, sender, reply_to, body, sent_at from messages where recipient = ?"
+                                    " and reply_to is not null and sent_at > ? order by sent_at", (me, self.since))
+                todo = []
+                for r in rows:
+                    rec = self.sent.get(r["reply_to"])
+                    room = self.rooms.get(rec["room"]) if rec else None
+                    if not room or not room.get("group") or r["sender"] not in room["members"]:
+                        continue
+                    todo += [(room, r, rec, m) for m in self.mentioned(room, r["body"], exclude=r["sender"])
+                             if (r["id"], m) not in self.done]
+            for room, r, rec, m in todo:
+                key, rid = (r["id"], m), room["id"]
+                with self.lock:
+                    if rec["hop"] >= MAX_HOPS:
+                        self.paused[rid] = "hops"  # shown to you; your next message clears it
+                        self.done.add(key)
+                        continue
+                    q, now = self.passes[rid], time.time()
+                    while q and now - q[0] > BUDGET_WINDOW:
+                        q.popleft()
+                    if self.paused.get(rid) == "budget" or len(q) >= BUDGET:
+                        self.paused[rid] = "budget"
+                        self.done.add(key)  # dropped, not queued: your next message starts afresh
+                        continue
+                    q.append(now)
+                ok, err = self.deliver(room, m, me, r["sender"], r["body"], rec["hop"] + 1)
+                with self.lock:
                     if ok:
-                        q.append(now)
-                        changed = True
-            if changed:
-                self.save()
+                        self.done.add(key)
+                        continue
+                    if now in q:
+                        q.remove(now)  # a failed send does not use up the budget
+                    self.tries[key] += 1
+                    if self.tries[key] >= RETRIES:
+                        self.done.add(key)
+                        self.notice[rid] = f"{short(r['sender'])} → {short(m)}: {err}"
 
     def run(self, me_fn, every=2):
         while True:

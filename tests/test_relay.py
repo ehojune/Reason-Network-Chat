@@ -101,6 +101,32 @@ class RelayTest(unittest.TestCase):
         finally:
             relay.BUDGET = old
 
+    def test_reply_landing_during_a_send_is_not_lost(self):
+        self.r.post(self.room, ME, "q1")
+        real = self.send
+
+        def send_and_reply(to, body, fyi):  # c answers while b's copy is being sent
+            if to == B and "q2" in body:
+                self.insert(C, ME, "c answers q1", reply_to=self.last_id_to(C))
+            return real(to, body, fyi)
+
+        self.r.send_one = send_and_reply
+        self.r.post(self.room, ME, "@b-claude q2")
+        self.assertNotIn("c answers q1", self.sent_to(B)[-1])
+        self.r.post(self.room, ME, "@b-claude q3")
+        self.assertIn("c-codex: c answers q1", self.sent_to(B)[-1])
+
+    def test_failed_hand_off_is_retried_then_reported(self):
+        self.r.post(self.room, ME, "@a-codex go")
+        self.insert(A, ME, "@b-claude please check", reply_to=self.last_id_to(A))
+        calls = []
+        self.r.send_one = lambda to, body, fyi: (calls.append(to), (1, "", "network down"))[1]
+        for _ in range(relay.RETRIES + 2):
+            self.r.scan(ME)
+        self.assertEqual(calls, [B] * relay.RETRIES)
+        _, _, notice = self.r.view(set())
+        self.assertIn("network down", notice[self.room["id"]])
+
     def test_plain_rooms_are_not_relayed(self):
         self.room["group"] = False
         self.r.post(self.room, ME, "@a-codex hi")

@@ -6,6 +6,7 @@
 <meta name="reason-chat-token" content="{{TOKEN}}">
 <meta name="reason-chat-boot" content="{{BOOT}}">
 <title>Reason Network Chat</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=1">
 <style>
 :root {
   --bg: #f7f7f5; --panel: #ffffff; --line: #e4e3df; --text: #1f1f1d; --muted: #6f6e69;
@@ -42,6 +43,11 @@ body.resizing { cursor: col-resize; user-select: none; }
 .act:hover { background: var(--hover); }
 #list { overflow-y: auto; flex: 1; padding: 6px; }
 .grp { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding: 10px 8px 4px; }
+.section { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.sectionToggle { font: inherit; color: var(--muted); background: none; border: 0; padding: 0;
+  cursor: pointer; text-transform: none; letter-spacing: normal; flex: none; }
+.sectionToggle:hover { text-decoration: underline; }
+.sectionToggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .ses { padding: 7px 8px; border-radius: 8px; cursor: pointer; display: grid; grid-template-columns: 10px 1fr auto;
   gap: 2px 8px; align-items: center; }
 .ses:hover { background: var(--hover); }
@@ -157,9 +163,6 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .empty { color: var(--muted); text-align: center; margin-top: 30vh; }
 #comp { border-top: 1px solid var(--line); background: var(--panel); padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
 #nowake { font-size: 12px; color: var(--muted); }
-#offToggle { font: inherit; font-size: 11.5px; color: var(--muted); background: none; border: none; padding: 8px 8px 4px;
-  cursor: pointer; text-align: left; }
-#offToggle:hover { color: var(--text); text-decoration: underline; }
 #restartAll { font: inherit; font-size: 11.5px; color: var(--accent); background: none; border: none; padding: 4px 8px;
   cursor: pointer; text-align: left; }
 #restartAll:hover { text-decoration: underline; }
@@ -171,6 +174,7 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   background: none; border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
 #ctx button:hover, #ctx button:focus-visible { background: var(--hover); outline: none; }
 #ctx button[hidden] { display: none; }
+#ctxAutoNote { max-width: 270px; padding: 6px 10px; color: var(--muted); font-size: 12px; }
 #nowake #wakeNote { font-style: italic; }
 #nowake button { font: inherit; color: var(--accent); background: none; border: none; padding: 0; cursor: pointer;
   text-decoration: underline; }
@@ -257,7 +261,7 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
     </div>
   </form>
 </main>
-<div id="ctx" role="menu" hidden><button type="button" role="menuitem" id="ctxFav"></button><button type="button" role="menuitem" id="ctxAuto" hidden></button><button type="button" role="menuitem" id="ctxConf" hidden></button><button type="button" role="menuitem" id="ctxAdopt" hidden></button><button type="button" role="menuitem" id="ctxRestart" hidden></button><button type="button" role="menuitem" id="ctxProcs" hidden></button></div>
+<div id="ctx" role="menu" hidden><button type="button" role="menuitem" id="ctxFav"></button><button type="button" role="menuitem" id="ctxAuto" hidden></button><div id="ctxAutoNote" hidden></div><button type="button" role="menuitem" id="ctxConf" hidden></button><button type="button" role="menuitem" id="ctxAdopt" hidden></button><button type="button" role="menuitem" id="ctxRestart" hidden></button><button type="button" role="menuitem" id="ctxProcs" hidden></button></div>
 <dialog id="pdlg"><h2 id="pdlgTitle"></h2><div id="pdlgNote"></div><ul id="pdlgList"></ul>
   <div class="dbtn"><button type="button" class="plain" id="pdlgClose"></button><button type="button" class="go" id="pdlgRestart"></button></div></dialog>
 <dialog id="dlg">
@@ -352,6 +356,10 @@ const T = {
     wake: "깨우기", waking: "깨우는 중…", wakeAfter: "보낸 뒤 깨우기", woke: "깨움: ", wakeFailed: "깨우기 실패: ",
     wakeNo: "이 에이전트는 깨우기 미지원", wakeNoUnread: "안 읽은 메시지가 없어 깨울 일이 없습니다.",
     wakeAsk: "{name}의 Codex 대화에서 한 차례를 돌려 안 읽은 메시지를 읽고 답하게 합니다. 그 차례는 대화 기록에 남습니다. 계속할까요?",
+    sectionFold: "접기", sectionExpand: "펼치기",
+    workerAuto: "worker는 메시지를 받으면 실행됩니다. 별도 설정이 필요 없습니다.",
+    workerStopped: "멈춘 worker입니다. 다시 시작하면 메시지를 자동으로 받습니다.",
+    autoUnavailable: "이 컴퓨터에서 재개할 수 있는 Codex 대화가 아닙니다.",
     autoOn: "⏰ 자동 깨우기 켜기", autoOff: "⏰ 자동 깨우기 끄기", autoFull: "자동 깨우기는 50개까지입니다.",
     autoAsk: "{name}에게 메시지가 오면 이 페이지가 그 Codex 대화를 자동으로 깨워 읽고 답하게 합니다.\n· 깨울 때마다 그 대화에 한 차례가 붙고 그만큼 토큰을 씁니다. 메시지가 왔는지 보는 데는 쓰지 않습니다.\n· 시간당 최대 12번, 같은 세션은 1분에 한 번까지.\n· Codex 앱에서 이 대화를 열면 앱을 끌 때까지 깨우지 못합니다.\n· 이 서버가 켜져 있을 때만 동작합니다.\n켤까요?",
     autoLimit: "자동 깨우기 한도(시간당 12번)에 걸려 {time}까지 쉽니다.", nwAuto: "자동 깨우기가 켜져 있습니다.",
@@ -439,6 +447,10 @@ const T = {
     wake: "Wake", waking: "Waking…", wakeAfter: "Wake after sending", woke: "Woke: ", wakeFailed: "Wake failed: ",
     wakeNo: "this agent cannot be woken", wakeNoUnread: "It has no unread messages, so there is nothing to wake it for.",
     wakeAsk: "Run one turn in {name}'s Codex conversation so it reads its unread messages and replies. The turn stays in that conversation's history. Continue?",
+    sectionFold: "Collapse", sectionExpand: "Expand",
+    workerAuto: "This worker runs when a message arrives. No extra setting is needed.",
+    workerStopped: "This worker is stopped. Restart it to receive messages automatically.",
+    autoUnavailable: "This Codex conversation cannot be resumed on this computer.",
     autoOn: "⏰ Turn on auto-wake", autoOff: "⏰ Turn off auto-wake", autoFull: "Up to 50 sessions can be auto-woken.",
     autoAsk: "When {name} gets a message, this page wakes its Codex conversation so it reads and replies.\n· Each wake adds one turn to that conversation and uses tokens for it; watching for messages uses none.\n· At most 12 wakes an hour, and one a minute per session.\n· If you open this conversation in the Codex app, it cannot be woken until the app is closed.\n· Works only while this server is running.\nTurn it on?",
     autoLimit: "Auto-wake limit reached (12 an hour); resting until {time}.", nwAuto: "Auto-wake is on.",
@@ -528,6 +540,10 @@ const T = {
     wake: "唤醒", waking: "唤醒中…", wakeAfter: "发送后唤醒", woke: "已唤醒：", wakeFailed: "唤醒失败：",
     wakeNo: "此智能体不支持唤醒", wakeNoUnread: "没有未读消息，无需唤醒。",
     wakeAsk: "将在 {name} 的 Codex 对话中运行一轮，让它读取未读消息并回复。这一轮会保留在该对话记录中。继续吗？",
+    sectionFold: "收起", sectionExpand: "展开",
+    workerAuto: "worker 收到消息时就会运行，无需额外设置。",
+    workerStopped: "此 worker 已停止。重新启动后即可自动接收消息。",
+    autoUnavailable: "此 Codex 对话无法在本机恢复。",
     autoOn: "⏰ 开启自动唤醒", autoOff: "⏰ 关闭自动唤醒", autoFull: "最多 50 个会话可自动唤醒。",
     autoAsk: "{name} 收到消息时，本页面会自动唤醒它的 Codex 对话，让它读取并回复。\n· 每次唤醒会在该对话中增加一轮，并消耗相应的 token；检查是否有消息不消耗。\n· 每小时最多 12 次，同一会话每分钟最多一次。\n· 如果在 Codex 应用中打开这个对话，在应用关闭前都无法唤醒。\n· 仅在本服务器运行时有效。\n要开启吗？",
     autoLimit: "已达到自动唤醒上限（每小时 12 次），{time} 后恢复。", nwAuto: "自动唤醒已开启。",
@@ -594,7 +610,7 @@ let lang = new URLSearchParams(location.search).get("lang") || store.get("reason
 if (!T[lang]) lang = "en";
 const t = k => T[lang][k];
 const TOKEN = document.querySelector('meta[name="reason-chat-token"]').content;
-const API = 17;  // must match API in server.py
+const API = 18;  // must match API in server.py
 const BOOT = document.querySelector('meta[name="reason-chat-boot"]').content;  // which server start served this page
 // Reload to pick up a restarted or newer server, at most once a minute so a broken setup cannot loop.
 function reloadOnce() {
@@ -697,6 +713,9 @@ const autoOn = a => autoList().includes(a);
 const autoLimited = a => ((S.wakes[a] || {}).limitUntil || 0) > Date.now();
 const autoTrouble = s => !!s && s.resumable && autoOn(s.address) && !s.appOpen
   && (autoLimited(s.address) || (S.wakes[s.address] || {}).status === "failed");
+let sideSelection = null, revealedSection = null;
+const collapsedSections = () => { const a = pref("collapsedSections"); return Array.isArray(a) ? a
+  : pref("hideOffline") !== false ? ["offline", "history"] : []; };
 const favs = () => { const f = pref("favorites"); return Array.isArray(f) ? f : []; };
 
 // Preferences live on the server (the Browser pane can lose localStorage); localStorage only when saving fails.
@@ -722,14 +741,25 @@ function renderSide() {
   const visibleMessages = S.messages.filter(m => !isAck(m));
   const count = a => visibleMessages.filter(m => m.sender === a || m.recipient === a).length;
   const group = s => NOW.includes(reach(s)) ? 0 : LATER.includes(reach(s)) ? 1 : ["offline", "stale"].includes(reach(s)) ? 2 : 3;
-  const hide = pref("hideOffline") !== false;
   const all = [...S.sessions].sort((a, b) => group(a) - group(b) || (b.status === "busy") - (a.status === "busy")
     || (count(b.address) - count(a.address)) || a.name.localeCompare(b.name));
   const fav = favs();
-  const away = all.filter(s => group(s) >= 2 && s.address !== sel && !fav.includes(s.address));  // selected and favorites always show
-  // A worker's own agent sessions (<worker>-claude, …) are folded away unless selected or a favorite.
-  const ss = (hide ? all.filter(s => !away.includes(s)) : all)
-    .filter(s => !fav.includes(s.address) && !(s.inner && s.address !== sel));
+  // A worker's own agent sessions stay folded away unless selected or a favorite.
+  const ss = all.filter(s => !fav.includes(s.address) && !(s.inner && s.address !== sel));
+  const selectedSession = all.find(s => s.address === sel);
+  const selectedSection = fav.includes(sel) ? "favorites" : roomOf(sel) ? "rooms"
+    : selectedSession ? ["now", "later", "offline", "history"][group(selectedSession)] : null;
+  // Reveal a newly selected or regrouped conversation. An explicit collapse stays closed until it moves again.
+  if (sideSelection?.key !== sel || sideSelection?.section !== selectedSection) revealedSection = selectedSection;
+  sideSelection = {key: sel, section: selectedSection};
+  const collapsed = collapsedSections();
+  const section = (key, label, rows) => {
+    if (!rows.length) return "";
+    const shut = collapsed.includes(key) && revealedSection !== key, action = t(shut ? "sectionExpand" : "sectionFold");
+    return `<div class="grp section"><span>${esc(label)} · ${rows.length}</span><button type="button" class="sectionToggle"
+      data-section="${key}" aria-expanded="${!shut}" aria-controls="section-${key}" aria-label="${esc(label + " · " + action)}">${esc(action)}</button></div>`
+      + `<div id="section-${key}"${shut ? " hidden" : ""}>${shut ? "" : rows.join("")}</div>`;
+  };
   const star = key => fav.includes(key) ? `<span class="star">★</span>` : "";
   const roomRow = r => {
     const key = `room:${r.id}`, c = visibleMessages.filter(m => inRoom(m, r)).length;
@@ -753,21 +783,18 @@ function renderSide() {
   // Favorites, in the order they were added; a favorite whose room or session no longer exists is skipped.
   const favRows = fav.map(k => { const r = roomOf(k); if (r) return roomRow(r);
     const s = S.sessions.find(x => x.address === k); return s ? sesRow(s) : ""; }).filter(Boolean);
-  if (favRows.length) h += `<div class="grp">${t("favs")}</div>` + favRows.join("");
+  h += section("favorites", t("favs"), favRows);
   const rooms = (S.rooms || []).filter(r => !fav.includes(`room:${r.id}`));
-  if (rooms.length) h += `<div class="grp">${t("rooms")}</div>` + rooms.map(roomRow).join("");
-  let grp = null;
-  for (const s of ss) {
-    const g = [t("gNow"), t("gLater"), t("offline"), t("history")][group(s)];
-    if (g !== grp) { h += `<div class="grp">${g}</div>`; grp = g; }
-    h += sesRow(s);
-  }
-  const focused = document.activeElement && document.activeElement.closest && document.activeElement.closest("#list .ses");
-  if (away.length) h += `<button type="button" id="offToggle">${esc(t(hide ? "hideOff" : "showOff").replace("{n}", away.length))}</button>`;
+  h += section("rooms", t("rooms"), rooms.map(roomRow));
+  ["now", "later", "offline", "history"].forEach((key, g) => {
+    h += section(key, t(["gNow", "gLater", "offline", "history"][g]), ss.filter(s => group(s) === g).map(sesRow));
+  });
+  const focused = document.activeElement?.closest?.("#list .ses, #list [data-section]");
   const stopped = stoppedWorkers();
   if (stopped.length) h += `<button type="button" id="restartAll">${esc(t("restartAll").replace("{n}", stopped.length))}</button>`;
   $("#list").innerHTML = h;
-  if (focused) [...$("#list").querySelectorAll(".ses")].find(r => r.dataset.a === focused.dataset.a)?.focus();  // keep keyboard place
+  if (focused) [...$("#list").querySelectorAll(".ses, [data-section]")].find(r => focused.dataset.section
+    ? r.dataset.section === focused.dataset.section : r.dataset.a === focused.dataset.a)?.focus();  // keep keyboard place
   $("#team").textContent = `${S.team || t("noTeam")}${S.me ? ` · ${t("as")} ${S.me}` : ""}`;
 }
 
@@ -1438,7 +1465,15 @@ async function restartWorkers(recs) {
   } catch (err) { say(t("failed") + err.message, true); }
 }
 $("#list").addEventListener("click", e => {
-  if (e.target.closest("#offToggle")) return setPref("hideOffline", !(pref("hideOffline") !== false));
+  const toggle = e.target.closest("[data-section]");
+  if (toggle) {
+    const key = toggle.dataset.section, a = collapsedSections();
+    const wasOpen = toggle.getAttribute("aria-expanded") === "true";
+    if (revealedSection === key) revealedSection = null;
+    const next = a.filter(k => k !== key);
+    if (wasOpen) next.push(key);
+    return setPref("collapsedSections", next);
+  }
   if (e.target.closest("#restartAll")) return restartWorkers(stoppedWorkers());
   const x = e.target.closest(".ses"); if (x) pick(x.dataset.a);
 });
@@ -1524,12 +1559,21 @@ $("#list").addEventListener("keydown", e => {
 // Right-click (or the menu key on a focused row): pin a session or room to the top as a favorite.
 let ctxKey = null;
 function closeCtx() { $("#ctx").hidden = true; ctxKey = null; }
+const serveWorker = s => !!s && (s.worker || S.foreignWorkers.some(w => `${person()}/${w.name}` === s.address));
+function autoWakeNote(s) {
+  if (!s) return "";
+  if (serveWorker(s)) return t(!s.live || s.stale || s.status === "offline" ? "workerStopped" : "workerAuto");
+  return s.agent === "codex" && !s.resumable ? t("autoUnavailable") : "";
+}
 function openCtx(row, pointer) {
   if (!row.dataset.a) return;  // "All messages" has no menu
   ctxKey = row.dataset.a;
   $("#ctxFav").textContent = t(favs().includes(ctxKey) ? "unfav" : "fav");
   const ses = S.sessions.find(x => x.address === ctxKey);
-  $("#ctxAuto").hidden = !(ses && ses.resumable);  // only Codex sessions of yours on this computer
+  $("#ctxAuto").hidden = !(ses && ses.resumable && !serveWorker(ses));  // only resumable conversations, not serve workers
+  const note = autoWakeNote(ses);
+  $("#ctxAutoNote").hidden = !note;
+  $("#ctxAutoNote").textContent = note;
   $("#ctxAuto").textContent = t(autoOn(ctxKey) ? "autoOff" : "autoOn");
   $("#ctxConf").hidden = !launchedHere(ctxKey);  // only workers this server started
   $("#ctxConf").textContent = t("ctxConf");

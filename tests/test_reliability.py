@@ -22,6 +22,18 @@ class EndpointTest(unittest.TestCase):
         h.send_json = mock.Mock()
         return h
 
+    def test_favicon_is_svg_and_page_references_it(self):
+        import xml.etree.ElementTree as ET
+        h = self.handler('/favicon.svg?v=1')
+        h.reply = mock.Mock()
+        h.do_GET()
+        code, body, mime = h.reply.call_args.args
+        self.assertEqual((code, mime), (200, 'image/svg+xml'))
+        svg = ET.fromstring(body)
+        self.assertEqual(svg.tag, '{http://www.w3.org/2000/svg}svg')
+        self.assertEqual(svg.attrib['viewBox'], '0 0 64 64')
+        self.assertIn('href="/favicon.svg?v=1"', server.STATIC.read_text(encoding='utf-8'))
+
     def test_refresh_requires_a_token_but_cached_get_does_not(self):
         for token, expected in ((None, 403), ('wrong', 403), (server.TOKEN, 200)):
             h = self.handler('/api/catalog?refresh=1', {'X-Reason-Chat-Token': token} if token else {})

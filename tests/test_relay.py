@@ -172,6 +172,21 @@ class RelayTest(unittest.TestCase):
         self.assertGreater(self.r.since, at)
         self.assertEqual(self.r.done and min(self.r.done.values()) >= self.r.since, True)
 
+    def test_handed_off_reply_is_not_repeated_later(self):
+        self.r.post(self.room, ME, "@a-codex start")
+        self.insert(A, ME, "@b-claude please check", reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        self.r.post(self.room, ME, "@b-claude anything else?")
+        self.assertNotIn("please check", self.sent_to(B)[-1].split("---")[0])
+
+    def test_other_traffic_does_not_crowd_out_room_lines(self):
+        self.r.post(self.room, ME, "q1")
+        self.insert(A, ME, "a answers q1", reply_to=self.last_id_to(A))
+        for i in range(450):
+            self.insert("pat/elsewhere", "kim/other", f"unrelated {i}")
+        self.r.post(self.room, ME, "@b-claude your view?")
+        self.assertIn("a-codex: a answers q1", self.sent_to(B)[-1])
+
     def test_plain_rooms_are_not_relayed(self):
         self.room["group"] = False
         self.r.post(self.room, ME, "@a-codex hi")

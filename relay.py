@@ -94,10 +94,13 @@ class Relay:
         """Room lines the member has not seen yet, oldest first: (sent_at, label, text). Left out because they
         follow as the message itself: `skip`, the reply being handed off, and `current`, the (speaker, text) being
         sent, whose copies to other members may already be in the database."""
-        everyone = set(room["members"]) | {me}
+        everyone = sorted(set(room["members"]) | {me})
         since = self.seen.get(f'{room["id"]}|{member}', 0)
+        marks = ",".join("?" * len(everyone))
+        # Room traffic the member was not part of, filtered in SQL so other traffic cannot crowd it out of the limit.
         rows = self.db_rows("select id, sender, recipient, body, sent_at from messages where sent_at > ?"
-                            " order by sent_at desc limit 400", (since,))
+                            f" and sender in ({marks}) and recipient in ({marks}) and sender != ? and recipient != ?"
+                            " order by sent_at desc limit 200", (since, *everyone, *everyone, member, member))
         # Your messages this member already got as its own copy (a room message is one row per member).
         got = {(v["speaker"], v["core"]) for v in self.sent.values() if v.get("room") == room["id"] and v.get("to") == member}
         out, keys = [], set()
@@ -139,7 +142,7 @@ class Relay:
             if lines else ""
         return f"{head}{earlier}\n---\n{label(speaker, me, room)}: {core}", (lines[-1][0] if lines else 0)
 
-    def deliver(self, room, member, me, speaker, core, hop, skip=None):
+    def deliver(self, room, member, me, speaker, core, hop, skip=None, skip_at=0):
         """Compose and send one relayed message. The CLI runs without self.lock, so polling never waits on it."""
         with self.lock:
             body, newest = self.compose(room, member, me, speaker, core, skip)
@@ -153,8 +156,9 @@ class Relay:
                 self.sent[rows[0]["id"]] = {"room": room["id"], "hop": hop, "core": core, "speaker": speaker,
                                             "to": member, "at": rows[0]["sent_at"]}
             key = f'{room["id"]}|{member}'
-            # Only as far as the lines it was given: a reply that landed while this was sent stays "missed".
-            self.seen[key] = max(self.seen.get(key, 0), newest)
+            # Only as far as the lines it was given (a reply that landed while this was sent stays "missed"),
+            # plus the handed-off reply itself, which it just got as the message.
+            self.seen[key] = max(self.seen.get(key, 0), newest, skip_at)
             self.save()
         return True, ""
 
@@ -219,7 +223,8 @@ class Relay:
                         self.done[key] = r["sent_at"]  # dropped, not queued: your next message starts afresh
                         continue
                     q.append(now)
-                ok, err = self.deliver(room, m, me, r["sender"], r["body"], rec["hop"] + 1, skip=r["id"])
+                ok, err = self.deliver(room, m, me, r["sender"], r["body"], rec["hop"] + 1,
+                                       skip=r["id"], skip_at=r["sent_at"])
                 with self.lock:
                     if ok:
                         self.done[key] = r["sent_at"]

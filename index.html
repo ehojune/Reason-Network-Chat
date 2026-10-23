@@ -456,9 +456,9 @@ async function poll() {
     const r = await fetch("/api/state", {cache: "no-store"});
     const j = await r.json();
     if (j.error) throw new Error(j.error);
-    // A server started before an update keeps its old code while this page is read fresh from disk: restart it.
-    // A newer server, or the same version restarted (new token), needs a fresh page instead: reload.
-    if (j.api > API || (j.api === API && j.boot !== BOOT)) { if (reloadOnce()) return; }
+    // Any other server start (it has a boot id: restarted, upgraded or rolled back) means a new token, and maybe
+    // other code: a fresh page from it fits. Only a server too old to have a boot id needs a restart instead.
+    if ((j.boot && j.boot !== BOOT) || j.api > API) { if (reloadOnce()) return; }
     if (j.api !== API) return say(t(j.api > API ? "reloadPage" : "restart").replace("{p}", API).replace("{s}", j.api ?? 1), true);
     if (j.boot !== BOOT) return say(t("reloadPage"), true);
     S = {sessions: [], messages: [], launched: [], rooms: [], relays: {}, paused: {}, notices: {}, ...j}; render();

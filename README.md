@@ -134,7 +134,8 @@ costs no tokens; only a wake runs a turn.
 
 - At most 12 wakes per session per hour, and one a minute: messages that arrive close together share a turn. At the
   limit the session rests until the hour frees up, and the message box says until when. A failed wake is retried
-  after 10 minutes.
+  after 10 minutes. These limits survive a server restart.
+- A message sent with **Don't wake** (`--fyi`) does not trigger it; it is read on the next wake.
 - Works only while this server runs and while no Codex app or terminal window has the conversation open. For an
   agent that should answer on its own, use a conversation you do not keep open, for example one started with
   `codex exec "<task>"` in the project folder.

@@ -62,7 +62,7 @@ then stop the worker.
 | `REASON_CHAT_DB` | `~/.reason/network/network.db` | Daemon database path. |
 | `REASON_BIN` | `%LOCALAPPDATA%\Reason\bin\reason.exe` on Windows, else `reason` on PATH | The Reason CLI. |
 | `NODE_EXTRA_CA_CERTS` | unset | Root CA file for TLS-inspecting corporate networks. The CLI (Bun) needs it there. On Windows, children get it from the stored user environment even if the server started before it was set. |
-| `REASON_CHAT_HOME` | `~/.reason-network-chat` | Rooms (`rooms.json`), relayed-message records (`relay.json`), settings (`prefs.json`), running wakes (`wakes.json`), worker registry (`workers.json`), worker logs (`logs/`), the Codex shim (`codex-shim/`). |
+| `REASON_CHAT_HOME` | `~/.reason-network-chat` | Rooms (`rooms.json`), relayed-message records (`relay.json`), settings (`prefs.json`), running wakes (`wakes.json`), auto-wake limits (`autowake.json`), worker registry (`workers.json`), worker logs (`logs/`), the Codex shim (`codex-shim/`). |
 | `REASON_CHAT_CLAUDE`, `REASON_CHAT_CODEX`, `REASON_CHAT_AGY` | found automatically | Full path to an agent CLI. On Windows it must be an `.exe`. |
 
 ## HTTP API
@@ -113,7 +113,8 @@ get the new token, and a newer server also triggers a reload.
   messages, not open in the Codex app (HTTP 423 if it is). The thread id comes from `sessions.key` (`codex:<uuid>`),
   the folder from `sessions.cwd`, the prompt is `WAKE_PROMPT`; nothing from the request is run. Answers at once;
   progress shows in `wakes{}`. Auto-wake runs the same `wake()` from a server loop every 10 s for the `autoWake` list,
-  limited by `AUTO_GAP` (60 s), `AUTO_BUDGET`/`AUTO_WINDOW` (12 per hour) and `AUTO_RETRY` (600 s after a failure).
+  limited by `AUTO_GAP` (60 s), `AUTO_BUDGET`/`AUTO_WINDOW` (12 per hour) and `AUTO_RETRY` (600 s after a failure),
+  kept in `autowake.json` across restarts. Only an unread message with `wake = 1` and `held = 0` triggers it (not `--fyi`).
   The wake starts detached (like a worker, log in `logs/wake-<name>.log`) and is judged from the database: `done`
   when the messages unread at its start are read, else `failed` with the log's last lines. `wakes.json` lets a
   restarted server watch running wakes to the end and judge those that ended while it was down.

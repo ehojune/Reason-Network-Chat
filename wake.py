@@ -21,7 +21,8 @@ accepted once the app-server exited. So a wake first checks that lock and says s
 
 Auto-wake (the `autoWake` setting): the server calls Waker.auto() every few seconds; a session on that list is woken
 when it has unread messages, at most AUTO_BUDGET times per AUTO_WINDOW and not within AUTO_GAP of its last wake, so
-two agents answering each other cannot run up turns without end.
+two agents answering each other cannot run up turns without end. Those limits are kept in autowake.json, so a
+restarted server does not start counting again.
 """
 import json
 import os
@@ -91,33 +92,64 @@ class Waker:
         self.lock = threading.Lock()
         self.state = {}  # address -> {"status": "running" | "done" | "failed", "at": ms, "error": str}
         self.path = Path(home) / "wakes.json" if home else None
+        self.auto_path = Path(home) / "autowake.json" if home else None
         self.running = {}  # address -> {"pid", "started", "at", "ids", "log"}
+        now = time.time()
+        for address, a in self.load(self.auto_path).items():  # auto-wake limits from before a restart
+            if not isinstance(a, dict):
+                continue
+            starts = [t for t in a.get("starts") or [] if isinstance(t, (int, float)) and 0 <= now - t < AUTO_WINDOW]
+            if starts:
+                self.auto_starts[address] = starts
+            f = a.get("failed")
+            if isinstance(f, dict) and isinstance(f.get("at"), int):
+                self.state[address] = {"status": "failed", "at": f["at"], "error": str(f.get("error") or "")[:300],
+                                       "auto": True}
         for address, w in self.load().items():
             if not (isinstance(w, dict) and isinstance(w.get("pid"), int) and isinstance(w.get("cutoff"), int)):
                 continue
             w["address"] = address
             self.running[address] = w
-            self.state[address] = {"status": "running", "at": int(w.get("at") or 0), "error": ""}
+            self.state[address] = {"status": "running", "at": int(w.get("at") or 0), "error": "",
+                                   "auto": bool(w.get("auto"))}
             threading.Thread(target=self.watch, args=(address, w), daemon=True).start()  # alive or not: it judges
 
     # ---------- the record of running wakes ----------
-    def load(self):
+    def load(self, path=None):
+        path = path or self.path
         try:
-            data = json.loads(self.path.read_text(encoding="utf-8")) if self.path else {}
+            data = json.loads(path.read_text(encoding="utf-8")) if path else {}
         except (OSError, ValueError):
             data = {}
         return data if isinstance(data, dict) else {}
 
-    def save(self):
-        if not self.path:
+    @staticmethod
+    def write(path, data):
+        if not path:
             return
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(self.running), encoding="utf-8")
-            os.replace(tmp, self.path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(data), encoding="utf-8")
+            os.replace(tmp, path)
         except OSError:
             pass
+
+    def save(self):
+        self.write(self.path, self.running)
+
+    def save_auto(self):
+        """Keep the auto-wake limits (recent starts, a recent failure) across restarts; call with self.lock held."""
+        now = time.time()
+        data = {}
+        for a in set(self.auto_starts) | set(self.state):
+            starts = [t for t in self.auto_starts.get(a, []) if now - t < AUTO_WINDOW]
+            st = self.state.get(a, {})
+            failed = ({"at": st["at"], "error": st.get("error", "")} if st.get("status") == "failed" and st.get("auto")
+                      and now * 1000 - st["at"] < AUTO_RETRY * 1000 else None)
+            if starts or failed:
+                data[a] = {"starts": starts, "failed": failed}
+        self.write(self.auto_path, data)
 
     def view(self):
         with self.lock:
@@ -196,6 +228,11 @@ class Waker:
                 continue
             if st.get("status") == "failed" and now * 1000 - st.get("at", 0) < AUTO_RETRY * 1000:
                 continue
+            # Only a message that asked to wake it does: an FYI (`--fyi`) or a held one waits for its next turn.
+            fresh = self.db_rows("select count(*) as n from messages where recipient = ? and read_at is null"
+                                 " and wake = 1 and held = 0", (address,))
+            if not fresh or not fresh[0]["n"]:
+                continue
             try:
                 self.wake(address, who, auto=True)
             except WakeError:
@@ -217,6 +254,7 @@ class Waker:
             self.state[address] = {"status": "running", "at": int(time.time() * 1000), "error": "", "auto": auto}
             if auto:
                 self.auto_starts.setdefault(address, []).append(time.time())
+                self.save_auto()
         env = base_env()
         env["PATH"] = os.pathsep.join([str(Path(codex).parent), env.get("PATH", "")])  # ahead of any codex.cmd shim
         logs = STATE / "logs"
@@ -268,3 +306,5 @@ class Waker:
             auto = self.state.get(address, {}).get("auto", False)
             self.state[address] = {"status": "failed" if error else "done", "at": int(time.time() * 1000),
                                    "error": error[:300], "auto": auto}
+            if auto:
+                self.save_auto()

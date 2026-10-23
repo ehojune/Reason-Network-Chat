@@ -33,6 +33,7 @@ WHO = {"person": "pat", "machine": "box", "sessions": [
 
 
 STILL_UNREAD = {"n": 0}  # what a finished wake left unread, for judge()
+WAKEABLE = {}  # address -> unread messages sent without --fyi, when it differs from UNREAD
 
 
 def db_rows(sql, params=()):
@@ -42,6 +43,8 @@ def db_rows(sql, params=()):
     if "sent_at <= ?" in sql:
         STILL_UNREAD["asked"] = params
         return [{"n": STILL_UNREAD["n"]}]
+    if "wake = 1" in sql:  # unread messages that asked to wake it
+        return [{"n": WAKEABLE.get(params[0], UNREAD.get(params[0], 0))}]
     if sql.startswith("select max(sent_at)"):
         return [{"t": 1000 if UNREAD.get(params[0], 0) else None}]
     return [{"n": UNREAD.get(params[0], 0)}]
@@ -221,6 +224,41 @@ class AutoWakeTest(unittest.TestCase):
         wake.AUTO_GAP = 0
         STILL_UNREAD["n"] = 1
         self.run_pass()
+        self.assertEqual(self.w.view()["pat/auto-codex"]["status"], "failed")
+        self.run_pass()
+        self.assertEqual(len(self.spawned), 1)
+
+    def test_fyi_messages_do_not_auto_wake(self):
+        WAKEABLE["pat/auto-codex"] = 0  # its one unread message was sent with --fyi
+        try:
+            self.run_pass()
+        finally:
+            WAKEABLE.clear()
+        self.assertEqual(self.spawned, [])
+        self.run_pass()
+        self.assertEqual(len(self.spawned), 1)
+
+    def test_limits_survive_a_restart(self):
+        home = tempfile.mkdtemp()
+        self.w = wake.Waker(db_rows, home, poll=0.01)
+        wake.AUTO_GAP = 0
+        for _ in range(wake.AUTO_BUDGET):
+            self.run_pass()
+        self.assertEqual(len(self.spawned), wake.AUTO_BUDGET)
+        self.w = wake.Waker(db_rows, home, poll=0.01)  # a restarted server keeps counting
+        self.run_pass()
+        self.assertEqual(len(self.spawned), wake.AUTO_BUDGET)
+        self.assertIn("limitUntil", self.w.view()["pat/auto-codex"])
+
+    def test_failure_wait_survives_a_restart(self):
+        home = tempfile.mkdtemp()
+        self.w = wake.Waker(db_rows, home, poll=0.01)
+        wake.AUTO_GAP = 0
+        STILL_UNREAD["n"] = 1
+        self.run_pass()
+        self.assertEqual(self.w.view()["pat/auto-codex"]["status"], "failed")
+        STILL_UNREAD["n"] = 0
+        self.w = wake.Waker(db_rows, home, poll=0.01)
         self.assertEqual(self.w.view()["pat/auto-codex"]["status"], "failed")
         self.run_pass()
         self.assertEqual(len(self.spawned), 1)

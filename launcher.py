@@ -1230,7 +1230,14 @@ class Launcher:
         if not pid or procs is None:
             return None
         above = set(ancestors(procs, pid))
-        return next((f["name"] for f in found_workers(procs) if f["pid"] in above), None)
+        with self.lock:
+            managed = {name: dict(w) for name, w in self.workers.items()}
+        for f in found_workers(procs):
+            w = managed.get(f["name"])
+            # A process name/argv is not authentication: require this exact managed pid and creation time.
+            if w and w["pid"] == f["pid"] and f["pid"] in above and self.alive(w):
+                return f["name"]
+        return None
 
     def log_activity(self, name):
         """When a running worker last wrote its log (ms), if it has written it since its process started, else None."""

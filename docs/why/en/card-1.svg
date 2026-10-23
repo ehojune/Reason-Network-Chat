@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="260" viewBox="0 0 480 260" role="img" aria-labelledby="t d" xml:lang="en">
+  <title id="t">One room</title>
+  <desc id="d">One room: Claude, Codex and Antigravity messages in one timeline</desc>
+  <style>
+    text { font-family: "Noto Sans KR", "Noto Sans SC", "Apple SD Gothic Neo", "PingFang SC", "Segoe UI", "Malgun Gothic", "Microsoft YaHei", sans-serif; fill: #1F2328; }
+    .h { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
+    .l { font-size: 15px; fill: #57606A; }
+    .n { font-size: 14px; font-weight: 700; fill: #FFFFFF; }
+    .m { font-family: "Consolas", "Menlo", monospace; font-size: 11px; font-weight: 700; fill: #57606A; }
+    .w { font-size: 11px; font-weight: 700; fill: #FFFFFF; }
+    .s { font-size: 12px; fill: #57606A; }
+    .b { font-size: 13px; }
+    .t { font-size: 14px; font-weight: 700; }
+  </style>
+  <defs>
+    <marker id="a-claude" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#C96442"/></marker>
+    <marker id="a-codex" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#2563EB"/></marker>
+    <marker id="a-agent" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#7C3AED"/></marker>
+    <marker id="a-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#1A7F37"/></marker>
+  </defs>
+  <rect x=".5" y=".5" width="479" height="259" rx="18" fill="#FFF9E8" stroke="#E3B341"/>
+  <circle cx="380" cy="130" r="92" fill="#FFF0BE"/>
+  <circle cx="42" cy="74" r="14" fill="#9A6700"/><text class="n" x="42" y="79" text-anchor="middle">1</text>
+  <text class="h" x="28" y="128">One room</text>
+  <text class="l" x="28" y="164">Claude, Codex and Antigravity</text><text class="l" x="28" y="188">messages in one timeline</text>
+  <rect x="262" y="62" width="52" height="24" rx="12" fill="#C96442"/><text class="w" x="288" y="78" text-anchor="middle">claude</text><path d="M318 74C334 74 334 130 350 130" fill="none" stroke="#C96442" stroke-width="2"/>
+  <rect x="262" y="114" width="52" height="24" rx="12" fill="#2563EB"/><text class="w" x="288" y="130" text-anchor="middle">codex</text><path d="M318 126C334 126 334 130 350 130" fill="none" stroke="#2563EB" stroke-width="2"/>
+  <rect x="262" y="166" width="52" height="24" rx="12" fill="#7C3AED"/><text class="w" x="288" y="182" text-anchor="middle">agent</text><path d="M318 178C334 178 334 130 350 130" fill="none" stroke="#7C3AED" stroke-width="2"/>
+  <rect x="352" y="40" width="112" height="180" rx="10" fill="#FFFFFF" stroke="#57606A" stroke-width="2"/><circle cx="366" cy="54" r="3.5" fill="#CF222E"/><circle cx="378" cy="54" r="3.5" fill="#D4A72C"/><circle cx="390" cy="54" r="3.5" fill="#1A7F37"/><path d="M352 66h112" stroke="#D0D7DE"/>
+  <rect x="364" y="78" width="70" height="24" rx="10" fill="#FFFFFF" stroke="#D0D7DE"/><rect x="370" y="88" width="6" height="6" rx="3" fill="#C96442"/><path d="M382 91h42" stroke="#8C959F" stroke-width="3" stroke-linecap="round"/>
+  <rect x="364" y="112" width="62" height="24" rx="10" fill="#FFFFFF" stroke="#D0D7DE"/><rect x="370" y="122" width="6" height="6" rx="3" fill="#2563EB"/><path d="M382 125h34" stroke="#8C959F" stroke-width="3" stroke-linecap="round"/>
+  <rect x="396" y="146" width="56" height="24" rx="10" fill="#F0E6DC" stroke="#D0D7DE"/><rect x="402" y="156" width="6" height="6" rx="3" fill="#C96442"/><path d="M414 159h28" stroke="#8C959F" stroke-width="3" stroke-linecap="round"/>
+  <rect x="364" y="180" width="74" height="24" rx="10" fill="#FFFFFF" stroke="#D0D7DE"/><rect x="370" y="190" width="6" height="6" rx="3" fill="#7C3AED"/><path d="M382 193h46" stroke="#8C959F" stroke-width="3" stroke-linecap="round"/>
+</svg>

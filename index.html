@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>reason-chat</title>
+<style>
+:root {
+  --bg: #f7f7f5; --panel: #ffffff; --line: #e4e3df; --text: #1f1f1d; --muted: #6f6e69;
+  --accent: #c96442; --me: #f0e6dc; --bubble: #ffffff; --hover: #efeee9; --sel: #e8e2d8;
+  --busy: #d97706; --idle: #16a34a; --off: #a3a3a3; --err: #b91c1c;
+  --claude: #c96442; --codex: #2563eb; --agent: #7c3aed; --cli: #0f766e; --other: #6b7280;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #1d1d1b; --panel: #262624; --line: #3a3936; --text: #ecebe6; --muted: #a09f99;
+  --me: #3b302a; --bubble: #2e2e2b; --hover: #31312e; --sel: #3a3631;
+  --claude: #e08a68; --codex: #6ea0ff; --agent: #a78bfa; --cli: #2dd4bf;
+} }
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+/* Segoe UI before Malgun Gothic: Malgun Gothic draws "\" as a won sign, which wrecks Windows paths. */
+body { background: var(--bg); color: var(--text); display: flex; overflow: hidden;
+  font: 14px/1.5 "Pretendard", "Segoe UI", "Malgun Gothic", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+#side { width: 260px; min-width: 200px; background: var(--panel); border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; }
+#brand { display: flex; justify-content: space-between; align-items: center; padding: 14px 14px 4px; }
+#brand h1 { font-size: 15px; margin: 0; }
+#langs button { background: none; color: var(--muted); border: none; padding: 0 3px; font-size: 11px; font-weight: 600; cursor: pointer; }
+#langs button.on { color: var(--accent); }
+#team { color: var(--muted); font-size: 12px; padding: 0 14px 10px; border-bottom: 1px solid var(--line); }
+#list { overflow-y: auto; flex: 1; padding: 6px; }
+.grp { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding: 10px 8px 4px; }
+.ses { padding: 7px 8px; border-radius: 8px; cursor: pointer; display: grid; grid-template-columns: 10px 1fr auto;
+  gap: 2px 8px; align-items: center; }
+.ses:hover { background: var(--hover); }
+.ses.sel { background: var(--sel); }
+.ses.gone { opacity: .55; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--off); }
+.dot.busy { background: var(--busy); } .dot.idle { background: var(--idle); }
+.nm { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cnt { color: var(--muted); font-size: 11px; }
+.sub { grid-column: 2 / 4; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag { display: inline-block; font-size: 10.5px; font-weight: 600; padding: 0 5px; border-radius: 4px; color: #fff;
+  background: var(--other); margin-right: 4px; vertical-align: 1px; }
+.tag.claude-code { background: var(--claude); } .tag.codex { background: var(--codex); }
+.tag.agent { background: var(--agent); } .tag.cli { background: var(--cli); }
+main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#head { padding: 12px 18px; border-bottom: 1px solid var(--line); background: var(--panel); display: flex;
+  justify-content: space-between; align-items: center; gap: 8px; }
+#head b { font-size: 15px; }
+#status { color: var(--muted); font-size: 12px; }
+#status.err { color: var(--err); }
+#tl { flex: 1; overflow-y: auto; padding: 16px 18px; }
+.day { text-align: center; color: var(--muted); font-size: 12px; margin: 14px 0 8px; }
+.msg { display: flex; flex-direction: column; align-items: flex-start; margin: 10px 0; }
+.msg.me { align-items: flex-end; }
+.meta { font-size: 12px; color: var(--muted); margin: 0 4px 3px; }
+.meta .who { font-weight: 600; color: var(--text); cursor: pointer; }
+.meta .who:hover { text-decoration: underline; }
+.bub { background: var(--bubble); border: 1px solid var(--line); border-radius: 14px; padding: 8px 12px;
+  max-width: min(720px, 85%); white-space: pre-wrap; word-break: break-word; }
+.msg.me .bub { background: var(--me); }
+.msg.me .tag { background: var(--accent); }
+.quote { border-left: 3px solid var(--line); color: var(--muted); font-size: 12px; padding: 0 0 0 8px; margin-bottom: 6px;
+  max-height: 3em; overflow: hidden; }
+.foot { font-size: 11px; color: var(--muted); margin: 2px 6px 0; }
+.empty { color: var(--muted); text-align: center; margin-top: 30vh; }
+#comp { border-top: 1px solid var(--line); background: var(--panel); padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
+#row { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+select, textarea, #btn { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+select { padding: 4px 6px; max-width: 320px; }
+#inrow { display: flex; gap: 8px; }
+textarea { flex: 1; resize: none; padding: 8px 10px; min-height: 42px; max-height: 160px; }
+#btn { background: var(--accent); color: #fff; border: none; padding: 0 16px; cursor: pointer; font-weight: 600; }
+#btn:disabled { opacity: .5; cursor: default; }
+@media (max-width: 640px) { #side { width: 170px; min-width: 0; } .sub { display: none; } }
+</style>
+</head>
+<body>
+<aside id="side">
+  <div id="brand"><h1>reason-chat</h1><span id="langs"></span></div>
+  <div id="team"></div>
+  <div id="list"></div>
+</aside>
+<main>
+  <div id="head"><b id="title"></b><span id="status"></span></div>
+  <div id="tl"></div>
+  <form id="comp">
+    <div id="row">
+      <span data-t="to"></span><select id="to"></select>
+      <label id="fyiLabel"><input type="checkbox" id="fyi"> <span data-t="fyi"></span></label>
+      <span id="sendmsg"></span>
+    </div>
+    <div id="inrow">
+      <textarea id="body"></textarea>
+      <button id="btn" type="submit" data-t="send"></button>
+    </div>
+  </form>
+</main>
+<script>
+const T = {
+  ko: { all: "전체 대화", connecting: "연결 중…", loading: "불러오는 중…", empty: "메시지가 없습니다",
+    to: "받는 세션", fyi: "깨우지 않기", fyiTip: "--fyi: 상대를 깨우지 않고 받은편지함에만 넣음",
+    ph: "메시지 (Enter 보내기, Shift+Enter 줄바꿈)", send: "보내기", sending: "보내는 중…", sent: "보냄 →",
+    failed: "실패: ", online: "접속 중", offline: "오프라인", history: "기록에만 남은 세션",
+    busy: "작업 중", idle: "대기", gone: "종료됨", read: "읽음", unread: "안 읽음", held: "보류됨",
+    me: "나", updated: "갱신", whoErr: "세션 상태를 못 읽음: ", connErr: "연결 실패: ", as: "보내는 이름", noTeam: "팀 정보 없음" },
+  en: { all: "All messages", connecting: "Connecting…", loading: "Loading…", empty: "No messages",
+    to: "To", fyi: "Don't wake", fyiTip: "--fyi: drop it in the inbox without waking the session",
+    ph: "Message (Enter to send, Shift+Enter for a new line)", send: "Send", sending: "Sending…", sent: "Sent →",
+    failed: "Failed: ", online: "Online", offline: "Offline", history: "History only",
+    busy: "busy", idle: "idle", gone: "gone", read: "read", unread: "unread", held: "held",
+    me: "me", updated: "updated", whoErr: "Can't read sessions: ", connErr: "Connection failed: ", as: "sending as", noTeam: "no team" },
+  zh: { all: "全部消息", connecting: "连接中…", loading: "加载中…", empty: "暂无消息",
+    to: "发送给", fyi: "不唤醒", fyiTip: "--fyi：只放进收件箱，不唤醒对方会话",
+    ph: "输入消息（Enter 发送，Shift+Enter 换行）", send: "发送", sending: "发送中…", sent: "已发送 →",
+    failed: "失败：", online: "在线", offline: "离线", history: "仅在记录中",
+    busy: "工作中", idle: "空闲", gone: "已结束", read: "已读", unread: "未读", held: "已暂扣",
+    me: "我", updated: "已更新", whoErr: "无法读取会话：", connErr: "连接失败：", as: "发送身份", noTeam: "无团队信息" },
+};
+const LOCALE = {ko: "ko-KR", en: "en-US", zh: "zh-CN"};
+const store = {get: k => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} }};
+const guess = () => { const l = (navigator.language || "en").toLowerCase(); return l.startsWith("ko") ? "ko" : l.startsWith("zh") ? "zh" : "en"; };
+let lang = new URLSearchParams(location.search).get("lang") || store.get("reason-chat-lang") || guess();
+if (!T[lang]) lang = "en";
+const t = k => T[lang][k];
+
+const $ = s => document.querySelector(s);
+let S = null, sel = null, lastSig = "";
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const short = a => (a || "").replace(/^[^/]+\//, "");
+const fmtT = ms => new Date(ms).toLocaleTimeString(LOCALE[lang], {hour: "2-digit", minute: "2-digit"});
+const fmtD = ms => new Date(ms).toLocaleDateString(LOCALE[lang], {year: "numeric", month: "long", day: "numeric", weekday: "short"});
+const st = s => t(s) || s;
+
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-t]").forEach(e => e.textContent = t(e.dataset.t));
+  $("#body").placeholder = t("ph");
+  $("#fyiLabel").title = t("fyiTip");
+  $("#langs").innerHTML = [["ko", "KO"], ["en", "EN"], ["zh", "中"]]
+    .map(([k, l]) => `<button type="button" data-l="${k}" class="${k === lang ? "on" : ""}">${l}</button>`).join("");
+  if (!S) { $("#team").textContent = t("connecting"); $("#tl").innerHTML = `<div class="empty">${t("loading")}</div>`; }
+}
+
+// Live session type wins: replies from `serve` workers are recorded with sender_agent "cli".
+function agentOf(addr, recorded) {
+  if (addr === S.me) return t("me");
+  const s = S.sessions.find(x => x.address === addr);
+  if (s && s.agent && s.agent !== "?") return s.agent;
+  return recorded || S.messages.find(x => x.sender === addr && x.sender_agent)?.sender_agent || "?";
+}
+
+function renderSide() {
+  const count = a => S.messages.filter(m => m.sender === a || m.recipient === a).length;
+  const order = {busy: 0, idle: 1, offline: 2, gone: 3};
+  const ss = [...S.sessions].sort((a, b) => (order[a.status] ?? 2) - (order[b.status] ?? 2)
+    || (count(b.address) - count(a.address)) || a.name.localeCompare(b.name));
+  let h = `<div class="ses ${sel ? "" : "sel"}" data-a=""><span class="dot idle"></span><span class="nm">${t("all")}</span>
+    <span class="cnt">${S.messages.length}</span></div>`;
+  let grp = null;
+  for (const s of ss) {
+    const g = s.live ? (s.status === "offline" ? t("offline") : t("online")) : t("history");
+    if (g !== grp) { h += `<div class="grp">${g}</div>`; grp = g; }
+    const c = count(s.address);
+    const sub = s.doing || s.cwd || "";
+    h += `<div class="ses ${s.live ? "" : "gone"} ${sel === s.address ? "sel" : ""}" data-a="${esc(s.address)}"
+      title="${esc(s.address)} · ${esc(st(s.status))}${s.tier ? " · " + esc(s.tier) : ""}">
+      <span class="dot ${esc(s.status)}"></span><span class="nm">${esc(s.name)}</span><span class="cnt">${c || ""}</span>
+      <span class="sub"><span class="tag ${esc(s.agent)}">${esc(s.agent)}</span>${esc(st(s.status))}${sub ? " · " + esc(sub) : ""}</span></div>`;
+  }
+  $("#list").innerHTML = h;
+  $("#team").textContent = `${S.team || t("noTeam")}${S.me ? ` · ${t("as")} ${S.me}` : ""}`;
+}
+
+function renderTo() {
+  const cur = $("#to").value;
+  const live = S.sessions.filter(s => s.live && s.status !== "offline" && s.address !== S.me);
+  $("#to").innerHTML = live.map(s => `<option value="${esc(s.address)}">${esc(s.name)} (${esc(s.agent)})</option>`).join("");
+  const want = sel && live.some(s => s.address === sel) ? sel : cur;
+  if (want && live.some(s => s.address === want)) $("#to").value = want;
+}
+
+function renderTl() {
+  const tl = $("#tl");
+  const atBottom = tl.scrollHeight - tl.scrollTop - tl.clientHeight < 80;
+  const ms = S.messages.filter(m => !sel || m.sender === sel || m.recipient === sel);
+  const byId = Object.fromEntries(S.messages.map(m => [m.id, m]));
+  if (!ms.length) { tl.innerHTML = `<div class="empty">${t("empty")}</div>`; return; }
+  let h = "", day = "";
+  for (const m of ms) {
+    const d = fmtD(m.sent_at);
+    if (d !== day) { h += `<div class="day">${esc(d)}</div>`; day = d; }
+    const me = m.sender === S.me;
+    const q = m.reply_to && byId[m.reply_to];
+    const ag = agentOf(m.sender, m.sender_agent);
+    // Replies to the page's own address are read here, not through an inbox, so skip the read mark.
+    const flags = [m.recipient === S.me ? "" : m.read_at ? `${t("read")} ${fmtT(m.read_at)}` : t("unread"),
+      m.held ? t("held") : "", m.wake ? "" : "fyi"].filter(Boolean).join(" · ");
+    h += `<div class="msg ${me ? "me" : ""}">
+      <div class="meta"><span class="tag ${esc(ag)}">${esc(ag)}</span><span class="who" data-a="${esc(m.sender)}">${esc(short(m.sender))}</span>
+        → <span class="who" data-a="${esc(m.recipient)}">${esc(short(m.recipient))}</span> · ${fmtT(m.sent_at)}</div>
+      <div class="bub">${q ? `<div class="quote">↪ ${esc(short(q.sender))}: ${esc(q.body.slice(0, 160))}</div>` : ""}${esc(m.body)}</div>
+      <div class="foot">${esc(flags)}</div></div>`;
+  }
+  tl.innerHTML = h;
+  if (atBottom || tl.dataset.first !== "0") { tl.scrollTop = tl.scrollHeight; tl.dataset.first = "0"; }
+}
+
+function render(force) {
+  $("#title").textContent = sel ? short(sel) : t("all");
+  if (!S) return;
+  const sig = JSON.stringify([S.sessions, S.messages.map(m => [m.id, m.read_at, m.held]), sel, lang]);
+  if (!force && sig === lastSig) return;
+  lastSig = sig;
+  renderSide(); renderTo(); renderTl();
+}
+
+async function poll() {
+  try {
+    const r = await fetch("/api/state", {cache: "no-store"});
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    S = j; render();
+    $("#status").className = j.whoError ? "err" : "";
+    $("#status").textContent = j.whoError ? t("whoErr") + j.whoError : `${t("updated")} ${fmtT(j.now)}`;
+  } catch (e) {
+    $("#status").className = "err"; $("#status").textContent = t("connErr") + e.message;
+  }
+}
+
+function pick(a) { sel = a || null; $("#tl").dataset.first = "1"; render(true); }
+$("#list").addEventListener("click", e => { const x = e.target.closest(".ses"); if (x) pick(x.dataset.a); });
+$("#tl").addEventListener("click", e => { const x = e.target.closest(".who"); if (x) pick(x.dataset.a); });
+$("#langs").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  lang = b.dataset.l; store.set("reason-chat-lang", lang); applyLang(); render(true);
+});
+
+$("#comp").addEventListener("submit", async e => {
+  e.preventDefault();
+  const to = $("#to").value, body = $("#body").value.trim();
+  if (!to || !body) return;
+  $("#btn").disabled = true; $("#sendmsg").textContent = t("sending");
+  try {
+    const r = await fetch("/api/send", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({to, body, fyi: $("#fyi").checked})});
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || j.err || j.out || "rc=" + j.rc);
+    $("#body").value = ""; $("#sendmsg").textContent = `${t("sent")} ${short(to)}`;
+    $("#tl").dataset.first = "1"; poll();
+  } catch (err) {
+    $("#sendmsg").textContent = t("failed") + err.message;
+  } finally { $("#btn").disabled = false; }
+});
+$("#body").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("#comp").requestSubmit(); }
+});
+
+applyLang(); render(); poll(); setInterval(poll, 3000);
+</script>
+</body>
+</html>

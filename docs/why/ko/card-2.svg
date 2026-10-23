@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="260" viewBox="0 0 480 260" role="img" aria-labelledby="t d" xml:lang="ko">
+  <title id="t">누가 일하는지 보인다</title>
+  <desc id="d">누가 일하는지 보인다: 작업 중인지 대기 중인지, 무슨 일을 하는지 왼쪽에</desc>
+  <style>
+    text { font-family: "Noto Sans KR", "Noto Sans SC", "Apple SD Gothic Neo", "PingFang SC", "Segoe UI", "Malgun Gothic", "Microsoft YaHei", sans-serif; fill: #1F2328; }
+    .h { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
+    .l { font-size: 15px; fill: #57606A; }
+    .n { font-size: 14px; font-weight: 700; fill: #FFFFFF; }
+    .m { font-family: "Consolas", "Menlo", monospace; font-size: 11px; font-weight: 700; fill: #57606A; }
+    .w { font-size: 11px; font-weight: 700; fill: #FFFFFF; }
+    .s { font-size: 12px; fill: #57606A; }
+    .b { font-size: 13px; }
+    .t { font-size: 14px; font-weight: 700; }
+  </style>
+  <defs>
+    <marker id="a-claude" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#C96442"/></marker>
+    <marker id="a-codex" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#2563EB"/></marker>
+    <marker id="a-agent" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#7C3AED"/></marker>
+    <marker id="a-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#1A7F37"/></marker>
+  </defs>
+  <rect x=".5" y=".5" width="479" height="259" rx="18" fill="#F0F6FF" stroke="#79A8F2"/>
+  <circle cx="380" cy="130" r="92" fill="#DCEBFF"/>
+  <circle cx="42" cy="74" r="14" fill="#1F6FEB"/><text class="n" x="42" y="79" text-anchor="middle">2</text>
+  <text class="h" x="28" y="128">누가 일하는지 보인다</text>
+  <text class="l" x="28" y="164">작업 중인지 대기 중인지,</text><text class="l" x="28" y="188">무슨 일을 하는지 왼쪽에</text>
+  <rect x="290" y="38" width="174" height="184" rx="10" fill="#FFFFFF" stroke="#57606A" stroke-width="2"/>
+  <circle cx="306" cy="60" r="5" fill="#D97706"/><text class="m" x="318" y="64" style="fill:#1F2328">api-claude</text><rect x="318" y="71" width="34" height="13" rx="3" fill="#C96442"/><path d="M358 78h40" stroke="#D0D7DE" stroke-width="3" stroke-linecap="round"/><rect x="402.8" y="52" width="53.2" height="18" rx="9" fill="#D97706"/><text class="w" x="429.42" y="65" text-anchor="middle">작업 중</text>
+  <circle cx="306" cy="102" r="5" fill="#16A34A"/><text class="m" x="318" y="106" style="fill:#1F2328">web-codex</text><rect x="318" y="113" width="34" height="13" rx="3" fill="#2563EB"/><path d="M358 120h26" stroke="#D0D7DE" stroke-width="3" stroke-linecap="round"/><rect x="416.0" y="94" width="40.0" height="18" rx="9" fill="#16A34A"/><text class="w" x="436.0" y="107" text-anchor="middle">대기</text>
+  <circle cx="306" cy="144" r="5" fill="#16A34A"/><text class="m" x="318" y="148" style="fill:#1F2328">docs-agent</text><rect x="318" y="155" width="34" height="13" rx="3" fill="#7C3AED"/><path d="M358 162h26" stroke="#D0D7DE" stroke-width="3" stroke-linecap="round"/><rect x="416.0" y="136" width="40.0" height="18" rx="9" fill="#16A34A"/><text class="w" x="436.0" y="149" text-anchor="middle">대기</text>
+  <circle cx="306" cy="186" r="5" fill="#A3A3A3"/><text class="m" x="318" y="190" style="fill:#1F2328">ask-3f2a</text><rect x="318" y="197" width="34" height="13" rx="3" fill="#0F766E"/><path d="M358 204h26" stroke="#D0D7DE" stroke-width="3" stroke-linecap="round"/><rect x="409.0" y="178" width="47.0" height="18" rx="9" fill="#A3A3A3"/><text class="w" x="432.5" y="191" text-anchor="middle">종료됨</text>
+</svg>

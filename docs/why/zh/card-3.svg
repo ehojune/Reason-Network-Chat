@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="260" viewBox="0 0 480 260" role="img" aria-labelledby="t d" xml:lang="zh">
+  <title id="t">就地发送</title>
+  <desc id="d">就地发送: 发送框替你调用 reason network send</desc>
+  <style>
+    text { font-family: "Noto Sans KR", "Noto Sans SC", "Apple SD Gothic Neo", "PingFang SC", "Segoe UI", "Malgun Gothic", "Microsoft YaHei", sans-serif; fill: #1F2328; }
+    .h { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
+    .l { font-size: 15px; fill: #57606A; }
+    .n { font-size: 14px; font-weight: 700; fill: #FFFFFF; }
+    .m { font-family: "Consolas", "Menlo", monospace; font-size: 11px; font-weight: 700; fill: #57606A; }
+    .w { font-size: 11px; font-weight: 700; fill: #FFFFFF; }
+    .s { font-size: 12px; fill: #57606A; }
+    .b { font-size: 13px; }
+    .t { font-size: 14px; font-weight: 700; }
+  </style>
+  <defs>
+    <marker id="a-claude" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#C96442"/></marker>
+    <marker id="a-codex" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#2563EB"/></marker>
+    <marker id="a-agent" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#7C3AED"/></marker>
+    <marker id="a-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#1A7F37"/></marker>
+  </defs>
+  <rect x=".5" y=".5" width="479" height="259" rx="18" fill="#F0FAF3" stroke="#6CC08B"/>
+  <circle cx="380" cy="130" r="92" fill="#D8F2E0"/>
+  <circle cx="42" cy="74" r="14" fill="#1A7F37"/><text class="n" x="42" y="79" text-anchor="middle">3</text>
+  <text class="h" x="28" y="128">就地发送</text>
+  <text class="l" x="28" y="164">发送框替你调用</text><text class="l" x="28" y="188">reason network send</text>
+  <rect x="300" y="40" width="150" height="34" rx="12" fill="#FFFFFF" stroke="#D0D7DE"/><rect x="310" y="51" width="38" height="13" rx="3" fill="#2563EB"/><path d="M354 57h84" stroke="#8C959F" stroke-width="3" stroke-linecap="round"/><rect x="340" y="92" width="110" height="34" rx="12" fill="#F0E6DC" stroke="#D0D7DE"/><path d="M352 109h86" stroke="#8C959F" stroke-width="3" stroke-linecap="round"/><rect x="282" y="176" width="134" height="36" rx="10" fill="#FFFFFF" stroke="#57606A" stroke-width="2"/><text class="m" x="294" y="198">reason network send</text><rect x="422" y="176" width="40" height="36" rx="10" fill="#1A7F37"/><path d="M434 194h16M444 188l6 6-6 6" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M442 170C442 150 430 140 410 132" fill="none" stroke="#1A7F37" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#a-green)"/><path d="M330 92C318 86 316 80 318 78" fill="none" stroke="#2563EB" stroke-width="2" marker-end="url(#a-codex)"/>
+</svg>

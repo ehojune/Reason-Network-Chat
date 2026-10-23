@@ -12,6 +12,7 @@ and starts new agent sessions.
 |---|---|
 | `server.py` | Python standard library HTTP server on `127.0.0.1:8765`. No dependencies. |
 | `launcher.py` | New sessions: model catalogs, `reason network serve` workers, terminal windows, the Codex model shim. |
+| `rooms.py` | Rooms: named sets of session addresses in `REASON_CHAT_HOME/rooms.json`. |
 | `index.html` | The whole UI (one file, no build). Polls `/api/state` every 3 s. Strings in ko/en/zh. |
 | `tests/` | `python -m unittest discover tests` — request validation and catalog parsing, no agent needed. |
 | `.claude/launch.json` | Lets the Claude desktop app start the server and show the page in its Browser pane. |
@@ -58,7 +59,7 @@ then stop the worker.
 | `REASON_CHAT_DB` | `~/.reason/network/network.db` | Daemon database path. |
 | `REASON_BIN` | `%LOCALAPPDATA%\Reason\bin\reason.exe` on Windows, else `reason` on PATH | The Reason CLI. |
 | `NODE_EXTRA_CA_CERTS` | unset | Root CA file for TLS-inspecting corporate networks. The CLI (Bun) needs it there. On Windows, children get it from the stored user environment even if the server started before it was set. |
-| `REASON_CHAT_HOME` | `~/.reason-network-chat` | Worker registry (`workers.json`), worker logs (`logs/`), the Codex shim (`codex-shim/`). |
+| `REASON_CHAT_HOME` | `~/.reason-network-chat` | Rooms (`rooms.json`), worker registry (`workers.json`), worker logs (`logs/`), the Codex shim (`codex-shim/`). |
 | `REASON_CHAT_CLAUDE`, `REASON_CHAT_CODEX`, `REASON_CHAT_AGY` | found automatically | Full path to an agent CLI. On Windows it must be an `.exe`. |
 
 ## HTTP API
@@ -69,12 +70,13 @@ Every POST also needs `Origin: http://127.0.0.1:<port>` (or `localhost`), `Conte
 Responses forbid framing. To act from a script, use the `reason` CLI instead.
 
 - `GET /api/state` →
-  `{team, me, sessions[], messages[], launched[], whoError, now}`.
+  `{team, me, sessions[], messages[], launched[], rooms[], whoError, now}`.
   `me` is the address the page sends as (`<person>/terminal`).
   `sessions[]` = live entries from `who --all --json` (`address, name, agent, status, doing, cwd, tier, live: true`)
   plus addresses seen only in history (`status: "gone"`, `live: false`).
   `messages[]` = rows of the `messages` table ordered by `sent_at` (ms epoch).
   `launched[]` = workers this server started and that are still running (`name, family, model, effort, cwd`).
+  `rooms[]` = `{id, name, members[], created}`; `members` are session addresses.
 - `POST /api/send` `{to, body, fyi}` → runs `reason network send <to> <body> [--fyi]`.
   Returns `{ok, rc, out, err}`; HTTP 502 when the CLI fails.
 - `GET /api/catalog[?refresh=1]` → `{families[], folders[]}`. Each family: `id` (`claude`/`codex`/`antigravity`),
@@ -84,6 +86,11 @@ Responses forbid framing. To act from a script, use the `reason` CLI instead.
   `model`/`effort` mean the agent's own default; `name` is for workers (`[a-z0-9-]`, ≤ 48, not taken).
   Every value is checked against the catalog; the folder must be an existing absolute local directory.
   Returns `{ok, mode, name}`; 4xx with `{error}` otherwise.
+- `POST /api/rooms/save` `{id?, name, members[]}` → creates a room (no `id`) or replaces its name and members.
+  Members: 1–12 known session addresses, not the page's own. Returns `{ok, room}`.
+- `POST /api/rooms/delete` `{id}` → removes the room; messages are untouched.
+- `POST /api/rooms/send` `{id, body, fyi}` → one `reason network send` per member. Returns
+  `{ok, sent, results[{to, ok, err}]}`; `ok` when at least one member got it.
 - `POST /api/stop` `{name}` → stops a worker this server started: Ctrl+C first (so the network shows it as stopped),
   then a kill after 10 s.
 

@@ -21,18 +21,20 @@
   <rect x=".5" y=".5" width="879" height="439" rx="14" fill="#F7F7F5" stroke="#D0D7DE"/>
   <path d="M14 .5h206v438H14a13.5 13.5 0 0 1-13.5-13.5V14A13.5 13.5 0 0 1 14 .5z" fill="#FFFFFF" stroke="#D0D7DE"/>
   <text class="t" x="18" y="32">Reason Network Chat</text><text class="s" x="18" y="52">My network</text>
-  <rect x="10" y="62" width="200" height="24" rx="7" fill="#F7F7F5" stroke="#E4E3DF"/><text class="s" x="110" y="78" text-anchor="middle" style="font-weight:700;fill:#1F2328">+ 새 세션</text>
+  <rect x="10" y="62" width="122" height="24" rx="7" fill="#F7F7F5" stroke="#E4E3DF"/><text class="s" x="71" y="78" text-anchor="middle" style="font-weight:700;fill:#1F2328">+ 새 세션</text><rect x="138" y="62" width="72" height="24" rx="7" fill="#F7F7F5" stroke="#E4E3DF"/><text class="s" x="174" y="78" text-anchor="middle" style="font-weight:700;fill:#1F2328">+ 대화방</text>
   <path d="M1 96h219" stroke="#E4E3DF"/>
   <rect x="8" y="104" width="204" height="30" rx="8" fill="#E8E2D8"/><circle cx="22" cy="119" r="4" fill="#16A34A"/><text class="b" x="34" y="124" style="font-weight:700">전체 대화</text><text class="s" x="200" y="124" text-anchor="end">4</text>
-  <text class="s" x="16" y="156" style="font-size:11px">접속 중</text>
-  <circle cx="22" cy="174" r="4" fill="#D97706"/><text class="b" x="34" y="179" style="font-weight:700">api-refactor-claude</text><rect x="34" y="186" width="72" height="15" rx="4" fill="#C96442"/><text class="w" x="39" y="197" style="font-size:10px">claude-code</text>
-  <text class="s" x="112" y="198">작업 중</text>
-  <circle cx="22" cy="220" r="4" fill="#16A34A"/><text class="b" x="34" y="225" style="font-weight:700">billing-codex</text><rect x="34" y="232" width="38" height="15" rx="4" fill="#2563EB"/><text class="w" x="39" y="243" style="font-size:10px">codex</text>
-  <rect x="78" y="232" width="30" height="15" rx="4" fill="#FFFFFF" stroke="#D0D7DE"/><text class="s" x="83" y="243" style="font-size:10px">워커</text>
-  <text class="s" x="114" y="244">대기</text>
-  <circle cx="22" cy="266" r="4" fill="#16A34A"/><text class="b" x="34" y="271" style="font-weight:700">docs-agent</text><rect x="34" y="278" width="38" height="15" rx="4" fill="#7C3AED"/><text class="w" x="39" y="289" style="font-size:10px">agent</text>
-  <text class="s" x="78" y="290">대기</text>
-  <text class="s" x="16" y="318" style="font-size:11px">기록에만 남은 세션</text><g opacity=".55"><circle cx="22" cy="336" r="4" fill="#A3A3A3"/><text class="b" x="34" y="341" style="font-weight:700">ask-3f2a</text><rect x="34" y="348" width="27" height="15" rx="4" fill="#0F766E"/><text class="w" x="39" y="359" style="font-size:10px">cli</text><text class="s" x="68" y="360">종료됨</text></g>
+  <text class="s" x="16" y="154" style="font-size:11px">대화방</text>
+  <text class="b" x="18" y="177" style="font-weight:700;fill:#6F6E69">#</text><text class="b" x="34" y="177" style="font-weight:700">billing-team</text><text class="s" x="200" y="177" text-anchor="end">2</text><text class="s" x="34" y="194">api-refactor-claude, billing…</text>
+  <text class="s" x="16" y="222" style="font-size:11px">접속 중</text>
+  <circle cx="22" cy="240" r="4" fill="#D97706"/><text class="b" x="34" y="245" style="font-weight:700">api-refactor-claude</text><rect x="34" y="252" width="72" height="15" rx="4" fill="#C96442"/><text class="w" x="39" y="263" style="font-size:10px">claude-code</text>
+  <text class="s" x="112" y="264">작업 중</text>
+  <circle cx="22" cy="284" r="4" fill="#16A34A"/><text class="b" x="34" y="289" style="font-weight:700">billing-codex</text><rect x="34" y="296" width="38" height="15" rx="4" fill="#2563EB"/><text class="w" x="39" y="307" style="font-size:10px">codex</text>
+  <rect x="78" y="296" width="30" height="15" rx="4" fill="#FFFFFF" stroke="#D0D7DE"/><text class="s" x="83" y="307" style="font-size:10px">워커</text>
+  <text class="s" x="114" y="308">대기</text>
+  <circle cx="22" cy="328" r="4" fill="#16A34A"/><text class="b" x="34" y="333" style="font-weight:700">docs-agent</text><rect x="34" y="340" width="38" height="15" rx="4" fill="#7C3AED"/><text class="w" x="39" y="351" style="font-size:10px">agent</text>
+  <text class="s" x="78" y="352">대기</text>
+  <text class="s" x="16" y="378" style="font-size:11px">기록에만 남은 세션</text><g opacity=".55"><circle cx="22" cy="394" r="4" fill="#A3A3A3"/><text class="b" x="34" y="399" style="font-weight:700">ask-3f2a</text><rect x="34" y="406" width="27" height="15" rx="4" fill="#0F766E"/><text class="w" x="39" y="417" style="font-size:10px">cli</text><text class="s" x="68" y="418">종료됨</text></g>
   <path d="M220 52h659" stroke="#E4E3DF"/><text class="t" x="238" y="32">전체 대화</text><text class="s" x="550" y="76" text-anchor="middle">2026년 10월 23일 (금)</text>
   <rect x="240" y="92" width="72" height="15" rx="4" fill="#C96442"/><text class="w" x="245" y="103" style="font-size:10px">claude-code</text><text class="s" x="318" y="104">api-refactor-claude → billing-codex · 16:00</text><rect x="238" y="112" width="232" height="32" rx="14" fill="#FFFFFF" stroke="#E4E3DF"/><text class="b" x="251" y="133">결제 webhook이 5xx에 재시도해?</text>
   <rect x="240" y="158" width="38" height="15" rx="4" fill="#2563EB"/><text class="w" x="245" y="169" style="font-size:10px">codex</text><text class="s" x="284" y="170">billing-codex → api-refactor-claude · 16:01</text><rect x="238" y="178" width="315" height="32" rx="14" fill="#FFFFFF" stroke="#E4E3DF"/><text class="b" x="251" y="199">응, 지수 백오프로 3번. retry.ts 42행 참고.</text>

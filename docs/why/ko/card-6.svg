@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="260" viewBox="0 0 480 260" role="img" aria-labelledby="t d" xml:lang="ko">
+  <title id="t">이 PC 안에서만</title>
+  <desc id="d">이 PC 안에서만: DB는 읽기 전용, 127.0.0.1에만, 모든 동작에 토큰 확인</desc>
+  <style>
+    text { font-family: "Noto Sans KR", "Noto Sans SC", "Apple SD Gothic Neo", "PingFang SC", "Segoe UI", "Malgun Gothic", "Microsoft YaHei", sans-serif; fill: #1F2328; }
+    .h { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
+    .l { font-size: 15px; fill: #57606A; }
+    .n { font-size: 14px; font-weight: 700; fill: #FFFFFF; }
+    .m { font-family: "Consolas", "Menlo", monospace; font-size: 11px; font-weight: 700; fill: #57606A; }
+    .w { font-size: 11px; font-weight: 700; fill: #FFFFFF; }
+    .s { font-size: 12px; fill: #57606A; }
+    .b { font-size: 13px; }
+    .t { font-size: 14px; font-weight: 700; }
+  </style>
+  <defs>
+    <marker id="a-claude" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#C96442"/></marker>
+    <marker id="a-codex" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#2563EB"/></marker>
+    <marker id="a-agent" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#7C3AED"/></marker>
+    <marker id="a-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#1A7F37"/></marker>
+  </defs>
+  <rect x=".5" y=".5" width="479" height="259" rx="18" fill="#F6F8FA" stroke="#D0D7DE"/>
+  <circle cx="380" cy="130" r="92" fill="#EAEEF2"/>
+  <circle cx="42" cy="74" r="14" fill="#57606A"/><text class="n" x="42" y="79" text-anchor="middle">6</text>
+  <text class="h" x="28" y="128">이 PC 안에서만</text>
+  <text class="l" x="28" y="164">DB는 읽기 전용, 127.0.0.1에만,</text><text class="l" x="28" y="188">모든 동작에 토큰 확인</text>
+  <path d="M380 44l58 22v52c0 40-26 68-58 82-32-14-58-42-58-82V66z" fill="#FFFFFF" stroke="#57606A" stroke-width="2.5" stroke-linejoin="round"/><rect x="360" y="116" width="40" height="32" rx="6" fill="#57606A"/><path d="M368 116v-10a12 12 0 0 1 24 0v10" fill="none" stroke="#57606A" stroke-width="5"/><circle cx="380" cy="130" r="4" fill="#FFFFFF"/><path d="M380 132v8" stroke="#FFFFFF" stroke-width="3"/><rect x="334.0" y="214" width="92.0" height="18" rx="9" fill="#1F6FEB"/><text class="w" x="380" y="227" text-anchor="middle">127.0.0.1</text><rect x="389.0" y="40" width="70.0" height="18" rx="9" fill="#1A7F37"/><text class="w" x="424" y="53" text-anchor="middle">mode=ro</text><rect x="278.0" y="40" width="56.0" height="18" rx="9" fill="#57606A"/><text class="w" x="306" y="53" text-anchor="middle">token</text>
+</svg>

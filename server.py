@@ -2,7 +2,7 @@
 
 Localhost only, Python standard library only. Reads the daemon's SQLite database read-only
 (mode=ro) and `reason network who --all --json`; sends with `reason network send`; starts new
-sessions through launcher.py. It never writes the database.
+sessions through launcher.py and keeps rooms in rooms.py. It never writes the database.
 """
 import hmac
 import json
@@ -18,7 +18,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from launcher import Catalog, Launcher, LaunchError, allow_ctrl_c, base_env
+from launcher import STATE, Catalog, Launcher, LaunchError, allow_ctrl_c, base_env
+from rooms import RoomError, Rooms
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("REASON_CHAT_PORT", "8765"))
@@ -52,6 +53,7 @@ _who = {"data": None, "error": None}
 _lock = threading.Lock()
 CATALOG = Catalog(REASON)
 LAUNCHER = Launcher(REASON, CATALOG)
+ROOMS = Rooms(STATE)
 
 
 def run_reason(*args, timeout=30):
@@ -112,7 +114,25 @@ def state():
                          "live": False})
         seen.add(addr)
     return {"team": who.get("team"), "me": me, "sessions": sessions, "messages": msgs,
-            "launched": LAUNCHER.list(), "whoError": who_err, "now": int(time.time() * 1000)}
+            "launched": LAUNCHER.list(), "rooms": ROOMS.list(), "whoError": who_err, "now": int(time.time() * 1000)}
+
+
+def me_and_known():
+    """The page's own address and every session address it can show: live ones and those in history."""
+    with _lock:
+        who = _who["data"] or {}
+    person = who.get("person")
+    known = {s["address"] for s in who.get("sessions") or []}
+    for r in db_rows("select distinct sender as a from messages union select distinct recipient from messages"):
+        known.add(r["a"])
+    return (f"{person}/terminal" if person else None), known
+
+
+def send_one(to, body, fyi):
+    # The CLI has no `--` terminator: a body like "--help" would print help and exit 0.
+    if body.startswith("-"):
+        body = " " + body
+    return run_reason("send", to, body, *(["--fyi"] if fyi else []), timeout=60)
 
 
 def live_names():
@@ -214,7 +234,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self.host_ok():
             return
         path = urlsplit(self.path).path
-        if path not in ("/api/send", "/api/launch", "/api/stop"):
+        if path not in ("/api/send", "/api/launch", "/api/stop", "/api/rooms/save", "/api/rooms/delete",
+                        "/api/rooms/send"):
             return self.send_error(404)
         req = self.read_json()
         if req is None:
@@ -224,13 +245,21 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_message(req)
             elif path == "/api/launch":
                 self.send_json(LAUNCHER.launch(req, live_names()))
+            elif path == "/api/rooms/save":
+                me, known = me_and_known()
+                self.send_json({"ok": True, "room": ROOMS.upsert(req, known, me)})
+            elif path == "/api/rooms/delete":
+                ROOMS.delete(req.get("id"))
+                self.send_json({"ok": True})
+            elif path == "/api/rooms/send":
+                self.send_room(req)
             else:
                 name = req.get("name")
                 if not isinstance(name, str):
                     return self.send_json({"error": "name must be a string"}, 400)
                 LAUNCHER.stop(name)
                 self.send_json({"ok": True})
-        except LaunchError as e:
+        except (LaunchError, RoomError) as e:
             self.send_json({"error": str(e)}, e.code)
         except Exception as e:
             self.send_json({"error": str(e)}, 500)
@@ -242,11 +271,24 @@ class Handler(BaseHTTPRequestHandler):
         to, body = to.strip(), body.strip()
         if not to or not body or to.startswith("-"):
             return self.send_json({"error": "to and body are required"}, 400)
-        # The CLI has no `--` terminator: a body like "--help" would print help and exit 0.
-        if body.startswith("-"):
-            body = " " + body
-        rc, out, err = run_reason("send", to, body, *(["--fyi"] if fyi else []), timeout=60)
+        rc, out, err = send_one(to, body, fyi)
         self.send_json({"ok": rc == 0, "rc": rc, "out": out, "err": err}, 200 if rc == 0 else 502)
+
+    def send_room(self, req):
+        """One `reason network send` per member; reports each member's result."""
+        room = ROOMS.get(req.get("id"))
+        body, fyi = req.get("body"), req.get("fyi", False)
+        if not room:
+            return self.send_json({"error": "No such room."}, 404)
+        if not isinstance(body, str) or not body.strip() or not isinstance(fyi, bool):
+            return self.send_json({"error": "body must be a non-empty string, fyi a boolean"}, 400)
+        results = []
+        for to in room["members"]:
+            rc, out, err = send_one(to, body.strip(), fyi)
+            results.append({"to": to, "ok": rc == 0, "err": "" if rc == 0 else (err or out or f"rc={rc}")})
+        sent = sum(r["ok"] for r in results)
+        self.send_json({"ok": sent > 0, "sent": sent, "results": results,
+                        **({} if sent else {"error": "; ".join(r["err"] for r in results)})}, 200 if sent else 502)
 
 
 def main():

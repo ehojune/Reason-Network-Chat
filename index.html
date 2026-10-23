@@ -50,6 +50,12 @@ body { background: var(--bg); color: var(--text); display: flex; overflow: hidde
 .tag.claude-code { background: var(--claude); } .tag.codex { background: var(--codex); }
 .tag.agent { background: var(--agent); } .tag.cli { background: var(--cli); }
 .tag.wk { background: none; color: var(--muted); border: 1px solid var(--line); font-weight: 500; }
+.hash { color: var(--muted); font-weight: 700; font-size: 13px; line-height: 1; text-align: center; }
+.mem { max-height: 260px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 4px; }
+.mem label { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; color: var(--text);
+  font-size: 13px; cursor: pointer; }
+.mem label:hover { background: var(--hover); }
+.mem label.gone { opacity: .55; }
 main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #head { padding: 12px 18px; border-bottom: 1px solid var(--line); background: var(--panel); display: flex;
   justify-content: space-between; align-items: center; gap: 8px; }
@@ -57,8 +63,10 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #headR { display: flex; align-items: center; gap: 10px; min-width: 0; }
 #status { color: var(--muted); font-size: 12px; }
 #status.err { color: var(--err); }
-#stop { font: inherit; font-size: 12px; color: var(--err); background: none; border: 1px solid var(--line); border-radius: 6px;
-  padding: 1px 8px; cursor: pointer; }
+#stop, #editRoom { font: inherit; font-size: 12px; color: var(--text); background: none; border: 1px solid var(--line);
+  border-radius: 6px; padding: 1px 8px; cursor: pointer; }
+#stop, .danger { color: var(--err) !important; }
+#members { color: var(--muted); font-size: 12px; font-weight: 400; margin-left: 8px; }
 #tl { flex: 1; overflow-y: auto; padding: 16px 18px; }
 .day { text-align: center; color: var(--muted); font-size: 12px; margin: 14px 0 8px; }
 .msg { display: flex; flex-direction: column; align-items: flex-start; margin: 10px 0; }
@@ -110,11 +118,14 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
 <aside id="side">
   <div id="brand"><h1>Reason Network Chat</h1><span id="langs"></span></div>
   <div id="team"></div>
-  <div id="acts"><button type="button" class="act" id="newSes" data-t="newSession"></button></div>
+  <div id="acts"><button type="button" class="act" id="newSes" data-t="newSession"></button>
+    <button type="button" class="act" id="newRoom" data-t="newRoom"></button></div>
   <div id="list"></div>
 </aside>
 <main>
-  <div id="head"><b id="title"></b><span id="headR"><button type="button" id="stop" hidden data-t="stop"></button><span id="status"></span></span></div>
+  <div id="head"><span><b id="title"></b><span id="members"></span></span><span id="headR">
+    <button type="button" id="editRoom" hidden data-t="editRoom"></button>
+    <button type="button" id="stop" hidden data-t="stop"></button><span id="status"></span></span></div>
   <div id="tl"></div>
   <form id="comp">
     <div id="nowake" hidden><span data-t="nowake"></span> <button type="button" id="toWorker" data-t="toWorker"></button></div>
@@ -148,6 +159,19 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
       <button type="submit" class="go" id="lfGo" data-t="start"></button></div>
   </form>
 </dialog>
+<dialog id="rdlg">
+  <form id="rf">
+    <h2 id="rfTitle"></h2>
+    <label class="fld"><span data-t="roomName"></span>
+      <input id="rfName" required maxlength="60" autocomplete="off"></label>
+    <div class="fld"><span data-t="roomMembers"></span><div class="mem" id="rfMembers"></div></div>
+    <p class="hint" id="rfHint"></p>
+    <div class="dbtn"><button type="button" class="plain danger" id="rfDelete" data-t="deleteRoom"></button>
+      <span style="flex:1"></span>
+      <button type="button" class="plain" id="rfCancel" data-t="cancel"></button>
+      <button type="submit" class="go" id="rfGo" data-t="save"></button></div>
+  </form>
+</dialog>
 <script>
 const T = {
   ko: { all: "전체 대화", connecting: "연결 중…", loading: "불러오는 중…", empty: "메시지가 없습니다",
@@ -165,7 +189,12 @@ const T = {
     stop: "워커 중지", stopAsk: "이 워커를 중지할까요? ", stopped: "중지함: ", wk: "워커", here: "여기서 시작함",
     noAgent: "설치된 에이전트가 없습니다", nextTurn: "다음 턴에 읽음",
     nowake: "이 세션은 자기 턴이 올 때만 메시지를 읽습니다. 쉬고 있는 Codex 앱 세션은 메시지로 깨어나지 않습니다.",
-    toWorker: "같은 폴더에 워커 열기" },
+    toWorker: "같은 폴더에 워커 열기",
+    newRoom: "+ 대화방", newRoomTitle: "새 대화방", editRoom: "대화방 편집", roomName: "대화방 이름", roomMembers: "참여 세션",
+    deleteRoom: "대화방 삭제", save: "저장", rooms: "대화방", everyone: "대화방 전체", sentTo: "보냄", of: "/",
+    deleteAsk: "이 대화방을 지울까요? 메시지는 그대로 남습니다.", pickMembers: "세션을 하나 이상 고르세요.",
+    roomHint: "이 세션들이 나와, 또 서로 주고받은 메시지만 보입니다. 대화방 전체로 보내면 세션마다 한 통씩 갑니다.",
+    memberCount: "명" },
   en: { all: "All messages", connecting: "Connecting…", loading: "Loading…", empty: "No messages",
     to: "To", fyi: "Don't wake", fyiTip: "--fyi: drop it in the inbox without waking the session",
     ph: "Message (Enter to send, Shift+Enter for a new line)", send: "Send", sending: "Sending…", sent: "Sent →",
@@ -181,7 +210,12 @@ const T = {
     stop: "Stop worker", stopAsk: "Stop this worker? ", stopped: "Stopped: ", wk: "worker", here: "started here",
     noAgent: "No agent is installed", nextTurn: "reads next turn",
     nowake: "This session reads messages only when it takes its next turn; an idle Codex app session does not wake on one.",
-    toWorker: "Start a worker in its folder" },
+    toWorker: "Start a worker in its folder",
+    newRoom: "+ Room", newRoomTitle: "New room", editRoom: "Edit room", roomName: "Room name", roomMembers: "Sessions in this room",
+    deleteRoom: "Delete room", save: "Save", rooms: "Rooms", everyone: "Everyone in this room", sentTo: "Sent to", of: "/",
+    deleteAsk: "Delete this room? Its messages stay.", pickMembers: "Pick at least one session.",
+    roomHint: "Shows only messages these sessions exchange with you and with each other. Sending to the whole room sends one message to each.",
+    memberCount: "" },
   zh: { all: "全部消息", connecting: "连接中…", loading: "加载中…", empty: "暂无消息",
     to: "发送给", fyi: "不唤醒", fyiTip: "--fyi：只放进收件箱，不唤醒对方会话",
     ph: "输入消息（Enter 发送，Shift+Enter 换行）", send: "发送", sending: "发送中…", sent: "已发送 →",
@@ -197,7 +231,12 @@ const T = {
     stop: "停止 worker", stopAsk: "要停止这个 worker 吗？", stopped: "已停止：", wk: "worker", here: "在此启动",
     noAgent: "没有已安装的智能体", nextTurn: "下一轮才读",
     nowake: "该会话只在自己下一轮运行时读取消息；空闲的 Codex 应用会话不会被消息唤醒。",
-    toWorker: "在同一文件夹启动 worker" },
+    toWorker: "在同一文件夹启动 worker",
+    newRoom: "+ 聊天室", newRoomTitle: "新建聊天室", editRoom: "编辑聊天室", roomName: "聊天室名称", roomMembers: "成员会话",
+    deleteRoom: "删除聊天室", save: "保存", rooms: "聊天室", everyone: "聊天室全体", sentTo: "已发送", of: "/",
+    deleteAsk: "删除这个聊天室？消息会保留。", pickMembers: "请至少选择一个会话。",
+    roomHint: "只显示这些会话与你、以及彼此之间的消息。发给全体时，每个成员各收到一条。",
+    memberCount: "" },
 };
 const LOCALE = {ko: "ko-KR", en: "en-US", zh: "zh-CN"};
 const store = {get: k => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -243,6 +282,13 @@ function agentOf(addr, recorded) {
   return recorded || S.messages.find(x => x.sender === addr && x.sender_agent)?.sender_agent || "?";
 }
 const person = () => (S && S.me ? S.me.split("/")[0] : "");
+// The selection is "" (everything), a session address, or "room:<id>".
+const roomOf = key => key && key.startsWith("room:") && S ? (S.rooms || []).find(r => r.id === key.slice(5)) : null;
+function inRoom(m, room) {
+  const ms = room.members, ok = a => a === S.me || ms.includes(a);
+  return ok(m.sender) && ok(m.recipient) && (ms.includes(m.sender) || ms.includes(m.recipient));
+}
+const shown = m => { const r = roomOf(sel); return r ? inRoom(m, r) : !sel || m.sender === sel || m.recipient === sel; };
 const launchedHere = addr => S.launched.some(w => `${person()}/${w.name}` === addr);
 // App and CLI sessions read Reason messages only when they take a turn; an idle Codex app session never wakes on one.
 // Workers answer at once; "cli" rows are one-off `reason network` asks.
@@ -255,6 +301,13 @@ function renderSide() {
     || (count(b.address) - count(a.address)) || a.name.localeCompare(b.name));
   let h = `<div class="ses ${sel ? "" : "sel"}" data-a=""><span class="dot idle"></span><span class="nm">${t("all")}</span>
     <span class="cnt">${S.messages.length}</span></div>`;
+  if ((S.rooms || []).length) h += `<div class="grp">${t("rooms")}</div>`;
+  for (const r of S.rooms || []) {
+    const key = `room:${r.id}`, c = S.messages.filter(m => inRoom(m, r)).length;
+    h += `<div class="ses ${sel === key ? "sel" : ""}" data-a="${esc(key)}" title="${esc(r.members.join(", "))}">
+      <span class="hash">#</span><span class="nm">${esc(r.name)}</span><span class="cnt">${c || ""}</span>
+      <span class="sub">${esc(r.members.map(short).join(", "))}</span></div>`;
+  }
   let grp = null;
   for (const s of ss) {
     const g = s.live ? (s.status === "offline" ? t("offline") : t("online")) : t("history");
@@ -272,18 +325,28 @@ function renderSide() {
 }
 
 function renderTo() {
-  const cur = $("#to").value;
-  const live = S.sessions.filter(s => s.live && s.status !== "offline" && s.address !== S.me);
-  $("#to").innerHTML = live.map(s => `<option value="${esc(s.address)}">${esc(s.name)} (${esc(s.agent)})</option>`).join("");
-  const want = sel && live.some(s => s.address === sel) ? sel : cur;
-  if (want && live.some(s => s.address === want)) $("#to").value = want;
+  const cur = $("#to").value, room = roomOf(sel);
+  let live = S.sessions.filter(s => s.live && s.status !== "offline" && s.address !== S.me);
+  if (room) live = live.filter(s => room.members.includes(s.address));
+  $("#to").innerHTML = (room ? `<option value="room:${esc(room.id)}">${esc(t("everyone"))} (${room.members.length})</option>` : "") +
+    live.map(s => `<option value="${esc(s.address)}">${esc(s.name)} (${esc(s.agent)})</option>`).join("");
+  const want = room ? (live.some(s => s.address === cur) ? cur : `room:${room.id}`)
+    : sel && live.some(s => s.address === sel) ? sel : cur;
+  if (want && [...$("#to").options].some(o => o.value === want)) $("#to").value = want;
 }
 
 function renderTl() {
   const tl = $("#tl");
   const atBottom = tl.scrollHeight - tl.scrollTop - tl.clientHeight < 80;
-  const ms = S.messages.filter(m => !sel || m.sender === sel || m.recipient === sel);
   const byId = Object.fromEntries(S.messages.map(m => [m.id, m]));
+  // A room send is one row per member; show it once, with every recipient.
+  const ms = [];
+  for (const m of S.messages.filter(shown)) {
+    const prev = ms[ms.length - 1];
+    if (prev && prev.sender === m.sender && prev.body === m.body && m.sent_at - prev.sent_at < 15000
+        && !prev.to.includes(m.recipient)) { prev.to.push(m.recipient); prev.all.push(m); continue; }
+    ms.push({...m, to: [m.recipient], all: [m]});
+  }
   if (!ms.length) { tl.innerHTML = `<div class="empty">${t("empty")}</div>`; return; }
   let h = "", day = "";
   for (const m of ms) {
@@ -293,11 +356,13 @@ function renderTl() {
     const q = m.reply_to && byId[m.reply_to];
     const ag = agentOf(m.sender, m.sender_agent);
     // Replies to the page's own address are read here, not through an inbox, so skip the read mark.
-    const flags = [m.recipient === S.me ? "" : m.read_at ? `${t("read")} ${fmtT(m.read_at)}` : t("unread"),
-      m.held ? t("held") : "", m.wake ? "" : "fyi"].filter(Boolean).join(" · ");
+    const nread = m.all.filter(x => x.read_at).length;
+    const flags = [m.recipient === S.me ? "" : m.all.length > 1 ? `${t("read")} ${nread}${t("of")}${m.all.length}`
+      : m.read_at ? `${t("read")} ${fmtT(m.read_at)}` : t("unread"),
+      m.all.some(x => x.held) ? t("held") : "", m.wake ? "" : "fyi"].filter(Boolean).join(" · ");
     h += `<div class="msg ${me ? "me" : ""}">
       <div class="meta"><span class="tag ${esc(ag)}">${esc(ag)}</span><span class="who" data-a="${esc(m.sender)}">${esc(short(m.sender))}</span>
-        → <span class="who" data-a="${esc(m.recipient)}">${esc(short(m.recipient))}</span> · ${fmtT(m.sent_at)}</div>
+        → ${m.to.map(a => `<span class="who" data-a="${esc(a)}">${esc(short(a))}</span>`).join(", ")} · ${fmtT(m.sent_at)}</div>
       <div class="bub">${q ? `<div class="quote">↪ ${esc(short(q.sender))}: ${esc(q.body.slice(0, 160))}</div>` : ""}${esc(m.body)}</div>
       <div class="foot">${esc(flags)}</div></div>`;
   }
@@ -306,13 +371,17 @@ function renderTl() {
 }
 
 function render(force) {
-  $("#title").textContent = sel ? short(sel) : t("all");
+  const room = roomOf(sel);
+  $("#title").textContent = room ? `# ${room.name}` : sel && !sel.startsWith("room:") ? short(sel) : t("all");
+  $("#members").textContent = room ? room.members.map(short).join(", ") : "";
+  $("#editRoom").hidden = !room;
   if (!S) return;
+  if (sel && sel.startsWith("room:") && !room) sel = null;  // deleted elsewhere
   if (pendingAddr && S.sessions.some(s => s.address === pendingAddr && s.live)) {
     sel = pendingAddr; pendingAddr = null; $("#tl").dataset.first = "1"; force = true;
   }
   $("#stop").hidden = !(sel && launchedHere(sel));
-  const sig = JSON.stringify([S.sessions, S.launched, S.messages.map(m => [m.id, m.read_at, m.held]), sel, lang]);
+  const sig = JSON.stringify([S.sessions, S.launched, S.rooms, S.messages.map(m => [m.id, m.read_at, m.held]), sel, lang]);
   if (!force && sig === lastSig) return;
   lastSig = sig;
   renderSide(); renderTo(); renderTl(); renderNoWake();
@@ -354,6 +423,14 @@ $("#comp").addEventListener("submit", async e => {
   if (!to || !body) return;
   $("#btn").disabled = true; $("#sendmsg").textContent = t("sending");
   try {
+    if (to.startsWith("room:")) {
+      const j = await post("/api/rooms/send", {id: to.slice(5), body, fyi: $("#fyi").checked});
+      const bad = j.results.filter(r => !r.ok);
+      $("#body").value = "";
+      $("#sendmsg").textContent = `${t("sentTo")} ${j.sent}${t("of")}${j.results.length}` +
+        (bad.length ? ` · ${t("failed")}${bad.map(r => `${short(r.to)}: ${r.err}`).join("; ")}` : "");
+      $("#tl").dataset.first = "1"; poll(); return;
+    }
     await post("/api/send", {to, body, fyi: $("#fyi").checked});
     $("#body").value = ""; $("#sendmsg").textContent = `${t("sent")} ${short(to)}`;
     $("#tl").dataset.first = "1"; poll();
@@ -475,6 +552,48 @@ $("#lf").addEventListener("submit", async e => {
     poll();
   } catch (err) { hint(t("failed") + err.message, true); }
   finally { $("#lfGo").disabled = false; }
+});
+
+// ---- rooms: a saved set of sessions; this page filters to their traffic and sends to all of them ----
+let editing = null;
+function rhint(msg, err) { $("#rfHint").className = "hint" + (err ? " err" : ""); $("#rfHint").textContent = msg || ""; }
+function openRoom(room) {
+  if (!S) return;
+  editing = room || null;
+  $("#rfTitle").textContent = t(room ? "editRoom" : "newRoomTitle");
+  $("#rfName").value = room ? room.name : "";
+  $("#rfDelete").hidden = !room;
+  const chosen = new Set(room ? room.members : sel && !sel.startsWith("room:") ? [sel] : []);
+  const up = s => s.live && s.status !== "offline";
+  const ss = S.sessions.filter(s => s.address !== S.me)
+    .sort((a, b) => (chosen.has(b.address) - chosen.has(a.address)) || (up(b) - up(a)) || a.name.localeCompare(b.name));
+  $("#rfMembers").innerHTML = ss.map(s => `<label class="${up(s) ? "" : "gone"}"><input type="checkbox" value="${esc(s.address)}"
+    ${chosen.has(s.address) ? "checked" : ""}><span class="tag ${esc(s.agent)}">${esc(s.agent)}</span>${esc(s.name)}</label>`).join("");
+  rhint(t("roomHint"));
+  $("#rdlg").showModal();
+}
+$("#newRoom").addEventListener("click", () => openRoom(null));
+$("#editRoom").addEventListener("click", () => openRoom(roomOf(sel)));
+$("#rfCancel").addEventListener("click", () => $("#rdlg").close());
+$("#rf").addEventListener("submit", async e => {
+  e.preventDefault();
+  const members = [...document.querySelectorAll("#rfMembers input:checked")].map(i => i.value);
+  if (!members.length) return rhint(t("pickMembers"), true);
+  $("#rfGo").disabled = true;
+  try {
+    const j = await post("/api/rooms/save", {id: editing ? editing.id : undefined, name: $("#rfName").value, members});
+    S.rooms = [...S.rooms.filter(r => r.id !== j.room.id), j.room];  // show it now, before the next poll
+    $("#rdlg").close(); sel = `room:${j.room.id}`; $("#tl").dataset.first = "1"; render(true);
+  } catch (err) { rhint(t("failed") + err.message, true); }
+  finally { $("#rfGo").disabled = false; }
+});
+$("#rfDelete").addEventListener("click", async () => {
+  if (!editing || !confirm(t("deleteAsk"))) return;
+  try {
+    await post("/api/rooms/delete", {id: editing.id});
+    S.rooms = S.rooms.filter(r => r.id !== editing.id);
+    $("#rdlg").close(); if (sel === `room:${editing.id}`) sel = null; render(true);
+  } catch (err) { rhint(t("failed") + err.message, true); }
 });
 
 applyLang(); render(); poll(); setInterval(poll, 3000);

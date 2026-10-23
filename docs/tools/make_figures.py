@@ -14,9 +14,10 @@ MONO = '"Consolas", "Menlo", monospace'
 C = {"claude": "#C96442", "codex": "#2563EB", "agent": "#7C3AED", "cli": "#0F766E", "me": "#C96442",
      "busy": "#D97706", "idle": "#16A34A", "off": "#A3A3A3", "ink": "#1F2328", "sub": "#57606A", "line": "#D0D7DE"}
 
-CARDS = ["room", "status", "send", "launch", "local"]  # README order
+CARDS = ["room", "status", "send", "launch", "rooms", "local"]  # README order
 CARD_COLORS = {"room": ("#FFF9E8", "#E3B341", "#FFF0BE", "#9A6700"), "status": ("#F0F6FF", "#79A8F2", "#DCEBFF", "#1F6FEB"),
                "send": ("#F0FAF3", "#6CC08B", "#D8F2E0", "#1A7F37"), "launch": ("#F6F2FF", "#B69CF5", "#EDE5FF", "#7C3AED"),
+               "rooms": ("#FFF5F0", "#F0A27E", "#FFE4D6", "#C2410C"),
                "local": ("#F6F8FA", "#D0D7DE", "#EAEEF2", "#57606A")}
 
 TEXT = {
@@ -26,6 +27,7 @@ TEXT = {
             "status": ("누가 일하는지 보인다", "작업 중인지 대기 중인지,", "무슨 일을 하는지 왼쪽에"),
             "send": ("여기서 바로 보낸다", "보내기 칸이 reason network", "send를 대신 불러 준다"),
             "launch": ("여기서 세션을 연다", "폴더·에이전트·모델·강도를 고른다", "목록은 에이전트가 직접 준다"),
+            "rooms": ("필요한 세션만 한 방에", "고른 세션의 대화만 보이고,", "보내면 모두에게 한 통씩 간다"),
             "local": ("이 PC 안에서만", "DB는 읽기 전용, 127.0.0.1에만,", "모든 동작에 토큰 확인"),
         },
         "flow": ("에이전트 세션", "Reason Network 데몬", "Reason Network Chat", "읽기: SQLite 읽기 전용 + who --json",
@@ -33,7 +35,7 @@ TEXT = {
                  "시작: reason network serve 또는 터미널 창"),
         "busy": "작업 중", "idle": "대기", "gone": "종료됨", "all": "전체 대화", "online": "접속 중",
         "history": "기록에만 남은 세션", "send": "보내기", "to": "받는 세션", "me": "나",
-        "ph": "메시지 (Enter 보내기)", "new": "+ 새 세션", "wk": "워커",
+        "ph": "메시지 (Enter 보내기)", "new": "+ 새 세션", "wk": "워커", "newRoom": "+ 대화방", "rooms": "대화방",
         "msgs": ["결제 webhook이 5xx에 재시도해?", "응, 지수 백오프로 3번. retry.ts 42행 참고.",
                  "README 설치 표 갱신 부탁해", "갱신했어. 3줄 바뀜."],
         "day": "2026년 10월 23일 (금)", "read": "읽음", "others": "다른 에이전트",
@@ -48,6 +50,7 @@ TEXT = {
             "status": ("See who's busy", "Busy or idle, and what each", "session is doing right now"),
             "send": ("Reply from here", "The send box runs", "reason network send for you"),
             "launch": ("Start a session", "Folder, agent, model, effort:", "each list comes from the agent"),
+            "rooms": ("Rooms", "Pick sessions: see only their", "talk, send one message to all"),
             "local": ("Local and guarded", "Database read-only, 127.0.0.1,", "a token on every action"),
         },
         "flow": ("Agent sessions", "Reason Network daemon", "Reason Network Chat", "read: SQLite read-only + who --json",
@@ -55,7 +58,7 @@ TEXT = {
                  "start: reason network serve or a terminal window"),
         "busy": "busy", "idle": "idle", "gone": "gone", "all": "All messages", "online": "Online",
         "history": "History only", "send": "Send", "to": "To", "me": "me",
-        "ph": "Message (Enter to send)", "new": "+ New session", "wk": "worker",
+        "ph": "Message (Enter to send)", "new": "+ New session", "wk": "worker", "newRoom": "+ Room", "rooms": "Rooms",
         "msgs": ["Does the billing webhook retry on 5xx?", "Yes, 3 times with backoff. See retry.ts:42.",
                  "Please update the install table in the README", "Done, 3 lines changed."],
         "day": "Fri, October 23, 2026", "read": "read", "others": "Other agents",
@@ -70,6 +73,7 @@ TEXT = {
             "status": ("谁在忙一目了然", "工作中还是空闲、", "正在做什么，都在左栏"),
             "send": ("就地发送", "发送框替你调用", "reason network send"),
             "launch": ("就地启动会话", "选文件夹、智能体、模型、强度，", "列表都来自智能体本身"),
+            "rooms": ("聊天室", "只看选中会话之间的对话，", "一条消息发给全体成员"),
             "local": ("只在本机", "数据库只读，只监听 127.0.0.1，", "每个操作都校验令牌"),
         },
         "flow": ("智能体会话", "Reason Network 守护进程", "Reason Network Chat", "读取：SQLite 只读 + who --json",
@@ -77,7 +81,7 @@ TEXT = {
                  "启动：reason network serve 或终端窗口"),
         "busy": "工作中", "idle": "空闲", "gone": "已结束", "all": "全部消息", "online": "在线",
         "history": "仅在记录中", "send": "发送", "to": "发送给", "me": "我",
-        "ph": "输入消息（Enter 发送）", "new": "+ 新会话", "wk": "worker",
+        "ph": "输入消息（Enter 发送）", "new": "+ 新会话", "wk": "worker", "newRoom": "+ 聊天室", "rooms": "聊天室",
         "msgs": ["支付 webhook 遇到 5xx 会重试吗？", "会，指数退避重试 3 次，见 retry.ts:42。",
                  "请更新 README 里的安装表格", "已更新，改了 3 行。"],
         "day": "2026年10月23日 周五", "read": "已读", "others": "其他智能体",
@@ -196,6 +200,17 @@ def card(n, lang):
                      '<path d="M314 170h60" stroke="#8C959F" stroke-width="3" stroke-linecap="round"/>'
                      '<rect x="392" y="192" width="58" height="22" rx="7" fill="#7C3AED"/>'
                      '<path d="M412 203h16M424 198l5 5-5 5" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>')
+    elif kind == "rooms":  # some sessions inside a room, one message fanning out to each member
+        parts.append('<rect x="300" y="44" width="164" height="172" rx="14" fill="#FFFFFF" stroke="#C2410C" stroke-width="2" stroke-dasharray="6 4"/>'
+                     '<text class="t" x="316" y="70" style="fill:#C2410C"># team</text>')
+        for i, (k, name) in enumerate([("claude", "api-claude"), ("codex", "web-codex"), ("agent", "docs-agent")]):
+            y = 92 + i * 36
+            parts.append(f'<circle cx="324" cy="{y + 8}" r="6" fill="{C[k]}"/>'
+                         f'<text class="m" x="338" y="{y + 12}" style="fill:{C["ink"]}">{name}</text>')
+        parts.append('<rect x="252" y="190" width="40" height="22" rx="8" fill="#F0E6DC" stroke="#D0D7DE"/>'
+                     '<path d="M262 201h20" stroke="#8C959F" stroke-width="3" stroke-linecap="round"/>'
+                     + "".join(f'<path d="M294 199C304 199 304 {100 + i * 36} 314 {100 + i * 36}" fill="none" stroke="#C2410C" '
+                               f'stroke-width="1.5" marker-end="url(#a-claude)"/>' for i in range(3)))
     else:  # local: read-only, localhost only, token
         parts.append('<path d="M380 44l58 22v52c0 40-26 68-58 82-32-14-58-42-58-82V66z" fill="#FFFFFF" stroke="#57606A" stroke-width="2.5" stroke-linejoin="round"/>'
                      '<rect x="360" y="116" width="40" height="32" rx="6" fill="#57606A"/>'
@@ -250,16 +265,21 @@ def screen(lang):
     p = ['<rect x=".5" y=".5" width="879" height="439" rx="14" fill="#F7F7F5" stroke="#D0D7DE"/>',
          '<path d="M14 .5h206v438H14a13.5 13.5 0 0 1-13.5-13.5V14A13.5 13.5 0 0 1 14 .5z" fill="#FFFFFF" stroke="#D0D7DE"/>',
          '<text class="t" x="18" y="32">Reason Network Chat</text><text class="s" x="18" y="52">My network</text>',
-         f'<rect x="10" y="62" width="200" height="24" rx="7" fill="#F7F7F5" stroke="#E4E3DF"/>'
-         f'<text class="s" x="110" y="78" text-anchor="middle" style="font-weight:700;fill:{C["ink"]}">{x(t["new"])}</text>',
+         f'<rect x="10" y="62" width="122" height="24" rx="7" fill="#F7F7F5" stroke="#E4E3DF"/>'
+         f'<text class="s" x="71" y="78" text-anchor="middle" style="font-weight:700;fill:{C["ink"]}">{x(t["new"])}</text>'
+         f'<rect x="138" y="62" width="72" height="24" rx="7" fill="#F7F7F5" stroke="#E4E3DF"/>'
+         f'<text class="s" x="174" y="78" text-anchor="middle" style="font-weight:700;fill:{C["ink"]}">{x(t["newRoom"])}</text>',
          '<path d="M1 96h219" stroke="#E4E3DF"/>',
          f'<rect x="8" y="104" width="204" height="30" rx="8" fill="#E8E2D8"/><circle cx="22" cy="119" r="4" fill="#16A34A"/>'
          f'<text class="b" x="34" y="124" style="font-weight:700">{x(t["all"])}</text><text class="s" x="200" y="124" text-anchor="end">4</text>',
-         f'<text class="s" x="16" y="156" style="font-size:11px">{x(t["online"])}</text>']
+         f'<text class="s" x="16" y="154" style="font-size:11px">{x(t["rooms"])}</text>',
+         '<text class="b" x="18" y="177" style="font-weight:700;fill:#6F6E69">#</text><text class="b" x="34" y="177" style="font-weight:700">billing-team</text>'
+         '<text class="s" x="200" y="177" text-anchor="end">2</text><text class="s" x="34" y="194">api-refactor-claude, billing…</text>',
+         f'<text class="s" x="16" y="222" style="font-size:11px">{x(t["online"])}</text>']
     rows = [("api-refactor-claude", "claude-code", "claude", "busy", t["busy"], False),
             ("billing-codex", "codex", "codex", "idle", t["idle"], True), ("docs-agent", "agent", "agent", "idle", t["idle"], False)]
     for i, (name, ag, k, s, sub, worker) in enumerate(rows):
-        y = 166 + i * 46
+        y = 232 + i * 44
         sx = 44 + tw(ag, 10) + 6
         p.append(f'<circle cx="22" cy="{y + 8}" r="4" fill="{C[s]}"/><text class="b" x="34" y="{y + 13}" style="font-weight:700">{name}</text>'
                  f'<rect x="34" y="{y + 20}" width="{tw(ag, 10) + 10:.0f}" height="15" rx="4" fill="{C[k]}"/>'
@@ -270,10 +290,10 @@ def screen(lang):
                      f'<text class="s" x="{sx + 5:.0f}" y="{y + 31}" style="font-size:10px">{x(t["wk"])}</text>')
             sx += ww + 6
         p.append(f'<text class="s" x="{sx:.0f}" y="{y + 32}">{x(sub)}</text>')
-    p.append(f'<text class="s" x="16" y="318" style="font-size:11px">{x(t["history"])}</text>'
-             '<g opacity=".55"><circle cx="22" cy="336" r="4" fill="#A3A3A3"/><text class="b" x="34" y="341" style="font-weight:700">ask-3f2a</text>'
-             f'<rect x="34" y="348" width="27" height="15" rx="4" fill="{C["cli"]}"/><text class="w" x="39" y="359" style="font-size:10px">cli</text>'
-             f'<text class="s" x="68" y="360">{x(t["gone"])}</text></g>')
+    p.append(f'<text class="s" x="16" y="378" style="font-size:11px">{x(t["history"])}</text>'
+             '<g opacity=".55"><circle cx="22" cy="394" r="4" fill="#A3A3A3"/><text class="b" x="34" y="399" style="font-weight:700">ask-3f2a</text>'
+             f'<rect x="34" y="406" width="27" height="15" rx="4" fill="{C["cli"]}"/><text class="w" x="39" y="417" style="font-size:10px">cli</text>'
+             f'<text class="s" x="68" y="418">{x(t["gone"])}</text></g>')
     p.append(f'<path d="M220 52h659" stroke="#E4E3DF"/><text class="t" x="238" y="32">{x(t["all"])}</text>'
              f'<text class="s" x="550" y="76" text-anchor="middle">{x(t["day"])}</text>')
     msgs = [("claude", "claude-code", "api-refactor-claude", "billing-codex", t["msgs"][0], False),

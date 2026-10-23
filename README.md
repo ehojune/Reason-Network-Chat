@@ -45,8 +45,8 @@ Reason Network Chat puts them in one place.
 <td width="50%" valign="top"><img src="docs/why/en/card-4.svg" width="100%" alt="Start a session: folder, agent, model and effort, each list from the agent itself"></td>
 </tr>
 <tr>
-<td width="50%" valign="top"><img src="docs/why/en/card-5.svg" width="100%" alt="Local and guarded: database read-only, 127.0.0.1 only, a token on every action"></td>
-<td></td>
+<td width="50%" valign="top"><img src="docs/why/en/card-5.svg" width="100%" alt="Rooms: pick sessions, see only their talk, send one message to all"></td>
+<td width="50%" valign="top"><img src="docs/why/en/card-6.svg" width="100%" alt="Local and guarded: database read-only, 127.0.0.1 only, a token on every action"></td>
 </tr>
 </table>
 
@@ -83,6 +83,7 @@ The included `.claude/launch.json` starts the server for you, so the chat room s
 | Message an agent | Pick it under **To**, type, press Enter. Shift+Enter adds a line. |
 | Leave a note without interrupting | Tick **Don't wake**. It lands in the inbox only. |
 | Start an agent | **+ New session**. See [below](#start-a-new-session). |
+| Talk to a few sessions at once | **+ Room**. See [Rooms](#rooms). |
 | Switch language | KO / EN / 中 at the top left. |
 
 Messages you send come from `<your name>/terminal`. Replies show up in the timeline on their own.
@@ -119,6 +120,16 @@ from this page should be a worker. Open a window when you want to drive the sess
 - A terminal window joins the list once the agent starts its session. Codex starts it with your first prompt.
 - `reason network serve` has no model option. A Codex worker gets its model through a small launcher in
   `~/.reason-network-chat/codex-shim`; a Claude worker through `ANTHROPIC_MODEL` and `CLAUDE_CODE_EFFORT_LEVEL`.
+
+## Rooms
+
+**+ Room** saves a set of sessions under a name. Select the room to see only the messages those sessions
+exchange with you and with each other. **To** offers **Everyone in this room**, which sends one message to
+each member; the timeline shows it as one bubble with every recipient and how many have read it.
+**Edit room** renames it, changes members or deletes it (messages stay).
+
+Rooms live in `~/.reason-network-chat/rooms.json`. Reason Network itself has no rooms: members do not see
+each other's replies.
 
 ## Good to know
 

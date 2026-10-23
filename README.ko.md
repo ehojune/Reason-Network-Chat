@@ -114,7 +114,8 @@ Reason Network Chat은 그걸 한 화면으로 모은다.
 둘로 나눈 이유: 쉬고 있는 앱·CLI 세션은 다음 턴이 오기 전까지 메시지를 안 읽을 수 있다.
 이 화면에서 말을 걸 세션이면 워커로, 직접 붙잡고 일할 세션이면 창으로 연다.
 
-- 워커는 페이지를 닫아도 계속 돈다. 목록에서 고르고 **워커 중지**를 누르면 네트워크에도 종료로 표시된다.
+- 워커는 페이지를 닫아도, Reason Network Chat을 꺼도 계속 돈다.
+  목록에서 고르고 **워커 중지**를 누르면 네트워크에도 종료로 표시된다.
 - 터미널 창은 에이전트가 세션을 시작하면 목록에 나타난다. Codex는 첫 프롬프트를 보낼 때 시작한다.
 - `reason network serve`에는 모델 옵션이 없다. Codex 워커는 `~/.reason-network-chat/codex-shim`의 작은 실행기로,
   Claude 워커는 `ANTHROPIC_MODEL`과 `CLAUDE_CODE_EFFORT_LEVEL`로 모델을 받는다.

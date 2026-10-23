@@ -122,6 +122,9 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
   worker's PATH starts with `codex-shim/`, whose `codex` adds `-c model=… -c model_reasoning_effort=…` and runs the
   real CLI. On Windows the shim is an `.exe` built from pip's script launcher (Bun refuses message text for `.cmd`);
   without pip, Codex workers fall back to the user's default model and the page says so.
+- **Workers and windows outlive the server.** The Claude desktop app stops a preview by killing its process tree,
+  so `launcher.spawn()` starts them through a short-lived spawner and they are never the server's descendants.
+  `workers.json` keeps pid + creation time, so a restarted server still recognises and stops its workers.
 - **Terminal windows** (Windows only) open with `CREATE_NEW_CONSOLE`. They join the network when the agent's
   session starts; Codex starts it with the first prompt.
 

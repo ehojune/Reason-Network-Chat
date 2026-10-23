@@ -114,7 +114,8 @@ There are two ways to run it:
 Why two: an idle app or CLI session may not read a message until its next turn, so a session you want to ask
 from this page should be a worker. Open a window when you want to drive the session yourself.
 
-- A worker keeps running after you close the page. Select it and press **Stop worker**; the network shows it as stopped.
+- A worker keeps running after you close the page, even after Reason Network Chat itself stops.
+  Select it and press **Stop worker**; the network shows it as stopped.
 - A terminal window joins the list once the agent starts its session. Codex starts it with your first prompt.
 - `reason network serve` has no model option. A Codex worker gets its model through a small launcher in
   `~/.reason-network-chat/codex-shim`; a Claude worker through `ANTHROPIC_MODEL` and `CLAUDE_CODE_EFFORT_LEVEL`.

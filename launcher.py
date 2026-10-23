@@ -415,6 +415,36 @@ def kill_tree(pid):
 
 
 # ---------- launching ----------
+# Workers and windows must not be children of this server: the Claude desktop app stops a preview by killing its
+# whole process tree, which would take every worker with it and leave it showing "idle" on the network for good.
+# A short-lived spawner starts the process and exits, so the process has no living parent to be found through.
+SPAWNER = """import json, subprocess, sys
+spec = json.loads(sys.stdin.read())
+kw = {"cwd": spec["cwd"], "env": spec["env"]}
+if spec["log"]:
+    kw.update(stdin=subprocess.DEVNULL, stdout=open(spec["log"], "ab"), stderr=subprocess.STDOUT)
+try:  # also leave any job object the server runs in, when the job allows it
+    p = subprocess.Popen(spec["args"], creationflags=spec["flags"] | 0x01000000, **kw)
+except OSError:
+    p = subprocess.Popen(spec["args"], creationflags=spec["flags"], **kw)
+print(p.pid)
+"""
+
+
+def spawn(args, cwd, env, flags, log=None):
+    """Start a process detached from this server; returns its pid."""
+    if not WIN:  # its own session: not in this server's process group
+        with open(log or os.devnull, "ab") as out:
+            return subprocess.Popen(args, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=out,
+                                    stderr=subprocess.STDOUT, start_new_session=True).pid
+    spec = {"args": args, "cwd": cwd, "env": env, "flags": flags, "log": log}
+    r = subprocess.run([sys.executable, "-c", SPAWNER], input=json.dumps(spec).encode("utf-8"), capture_output=True,
+                       timeout=30, creationflags=NOWIN)
+    try:
+        return int(r.stdout.strip())
+    except ValueError:
+        raise LaunchError("Could not start it: " + r.stderr.decode("utf-8", "replace").strip()[-300:], 500)
+
 
 class LaunchError(Exception):
     def __init__(self, msg, code=400):
@@ -428,7 +458,7 @@ class Launcher:
         self.catalog = catalog
         self.lock = threading.Lock()
         self.reg = STATE / "workers.json"
-        self.workers = {}  # name -> {pid, started, family, model, effort, cwd, log, proc}
+        self.workers = {}  # name -> {name, pid, started, family, model, effort, cwd, log}
         self.load()
 
     # Registry on disk, so a restarted server can still stop the workers it started.
@@ -440,22 +470,20 @@ class Launcher:
         for w in items if isinstance(items, list) else []:
             if isinstance(w, dict) and isinstance(w.get("pid"), int) and w.get("started") \
                     and started_at(w["pid"]) == w["started"] and NAME_RE.match(str(w.get("name", ""))):
-                self.workers[w["name"]] = dict(w, proc=None)
+                self.workers[w["name"]] = w
         self.save()
 
     def save(self):
         try:
             STATE.mkdir(parents=True, exist_ok=True)
-            items = [{k: v for k, v in w.items() if k != "proc"} for w in self.workers.values()]
             tmp = self.reg.with_suffix(".tmp")
-            tmp.write_text(json.dumps(items, ensure_ascii=False, indent=1), encoding="utf-8")
+            tmp.write_text(json.dumps(list(self.workers.values()), ensure_ascii=False, indent=1), encoding="utf-8")
             os.replace(tmp, self.reg)
         except OSError:
             pass
 
-    def alive(self, w):
-        if w["proc"] is not None:
-            return w["proc"].poll() is None
+    @staticmethod
+    def alive(w):
         return started_at(w["pid"]) == w["started"]
 
     def list(self):
@@ -545,12 +573,12 @@ class Launcher:
             self.workers[name] = w
             self.save()
         for _ in range(30):  # a bad setup fails within a few seconds
-            if w["proc"].poll() is not None:
+            if not self.alive(w):
                 with self.lock:
                     self.workers.pop(name, None)
                     self.save()
                 tail = Path(w["log"]).read_bytes()[-600:].decode("utf-8", "replace").strip()
-                raise LaunchError(f"The worker exited (code {w['proc'].returncode}): {tail}", 502)
+                raise LaunchError(f"The worker exited: {tail}", 502)
             time.sleep(0.1)
         return {"ok": True, "mode": "worker", "name": name}
 
@@ -580,12 +608,9 @@ class Launcher:
         logs.mkdir(parents=True, exist_ok=True)
         log_path = logs / f"{name}.log"
         args = [self.reason, "network", "serve", fid, "--name", name, "--cwd", cwd]
-        with open(log_path, "ab") as log:
-            proc = subprocess.Popen(args, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=log,
-                                    stderr=subprocess.STDOUT, creationflags=NOWIN,
-                                    start_new_session=not WIN)
-        return {"name": name, "pid": proc.pid, "started": started_at(proc.pid) or "", "family": fid,
-                "model": model or None, "effort": effort or None, "cwd": cwd, "log": str(log_path), "proc": proc}
+        pid = spawn(args, cwd, env, NOWIN, str(log_path))
+        return {"name": name, "pid": pid, "started": started_at(pid) or "", "family": fid,
+                "model": model or None, "effort": effort or None, "cwd": cwd, "log": str(log_path)}
 
     def open_window(self, fam, cwd, model, effort):
         fid = fam["id"]
@@ -597,5 +622,5 @@ class Launcher:
         else:
             mid = f"{model}-{effort}" if model and effort else model
             args = [find_agy()] + (["--model", mid] if mid else [])
-        subprocess.Popen(args, cwd=cwd, env=base_env(), creationflags=NEW_CONSOLE, close_fds=True)
+        spawn(args, cwd, base_env(), NEW_CONSOLE)
         return {"ok": True, "mode": "window"}

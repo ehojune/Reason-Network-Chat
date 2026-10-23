@@ -113,7 +113,8 @@ Reason Network Chat 把它们放到同一个页面。
 
 为什么分两种：空闲的应用或 CLI 会话可能要到下一轮才读消息。想在本页提问的会话用 worker，想亲自操作的会话开窗口。
 
-- 关闭页面后 worker 仍在运行。在列表中选中它，点 **停止 worker**，网络上会显示为已停止。
+- 关闭页面、甚至关掉 Reason Network Chat 后，worker 仍在运行。
+  在列表中选中它，点 **停止 worker**，网络上会显示为已停止。
 - 终端窗口在智能体开始会话后出现在列表里。Codex 在你发出第一条提示时才开始会话。
 - `reason network serve` 没有模型选项。Codex worker 通过 `~/.reason-network-chat/codex-shim` 里的小启动器拿到模型，
   Claude worker 通过 `ANTHROPIC_MODEL` 和 `CLAUDE_CODE_EFFORT_LEVEL`。

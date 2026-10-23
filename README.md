@@ -302,6 +302,10 @@ when it starts again.
 
 ## Good to know
 
+- **A stuck worker** (busy for 30 minutes with no new step) shows *possibly stuck* in red. Right-click it →
+  **Processes · restart** shows what runs under it and restarts it with the same settings; the messages it had
+  not answered run again. Agents restart workers with `python rnc.py worker restart NAME` (see AGENTS.md), never
+  by running `reason network serve` inside their own turn.
 - **A worker's failure is not an answer.** When a worker could not run your message (its reply starts with
   "The Codex worker failed:" or "Codex failed:"), the page shows a red notice, passes nothing on, and offers
   **Send again** under your message once the worker runs. A message a worker read but never answered (10 minutes,

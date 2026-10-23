@@ -9,6 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 |---|---|---|
+| 17:40 | [#5](https://github.com/ehojune/Reason-Network-Chat/pull/5) | Group chat: members of a group room hear each other, and `@name` in a reply hands it to that member, with hop and rate limits so agents cannot talk in circles. |
 | 17:40 | [#4](https://github.com/ehojune/Reason-Network-Chat/pull/4) | **+ Room** groups a few sessions: the room shows only their messages, and one send reaches every member. |
 | 17:40 | [#3](https://github.com/ehojune/Reason-Network-Chat/pull/3) | **+ New session** starts an agent from the page: pick a folder and an agent, then a model and an effort from that agent's own list; run it as a network worker or in a terminal window. Codex sessions that a message cannot wake are marked, with a one-click worker in the same folder. |
 | 17:32 | [#2](https://github.com/ehojune/Reason-Network-Chat/pull/2) | Patch notes in English, Korean and Chinese, linked from a badge at the top of each README. |

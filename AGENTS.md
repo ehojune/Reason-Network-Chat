@@ -84,6 +84,29 @@ usage. Why not `serve` directly:
 - **Managed.** A worker started this way is recorded (`spawned.jsonl`, `worker-records.json`), so the page can
   change, restart and stop it; one you start yourself shows as *started elsewhere* until someone adopts it.
 
+## Starting a message in a group room (agents read this)
+
+A member normally only answers what the room relays to it. To start a message yourself (a report when it is due,
+a question for another member), run inside your own turn:
+
+```
+python rnc.py room list
+python rnc.py room send ROOM --as YOUR_NAME "@member message"
+# e.g. a lead's scheduled report:
+python rnc.py room send dev-room --as lead-claude "@lead-codex 05:03 report: #898 merged, two lanes idle."
+```
+
+`ROOM` is a room id or name, `YOUR_NAME` your own session's name (the room envelope prints the exact command). It
+goes out like your answer would: only to the members you @mention (an `@all` is not honoured: only the person
+messages everyone), with the room envelope and their missed lines, within the room's limits, and answers to it
+come back to you. It needs the server (exit 1 with the reason otherwise).
+
+Who may post as whom: the server finds the process at the other end of the connection and walks its parents; the
+post is taken when that member's own `serve` worker on this computer is among them (`via: "session"`). Anything
+else is refused unless the user ticked the member under *May post first without proof* in the room's settings
+(`via: "allowed"`, and the page says so on the post). Environment variables prove nothing (`serve` removes
+`REASON_NETWORK_SESSION` from its agents, and any process can set one), so do not add an env-based shortcut.
+
 ## Configuration
 
 | Variable | Default | Use |
@@ -130,10 +153,11 @@ get the new token, and a newer server also triggers a reload.
   the page shows it as stopped (only the network's entry is left). Known after the first 30 s discovery pass.
   A busy worker of this computer (`tier: "turn"`) also gets `quietSince` (ms: its last step change, seen by the
   `who` poll, or log line, whichever is later) and `stuck: true` once that is `STUCK_MS` ago.
-  `rooms[]` = `{id, name, members[], group, created, limits, defaultTo}`; `members` are session addresses; `limits` =
+  `rooms[]` = `{id, name, members[], group, created, limits, defaultTo, allowPost}`; `members` are session addresses; `limits` =
   `{hops?, budget?}` (a number, or `null` for no limit; a missing key means the default); `defaultTo` = the member
-  an unmentioned message goes to, or `null`.
-  `relays{}` = for messages this page relayed into a group room: `{room, hop, core, speaker}` (`core` is the plain
+  an unmentioned message goes to, or `null`; `allowPost` = members whose `rnc.py room send` is taken without proof.
+  `relays{}` = for messages this page relayed into a group room: `{room, hop, core, speaker, post}` (`post`:
+  `"session"` or `"allowed"` when the member started the message with `rnc.py room send`; `core` is the plain
   message without the room envelope; `hop` 0 = yours, ≥1 = a member's reply passed on). `queued{}` = room →
   `{waiting, held}`: hand-offs over the budget waiting to go out in order, and those held past the hop limit.
   `relayDefaults` = `{hops, budget, window}` from the environment.
@@ -175,7 +199,7 @@ get the new token, and a newer server also triggers a reload.
   online on another computer of this person (`who`). A name `who` still shows here only because its process was
   killed is free: Reason accepts a new `serve` under it. `/api/launch` treats such a stale name of ours (a record or
   a log here) the same way. Returns `{ok: true, started, results[{name, ok, error?, code?}]}`.
-- `POST /api/rooms/save` `{id?, name, members[], group, limits?, defaultTo?}` → creates a room (no `id`) or replaces
+- `POST /api/rooms/save` `{id?, name, members[], group, limits?, defaultTo?, allowPost?}` → creates a room (no `id`) or replaces
   its name, members, group flag, limits and default recipient. Members: 1–12 known session addresses, not the page's
   own. `limits`: `{hops?, budget?}`, each 1–100000 or `null` (no limit). `defaultTo`: one of the members, or `null`.
   Returns `{ok, room}`.
@@ -184,6 +208,11 @@ get the new token, and a newer server also triggers a reload.
   the members the body `@mentions` (`@all`, `@everyone`, `@모두`, `@전체` = every member), else to `defaultTo`, else
   HTTP 400 (nothing is sent to everyone by default); each copy carries the room envelope; `fyi` is ignored. Returns
   `{ok, sent, results[{to, ok, err}]}`; `ok` when at least one member got it.
+- `POST /api/rooms/post` `{id, as, body}` → a member starts a message in a group room (`rnc.py room send`): queued
+  like its answer (`Relay.post_as`: hop 1, to the members it `@mentions`, never `@all`). Taken only when the caller
+  runs inside that member's own worker here (`Launcher.caller_worker`: the connection's client pid, then its
+  parents) or the member is in `allowPost`; else 403. `as`: the member's address, or a name only one member has.
+  Returns `{ok, to[], via}`.
 - `POST /api/rooms/forward` `{id, message}` → passes a member's message to you (an answer to a 1:1 message) on to
   the members of group room `id` it `@mentions`, as a hand-off with that member as speaker (hop 1, queued within the
   room's limits). Once per message (409 after that, or when it answers a relayed room message: the room passes those
@@ -335,7 +364,8 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
   when one runs. Others are only listed (`foreignWorkers`) until the user adopts one. An adopted outside worker is
   never stopped with the console-wide Ctrl+C (it may share the user's console): POSIX gets SIGINT to its pid, Windows
   a forced tree kill. A worker with no known folder is not restarted. Linux argv comes from `/proc` (`ps` loses
-  argument boundaries); macOS has no discovery, and where processes cannot be read nothing is taken back and no
+  argument boundaries); macOS uses `ps` for parent pids and `KERN_PROCARGS2` for argument boundaries, with `lsof`
+  for the client socket owner. Where processes cannot be read nothing is taken back and no
   name is treated as free (fail closed). PowerShell output is forced to UTF-8. Saves read `workers.json` and
   keep live records another writer added, except names stopped here.
 - **Workers and windows outlive the server.** The Claude desktop app stops a preview by killing its process tree,

@@ -288,6 +288,8 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
     <label class="fld chk"><input type="checkbox" id="rfGroup"> <span data-t="groupChat"></span></label>
     <div id="rfGroupOpts" hidden>
       <label class="fld"><span data-t="defaultTo"></span><select id="rfDefault"></select></label>
+      <div class="fld"><span data-t="allowPost"></span><div class="mem" id="rfPost"></div>
+        <span class="hint" data-t="allowPostHint"></span></div>
       <div class="two">
         <div class="fld"><span data-t="hopsLimit"></span><input type="number" id="rfHops" min="1" max="100000">
           <label class="chk"><input type="checkbox" id="rfHopsOff"> <span data-t="noLimit"></span></label></div>
@@ -389,6 +391,9 @@ const T = {
     flushed: "보내는 중: {n}건", groupPh: "메시지 (@이름으로 받을 멤버 지정, @모두: 전체)", handoffFailed: "넘겨주기 실패: ",
     rcptNone: "@이름으로 받을 멤버를 지정하세요 (@모두: 전체)", rcptTo: "받는 멤버: {names}", rcptAll: "받는 멤버: 모두 ({n}명)",
     rcptDefault: "멘션이 없어 기본 받는 멤버에게: {name}", defaultTo: "기본 받는 멤버 (멘션이 없을 때)",
+    posted: "의 메시지 (먼저 보냄) →", postAllowed: "증명 없이 허용된 멤버",
+    allowPost: "증명 없이 먼저 보내기 허용 (rnc.py room send)",
+    allowPostHint: "워커가 자기 턴 안에서 보내면 그 워커임이 증명되므로 켤 필요가 없습니다. 켜면 이 컴퓨터의 어떤 프로그램이든 그 멤버로 보낼 수 있습니다.",
     defaultNone: "없음: 멘션해야 보냄", hopsLimit: "@ 연쇄 한도 (번)", budgetLimit: "넘겨주기 한도 ({w}분에 몇 통)",
     noLimit: "제한 없음",
     noLimitAsk: "제한을 없애면 에이전트끼리 끝없이 주고받으며 차례(비용)를 계속 쓸 수 있습니다. 계속할까요?" },
@@ -475,6 +480,9 @@ const T = {
     flushed: "Sending {n}", groupPh: "Message (@name picks who gets it, @all for everyone)", handoffFailed: "Hand-off failed: ",
     rcptNone: "Mention who should get it: @name (@all for everyone)", rcptTo: "To: {names}", rcptAll: "To: everyone ({n})",
     rcptDefault: "No mention: to the default recipient, {name}", defaultTo: "Default recipient (when nobody is mentioned)",
+    posted: "'s message (posted first) to", postAllowed: "member allowed without proof",
+    allowPost: "May post first without proof (rnc.py room send)",
+    allowPostHint: "A worker posting from inside its own turn is proven to be that worker and needs none of this. Ticked, any program on this computer can post as that member.",
     defaultNone: "None: mention someone to send", hopsLimit: "@ chain limit (hops)", budgetLimit: "Hand-offs per {w} min",
     noLimit: "No limit",
     noLimitAsk: "Without a limit, agents can keep answering each other and keep spending turns (cost). Continue?" },
@@ -559,6 +567,9 @@ const T = {
     flushed: "正在发送 {n} 条", groupPh: "输入消息（用 @名称 指定接收成员，@all 发给全体）", handoffFailed: "转发失败：",
     rcptNone: "请用 @名称 指定接收成员（@all 发给全体）", rcptTo: "接收：{names}", rcptAll: "接收：全体（{n}）",
     rcptDefault: "未 @：发给默认接收成员 {name}", defaultTo: "默认接收成员（未 @ 时）",
+    posted: " 的消息（先发言）发给", postAllowed: "无需证明的成员",
+    allowPost: "允许无需证明先发言（rnc.py room send）",
+    allowPostHint: "worker 在自己的回合内发送时可证明其身份，无需勾选。勾选后，本机任何程序都能以该成员身份发言。",
     defaultNone: "无：必须 @ 才能发送", hopsLimit: "@ 接力上限（跳）", budgetLimit: "每 {w} 分钟转发上限",
     noLimit: "不限",
     noLimitAsk: "取消上限后，智能体可能无休止地互相回复并持续消耗轮次（费用）。继续吗？" },
@@ -581,7 +592,7 @@ let lang = new URLSearchParams(location.search).get("lang") || store.get("reason
 if (!T[lang]) lang = "en";
 const t = k => T[lang][k];
 const TOKEN = document.querySelector('meta[name="reason-chat-token"]').content;
-const API = 15;  // must match API in server.py
+const API = 16;  // must match API in server.py
 const BOOT = document.querySelector('meta[name="reason-chat-boot"]').content;  // which server start served this page
 // Reload to pick up a restarted or newer server, at most once a minute so a broken setup cannot loop.
 function reloadOnce() {
@@ -1063,7 +1074,8 @@ function renderTl() {
       const raw = !rich || rawIds.has(m.id);
       h += `<div class="relay ${open ? "open" : ""}" data-id="${esc(m.id)}" data-ids="${messageIds(m)}">
         <button type="button" class="relayHead" aria-expanded="${open}" title="${esc(t(open ? "fold" : "unfold"))}">${open ? "▾" : "▸"} ↪ ${
-          esc(short(m.rel.speaker))}${esc(t("passed"))} ${esc(m.to.map(short).join(", "))} · ${fmtT(m.sent_at)}</button>
+          esc(short(m.rel.speaker))}${esc(t(m.rel.post ? "posted" : "passed"))} ${esc(m.to.map(short).join(", "))} · ${fmtT(m.sent_at)}${
+          m.rel.post === "allowed" ? ` · ${esc(t("postAllowed"))}` : ""}</button>
         <div class="bub ${raw ? "raw" : "md"}"${open ? "" : " inert"}>${raw ? esc(m.body) : html}</div>${
           (open && rich) || troubleHtml(m) ? `<div class="foot">${open && rich ? `<button type="button" class="rawBtn" data-id="${
             esc(m.id)}">${t(raw ? "formatted" : "raw")}</button>` : ""}${troubleHtml(m)}</div>` : ""}${ackHtml(m.all.map(x => x.id))}</div>`;
@@ -1770,14 +1782,18 @@ function openRoom(room) {
     $(`#${id}`).disabled = $(`#${id}Off`).checked;
   }
   $("#rfBudgetLabel").textContent = t("budgetLimit").replace("{w}", Math.round(d.window / 60));
-  renderDefault(room ? room.defaultTo : null);
+  $("#rfPost").innerHTML = "";
+  renderDefault(room ? room.defaultTo : null, room ? room.allowPost || [] : []);
   groupOpts();
   $("#rdlg").showModal();
 }
 // The default recipient is picked from the members ticked right now.
-function renderDefault(keep) {
+function renderDefault(keep, keepPost) {
   const now = $("#rfDefault").value, want = keep !== undefined ? keep : now;
   const members = [...document.querySelectorAll("#rfMembers input:checked")].map(i => i.value);
+  const on = keepPost || [...document.querySelectorAll("#rfPost input:checked")].map(i => i.value);
+  $("#rfPost").innerHTML = members.map(a => `<label><input type="checkbox" value="${esc(a)}"${on.includes(a) ? " checked" : ""}>${
+    esc(short(a))}</label>`).join("");
   $("#rfDefault").innerHTML = `<option value="">${esc(t("defaultNone"))}</option>` +
     members.map(a => `<option value="${esc(a)}">${esc(short(a))}</option>`).join("");
   $("#rfDefault").value = members.includes(want) ? want : "";
@@ -1813,7 +1829,8 @@ $("#rf").addEventListener("submit", async e => {
   $("#rfGo").disabled = true;
   try {
     const j = await post("/api/rooms/save", {id: editing ? editing.id : undefined, name: $("#rfName").value, members,
-      group: $("#rfGroup").checked, limits, defaultTo: $("#rfDefault").value || null});
+      group: $("#rfGroup").checked, limits, defaultTo: $("#rfDefault").value || null,
+      allowPost: [...document.querySelectorAll("#rfPost input:checked")].map(i => i.value)});
     S.rooms = [...S.rooms.filter(r => r.id !== j.room.id), j.room];  // show it now, before the next poll
     $("#rdlg").close(); sel = `room:${j.room.id}`; $("#tl").dataset.first = "1"; render(true);
   } catch (err) { rhint(t("failed") + err.message, true); }

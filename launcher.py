@@ -491,6 +491,119 @@ def kill_tree(pid):
             pass
 
 
+def connection_owner(client_port, server_port):
+    """The pid of the local process at the client end of a TCP connection to `server_port`, or None (unknown: the
+    caller then proves nothing)."""
+    if WIN:
+        ps = (f"(Get-NetTCPConnection -LocalPort {int(client_port)} -RemotePort {int(server_port)} "
+              "-ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess")
+        try:
+            out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps], capture_output=True,
+                                 timeout=30, stdin=subprocess.DEVNULL, creationflags=NOWIN).stdout
+            return int(out.decode("ascii", "replace").strip() or 0) or None
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            return None
+    if sys.platform == "darwin":
+        # lsof field output keeps the exact client -> server direction; a listener proves nothing.
+        try:
+            r = subprocess.run(["/usr/sbin/lsof", "-nP", "-a", f"-iTCP:{int(client_port)}",
+                                "-sTCP:ESTABLISHED", "-Fpn"], capture_output=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        return lsof_owner(r.stdout.decode("utf-8", "replace"), client_port, server_port) if r.returncode == 0 else None
+    # Linux: the client socket's inode in /proc/net/tcp, then the process that holds it (elsewhere: unknown)
+    inode = None
+    for table in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            rows = Path(table).read_text().splitlines()[1:]
+        except OSError:
+            continue
+        for row in rows:
+            f = row.split()
+            if len(f) > 9 and f[1].endswith(f":{int(client_port):04X}") and f[2].endswith(f":{int(server_port):04X}"):
+                inode = f[9]
+                break
+        if inode:
+            break
+    if not inode:
+        return None
+    target = f"socket:[{inode}]"
+    for d in Path("/proc").glob("[0-9]*"):
+        try:
+            if any(os.readlink(fd) == target for fd in (d / "fd").iterdir()):
+                return int(d.name)
+        except OSError:
+            continue
+    return None
+
+
+def lsof_owner(text, client_port, server_port):
+    endpoint = f"127.0.0.1:{int(client_port)}->127.0.0.1:{int(server_port)}"
+    pid, owners = None, set()
+    for line in text.splitlines():
+        if line.startswith("p"):
+            pid = int(line[1:]) if line[1:].isdigit() else None
+        elif line == "n" + endpoint and pid:
+            owners.add(pid)
+    return next(iter(owners)) if len(owners) == 1 else None
+
+
+def darwin_argv(pid):
+    """Read argument boundaries from KERN_PROCARGS2, not the space-joined ps command column.
+    ABI: https://github.com/apple/darwin-xnu/blob/main/bsd/sys/sysctl.h (CTL_KERN=1, KERN_PROCARGS2=49).
+    """
+    import ctypes
+    try:
+        call = ctypes.CDLL(None, use_errno=True).sysctl
+        call.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.c_uint, ctypes.c_void_p,
+                         ctypes.POINTER(ctypes.c_size_t), ctypes.c_void_p, ctypes.c_size_t]
+        call.restype = ctypes.c_int
+        mib, size = (ctypes.c_int * 3)(1, 49, pid), ctypes.c_size_t()
+        if call(mib, 3, None, ctypes.byref(size), None, 0) != 0 or not 4 < size.value <= 1024 * 1024:
+            return []
+        buf = ctypes.create_string_buffer(size.value)
+        if call(mib, 3, buf, ctypes.byref(size), None, 0) != 0:
+            return []
+        return parse_darwin_argv(buf.raw[:size.value])
+    except (OSError, AttributeError, ValueError):
+        return []
+
+
+def parse_darwin_argv(blob):
+    import struct
+    if len(blob) < 4:
+        return []
+    argc = struct.unpack_from("=i", blob)[0]
+    if not 0 < argc <= 65536:
+        return []
+    end = blob.find(b"\0", 4)  # executable path, followed by padding and argc NUL-terminated arguments
+    if end < 0:
+        return []
+    at = end + 1
+    while at < len(blob) and blob[at] == 0:
+        at += 1
+    argv = blob[at:].split(b"\0")
+    return [a.decode("utf-8", "replace") for a in argv[:argc]] if len(argv) > argc else []
+
+
+def ancestors(procs, pid):
+    """Pids above `pid` in a list_processes() result, nearest first. A parent that started after its child is a reused
+    pid, not the parent: the chain stops there."""
+    parent = {p: pp for p, pp, _, _ in procs}
+    out, cur, seen = [], pid, {pid}
+    while cur in parent:
+        pp = parent[cur]
+        if not pp or pp in seen:
+            break
+        a, b = started_epoch(started_at(pp)), started_epoch(started_at(cur))
+        if a and b and a > b + 1:
+            break
+        out.append(pp)
+        seen.add(pp)
+        cur = pp
+    return out
+
+
 def kill_pid(pid):
     """Kill one process (and on Windows what runs under it): a leftover of a worker's tree, verified by the caller.
     Not a group kill: on POSIX a leftover usually shares its parent's process group instead of leading one."""
@@ -588,8 +701,23 @@ def list_processes():
         items = [items] if isinstance(items, dict) else items if isinstance(items, list) else []
         return [(p.get("ProcessId"), p.get("ParentProcessId"), str(p.get("Name") or ""),
                  split_cmdline(p.get("CommandLine") or "")) for p in items if isinstance(p, dict)]
-    # Elsewhere only /proc keeps argv boundaries (`ps` joins arguments with spaces, so a folder with a space would be
-    # cut); without /proc (macOS) nothing is found.
+    if sys.platform == "darwin":
+        try:
+            r = subprocess.run(["/bin/ps", "-axo", "pid=,ppid="], capture_output=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if r.returncode:
+            return None
+        rows = []
+        for line in r.stdout.decode("ascii", "replace").splitlines():
+            fields = line.split()
+            if len(fields) != 2 or not all(f.isdigit() for f in fields):
+                continue
+            pid, ppid = map(int, fields)
+            argv = darwin_argv(pid)
+            rows.append((pid, ppid, Path(argv[0]).name if argv else "", argv))
+        return rows
+    # Linux /proc keeps argv boundaries (`ps` joins arguments with spaces).
     if not Path("/proc/self/cmdline").is_file():
         return None
     rows = []
@@ -1093,6 +1221,23 @@ class Launcher:
                 return
             time.sleep(0.1)
         kill_tree(w["pid"])
+
+    def caller_worker(self, client_port, server_port):
+        """The name of the `serve` worker on this computer whose process tree the caller of this connection runs in
+        (an agent's turn runs under its serve), or None. This is how `rnc.py room send` proves who is speaking."""
+        pid = connection_owner(client_port, server_port)
+        procs = list_processes() if pid else None
+        if not pid or procs is None:
+            return None
+        above = set(ancestors(procs, pid))
+        with self.lock:
+            managed = {name: dict(w) for name, w in self.workers.items()}
+        for f in found_workers(procs):
+            w = managed.get(f["name"])
+            # A process name/argv is not authentication: require this exact managed pid and creation time.
+            if w and w["pid"] == f["pid"] and f["pid"] in above and self.alive(w):
+                return f["name"]
+        return None
 
     def log_activity(self, name):
         """When a running worker last wrote its log (ms), if it has written it since its process started, else None."""

@@ -1,5 +1,7 @@
-"""Start, restart, stop and adopt Reason Network workers the way the page does.
+"""Start, restart, stop and adopt Reason Network workers the way the page does; post first in a group room.
 
+    python rnc.py room list
+    python rnc.py room send ROOM --as MEMBER "@name message"
     python rnc.py worker list
     python rnc.py worker start NAME [--folder DIR --agent codex|claude] [--model M] [--effort E] [--full-access]
     python rnc.py worker restart NAME
@@ -18,6 +20,12 @@ server is not running it uses the same launcher code here. Either way the worker
 settings. `restart` stops a running worker (Ctrl+C, then whatever was left under it) and starts it again with its
 recorded settings: the cure for a stuck one. `adopt` makes a worker started elsewhere managed here; --model and
 --effort say what it runs with, for later restarts. Exit status 0 on success, 1 on a refusal, 2 on bad usage.
+
+`room send` lets a member start a message in a group room instead of only answering. ROOM is a room id or name,
+MEMBER the member's session name. It goes out like the member's answer: to the members it @mentions, with the room
+envelope, within the room's limits, and answers come back to the member. It needs the running server, which takes
+it only from the member's own session (this command running inside that worker's turn on this computer) or when the
+room's settings allow the member to post first.
 """
 import argparse
 import json
@@ -140,9 +148,43 @@ class Local:
         return self.L.adopt(name, a.model, a.effort)
 
 
+def find_room(rooms, key):
+    """A room by id, else by its exact name (refused when two rooms share it)."""
+    by_id = [r for r in rooms if r.get("id") == key]
+    by_name = [r for r in rooms if r.get("name") == key]
+    if by_id:
+        return by_id[0]
+    if len(by_name) == 1:
+        return by_name[0]
+    raise Refused("Two rooms have that name: use the room id (python rnc.py room list)." if by_name
+                  else f"No room {key!r} (python rnc.py room list).")
+
+
+def room_main(a, token):
+    if not token:
+        raise Refused(f"Reason Network Chat is not running on port {PORT}; group rooms are relayed by its server.")
+    rooms = call(token, "/api/state").get("rooms") or []
+    if a.action == "list":
+        for r in rooms:
+            names = ", ".join(m.split("/", 1)[-1] for m in r.get("members") or [])
+            first = ", ".join(m.split("/", 1)[-1] for m in r.get("allowPost") or [])
+            print(f"{r['id']}  {'group' if r.get('group') else 'plain'}  {r['name']}  [{names}]"
+                  + (f"  may post without proof: {first}" if first else ""))
+        return 0
+    room = find_room(rooms, a.room)
+    r = call(token, "/api/rooms/post", {"id": room["id"], "as": a.as_, "body": a.message})
+    print(f"posted to {room['name']} as {a.as_} -> {', '.join(t.split('/', 1)[-1] for t in r.get('to') or [])}")
+    return 0
+
+
 def parse(argv):
     p = argparse.ArgumentParser(prog="rnc.py", description="Manage Reason Network workers the way the page does.")
     sub = p.add_subparsers(dest="what", required=True)
+    rm = sub.add_parser("room", help="list group rooms, or post first in one as a member")
+    rm.add_argument("action", choices=["list", "send"])
+    rm.add_argument("room", nargs="?", help="room id or name")
+    rm.add_argument("message", nargs="?", help="the message; name who should get it with @name")
+    rm.add_argument("--as", dest="as_", help="the member you are (your own session's name)")
     w = sub.add_parser("worker", help="start, restart, stop, adopt or list workers")
     w.add_argument("action", choices=["list", "start", "restart", "stop", "adopt"])
     w.add_argument("name", nargs="?")
@@ -152,6 +194,11 @@ def parse(argv):
     w.add_argument("--effort")
     w.add_argument("--full-access", action="store_true", help="run without approvals (dangerous by design)")
     a = p.parse_args(argv)
+    if a.what == "room":
+        if a.action == "send" and not (a.room and a.message and a.as_):
+            p.error('room send needs ROOM, --as MEMBER and "MESSAGE"')
+        a.name = a.room
+        return a
     if a.action != "list" and not a.name:
         p.error(f"worker {a.action} needs a NAME")
     if a.action == "start" and bool(a.folder) != bool(a.agent):
@@ -163,6 +210,8 @@ def main(argv=None):
     a = parse(sys.argv[1:] if argv is None else argv)
     token = server_token()
     try:
+        if a.what == "room":
+            return room_main(a, token)
         via = ViaServer(token) if token else Local()
         where = f"via the server on port {PORT}" if token else "here (no server running)"
         if a.action == "list":

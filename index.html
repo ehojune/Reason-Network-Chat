@@ -581,12 +581,12 @@ function renderNoWake() {
 }
 
 // Wake: one headless turn in the session's own Codex conversation (wake.py); the server picks thread and prompt.
-async function wake(address, asked) {
-  if (!asked && !confirm(t("wakeAsk").replace("{name}", short(address)))) return false;
+async function wake(address, asked) {  // returns null when started, else why not
+  if (!asked && !confirm(t("wakeAsk").replace("{name}", short(address)))) return t("cancel");
   try {
     await post("/api/wake", {address});
-    say(t("waking") + " " + short(address)); poll(); return true;
-  } catch (err) { say(t("wakeFailed") + err.message, true); return false; }
+    say(t("waking") + " " + short(address)); poll(); return null;
+  } catch (err) { say(t("wakeFailed") + err.message, true); return err.message; }
 }
 $("#wakeBtn").addEventListener("click", () => wake($("#to").value));
 $("#wakeHead").addEventListener("click", () => wake(sel));
@@ -694,7 +694,9 @@ $("#comp").addEventListener("submit", async e => {
     if (wakeToo && !confirm(t("wakeAsk").replace("{name}", short(to)))) return;
     await post("/api/send", {to, body, fyi: $("#fyi").checked});
     $("#body").value = ""; $("#sendmsg").textContent = `${t("sent")} ${short(to)}`;
-    if (wakeToo) await wake(to, true);
+    // A refused wake is kept next to "sent": the status line is overwritten by the next refresh.
+    const why = wakeToo ? await wake(to, true) : null;
+    if (why) $("#sendmsg").textContent += ` · ${t("wakeFailed")}${why}`;
     $("#tl").dataset.first = "1"; poll();
   } catch (err) {
     $("#sendmsg").textContent = t("failed") + err.message;

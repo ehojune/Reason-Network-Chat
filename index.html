@@ -74,7 +74,7 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #headR { display: flex; align-items: center; gap: 10px; min-width: 0; }
 #status { color: var(--muted); font-size: 12px; }
 #status.err { color: var(--err); }
-#stop, #editRoom { font: inherit; font-size: 12px; color: var(--text); background: none; border: 1px solid var(--line);
+#stop, #editRoom, #wakeHead { font: inherit; font-size: 12px; color: var(--text); background: none; border: 1px solid var(--line);
   border-radius: 6px; padding: 1px 8px; cursor: pointer; }
 #stop, .danger { color: var(--err) !important; }
 #members { color: var(--muted); font-size: 12px; font-weight: 400; margin-left: 8px; }
@@ -105,6 +105,7 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #ctx button { display: block; width: 100%; text-align: left; font: inherit; font-size: 13px; color: var(--text);
   background: none; border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
 #ctx button:hover, #ctx button:focus-visible { background: var(--hover); outline: none; }
+#nowake #wakeNote { font-style: italic; }
 #nowake button { font: inherit; color: var(--accent); background: none; border: none; padding: 0; cursor: pointer;
   text-decoration: underline; }
 #row { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
@@ -147,15 +148,18 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
 <div id="split" role="separator" aria-orientation="vertical" tabindex="0" aria-valuemin="180"></div>
 <main>
   <div id="head"><span><b id="title"></b><span id="members"></span></span><span id="headR">
+    <button type="button" id="wakeHead" hidden data-t="wake"></button>
     <button type="button" id="editRoom" hidden data-t="editRoom"></button>
     <button type="button" id="stop" hidden data-t="stop"></button><span id="status"></span></span></div>
   <div id="tl"></div>
   <form id="comp">
     <div id="paused"></div>
-    <div id="nowake" hidden><span data-t="nowake"></span> <button type="button" id="toWorker" data-t="toWorker"></button></div>
+    <div id="nowake" hidden><span id="nowakeText"></span> <button type="button" id="wakeBtn" data-t="wake"></button>
+      <button type="button" id="toWorker" data-t="toWorker"></button> <span id="wakeNote"></span></div>
     <div id="row">
       <span data-t="to"></span><select id="to"></select>
       <label id="fyiLabel"><input type="checkbox" id="fyi"> <span data-t="fyi"></span></label>
+      <label id="wakeAfterLabel" hidden><input type="checkbox" id="wakeAfter"> <span data-t="wakeAfter"></span></label>
       <span id="sendmsg"></span>
     </div>
     <div id="inrow">
@@ -216,6 +220,9 @@ const T = {
     restart: "서버를 다시 시작하세요: 페이지와 서버의 버전이 다릅니다 (페이지 {p}, 서버 {s}).",
     reloadPage: "서버가 다시 시작됐습니다. 페이지를 새로고침하세요.",
     fav: "★ 즐겨찾기", unfav: "☆ 즐겨찾기 해제", favs: "즐겨찾기", favFull: "즐겨찾기는 100개까지입니다.", split: "목록 너비 (←/→, 두 번 누르면 원래대로)",
+    wake: "깨우기", waking: "깨우는 중…", wakeAfter: "보낸 뒤 깨우기", woke: "깨움: ", wakeFailed: "깨우기 실패: ",
+    wakeNo: "이 에이전트는 깨우기 미지원", wakeNoUnread: "안 읽은 메시지가 없어 깨울 일이 없습니다.",
+    wakeAsk: "{name}의 Codex 대화에서 한 차례를 돌려 안 읽은 메시지를 읽고 답하게 합니다. Codex 앱에 이 대화가 열려 있으면 같은 대화에 둘이 함께 쓰게 됩니다. 계속할까요?",
     rNow: "바로 답함", rWorkerBusy: "작업 중, 끝나면 답함", rPushed: "바로 받음", rAfterTurn: "작업 중, 이번 차례 뒤에 읽음",
     rPull: "직접 확인할 때만 읽음", rNextTurn: "다음 차례에 읽음", rOffline: "오프라인", rGone: "종료됨", rCli: "일회성 질문",
     gNow: "바로 받는 세션", gLater: "나중에 읽는 세션", hideOff: "오프라인·기록 {n}개 숨김 · 보이기",
@@ -254,6 +261,9 @@ const T = {
     restart: "Restart the server: the page and the server are different versions (page {p}, server {s}).",
     reloadPage: "The server restarted. Reload this page.",
     fav: "★ Favorite", unfav: "☆ Remove from favorites", favs: "Favorites", favFull: "Up to 100 favorites.", split: "List width (←/→, double-click to reset)",
+    wake: "Wake", waking: "Waking…", wakeAfter: "Wake after sending", woke: "Woke: ", wakeFailed: "Wake failed: ",
+    wakeNo: "this agent cannot be woken", wakeNoUnread: "It has no unread messages, so there is nothing to wake it for.",
+    wakeAsk: "Run one turn in {name}'s Codex conversation so it reads its unread messages and replies. If the Codex app has this conversation open, both will write to the same conversation. Continue?",
     rNow: "answers right away", rWorkerBusy: "busy, answers when done", rPushed: "gets it right away",
     rAfterTurn: "busy, reads after this turn", rPull: "reads only when it checks", rNextTurn: "reads on its next turn",
     rOffline: "offline", rGone: "gone", rCli: "one-off ask",
@@ -293,6 +303,9 @@ const T = {
     restart: "请重启服务器：页面与服务器版本不一致（页面 {p}，服务器 {s}）。",
     reloadPage: "服务器已重启，请刷新页面。",
     fav: "★ 收藏", unfav: "☆ 取消收藏", favs: "收藏", favFull: "最多收藏 100 个。", split: "列表宽度（←/→，双击恢复）",
+    wake: "唤醒", waking: "唤醒中…", wakeAfter: "发送后唤醒", woke: "已唤醒：", wakeFailed: "唤醒失败：",
+    wakeNo: "此智能体不支持唤醒", wakeNoUnread: "没有未读消息，无需唤醒。",
+    wakeAsk: "将在 {name} 的 Codex 对话中运行一轮，让它读取未读消息并回复。如果 Codex 应用正打开这个对话，两边会写入同一个对话。继续吗？",
     rNow: "立即回复", rWorkerBusy: "工作中，完成后回复", rPushed: "立即收到", rAfterTurn: "工作中，本轮结束后读取",
     rPull: "只在自己查看时读取", rNextTurn: "下一轮才读", rOffline: "离线", rGone: "已结束", rCli: "一次性提问",
     gNow: "立即收到的会话", gLater: "稍后读取的会话", hideOff: "已隐藏 {n} 个离线和过往会话 · 显示",
@@ -325,7 +338,7 @@ let lang = new URLSearchParams(location.search).get("lang") || store.get("reason
 if (!T[lang]) lang = "en";
 const t = k => T[lang][k];
 const TOKEN = document.querySelector('meta[name="reason-chat-token"]').content;
-const API = 5;  // must match API in server.py
+const API = 6;  // must match API in server.py
 const BOOT = document.querySelector('meta[name="reason-chat-boot"]').content;  // which server start served this page
 // Reload to pick up a restarted or newer server, at most once a minute so a broken setup cannot loop.
 function reloadOnce() {
@@ -401,7 +414,7 @@ function reach(s) {
 const reachLabel = s => t("r" + reach(s)[0].toUpperCase() + reach(s).slice(1));
 const NOW = ["now", "workerBusy", "pushed", "afterTurn"], LATER = ["pull", "nextTurn", "cli"];
 // Sessions that will not read soon: the composer says so and offers a worker in the same folder.
-const sleepy = s => !!s && ["offline", "pull", "nextTurn"].includes(reach(s));
+const sleepy = s => !!s && ["offline", "pull", "nextTurn", "gone"].includes(reach(s));
 const favs = () => { const f = pref("favorites"); return Array.isArray(f) ? f : []; };
 
 // Preferences live on the server (the Browser pane can lose localStorage); localStorage only when saving fails.
@@ -539,19 +552,44 @@ function render(force) {
     sel = pendingAddr; pendingAddr = null; $("#tl").dataset.first = "1"; force = true;
   }
   $("#stop").hidden = !(sel && launchedHere(sel));
-  const sig = JSON.stringify([S.sessions, S.launched, S.rooms, S.paused, S.notices, S.prefs, Object.keys(S.relays).length,
+  const ss = sel && S.sessions.find(x => x.address === sel);
+  $("#wakeHead").hidden = !(ss && ss.resumable && sleepy(ss) && unreadTo(sel));
+  $("#wakeHead").disabled = !!(ss && waking(sel));
+  $("#wakeHead").textContent = t(ss && waking(sel) ? "waking" : "wake");
+  const sig = JSON.stringify([S.sessions, S.launched, S.rooms, S.paused, S.notices, S.prefs, S.wakes, Object.keys(S.relays).length,
     S.messages.map(m => [m.id, m.read_at, m.held]), sel, lang]);
   if (!force && sig === lastSig) return;
   lastSig = sig;
   renderSide(); renderTo(); renderTl(); renderNoWake();
 }
 
+const unreadTo = a => (S.sessions.find(x => x.address === a) || {}).unread > 0;  // counted by the server
+const waking = a => (S.wakes[a] || {}).status === "running";
 function renderNoWake() {
   const s = S.sessions.find(x => x.address === $("#to").value);
   $("#nowake").hidden = !sleepy(s);
-  if (sleepy(s)) $("#nowake span").textContent = t({offline: "nwOffline", pull: "nwPull", nextTurn: "nowake"}[reach(s)]);
+  $("#wakeAfterLabel").hidden = !(sleepy(s) && s.resumable);
+  if (!sleepy(s)) return;
+  $("#nowakeText").textContent = t({offline: "nwOffline", gone: "nwOffline", pull: "nwPull", nextTurn: "nowake"}[reach(s)]);
+  $("#wakeBtn").hidden = !s.resumable;
+  $("#wakeBtn").disabled = waking(s.address) || !unreadTo(s.address);
+  $("#wakeBtn").title = unreadTo(s.address) ? "" : t("wakeNoUnread");
+  $("#wakeBtn").textContent = t(waking(s.address) ? "waking" : "wake");
+  const w = S.wakes[s.address];
+  $("#wakeNote").textContent = !s.resumable ? `(${t("wakeNo")})` : w && w.status === "failed" ? t("wakeFailed") + w.error : "";
   $("#toWorker").hidden = !(s && s.cwd && ["codex", "claude-code"].includes(s.agent));
 }
+
+// Wake: one headless turn in the session's own Codex conversation (wake.py); the server picks thread and prompt.
+async function wake(address, asked) {  // returns null when started, else why not
+  if (!asked && !confirm(t("wakeAsk").replace("{name}", short(address)))) return t("cancel");
+  try {
+    await post("/api/wake", {address});
+    say(t("waking") + " " + short(address)); poll(); return null;
+  } catch (err) { say(t("wakeFailed") + err.message, true); return err.message; }
+}
+$("#wakeBtn").addEventListener("click", () => wake($("#to").value));
+$("#wakeHead").addEventListener("click", () => wake(sel));
 
 function say(msg, err) { $("#status").className = err ? "err" : ""; $("#status").textContent = msg; }
 
@@ -571,7 +609,8 @@ async function poll() {
     if ((j.boot && j.boot !== BOOT) || j.api > API) { if (reloadOnce()) return; }
     if (j.api !== API) return say(t(j.api > API ? "reloadPage" : "restart").replace("{p}", API).replace("{s}", j.api ?? 1), true);
     if (j.boot !== BOOT) return say(t("reloadPage"), true);
-    S = {sessions: [], messages: [], launched: [], rooms: [], relays: {}, paused: {}, notices: {}, prefs: {}, ...j}; render();
+    S = {sessions: [], messages: [], launched: [], rooms: [], relays: {}, paused: {}, notices: {}, prefs: {}, wakes: {}, ...j};
+    render();
     say(j.whoError ? t("whoErr") + j.whoError : `${t("updated")} ${fmtT(j.now)}`, !!j.whoError);
   } catch (e) {
     if (e instanceof TypeError) lost = true;  // fetch itself failed: the server is down or restarting
@@ -651,8 +690,13 @@ $("#comp").addEventListener("submit", async e => {
         (bad.length ? ` · ${t("failed")}${bad.map(r => `${short(r.to)}: ${r.err}`).join("; ")}` : "");
       $("#tl").dataset.first = "1"; poll(); return;
     }
+    const wakeToo = !$("#wakeAfterLabel").hidden && $("#wakeAfter").checked;
+    if (wakeToo && !confirm(t("wakeAsk").replace("{name}", short(to)))) return;
     await post("/api/send", {to, body, fyi: $("#fyi").checked});
     $("#body").value = ""; $("#sendmsg").textContent = `${t("sent")} ${short(to)}`;
+    // A refused wake is kept next to "sent": the status line is overwritten by the next refresh.
+    const why = wakeToo ? await wake(to, true) : null;
+    if (why) $("#sendmsg").textContent += ` · ${t("wakeFailed")}${why}`;
     $("#tl").dataset.first = "1"; poll();
   } catch (err) {
     $("#sendmsg").textContent = t("failed") + err.message;

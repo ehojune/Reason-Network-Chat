@@ -713,6 +713,7 @@ const autoOn = a => autoList().includes(a);
 const autoLimited = a => ((S.wakes[a] || {}).limitUntil || 0) > Date.now();
 const autoTrouble = s => !!s && s.resumable && autoOn(s.address) && !s.appOpen
   && (autoLimited(s.address) || (S.wakes[s.address] || {}).status === "failed");
+let sideSelection = null, revealedSection = null;
 const collapsedSections = () => { const a = pref("collapsedSections"); return Array.isArray(a) ? a
   : pref("hideOffline") !== false ? ["offline", "history"] : []; };
 const favs = () => { const f = pref("favorites"); return Array.isArray(f) ? f : []; };
@@ -745,10 +746,16 @@ function renderSide() {
   const fav = favs();
   // A worker's own agent sessions stay folded away unless selected or a favorite.
   const ss = all.filter(s => !fav.includes(s.address) && !(s.inner && s.address !== sel));
+  const selectedSession = all.find(s => s.address === sel);
+  const selectedSection = fav.includes(sel) ? "favorites" : roomOf(sel) ? "rooms"
+    : selectedSession ? ["now", "later", "offline", "history"][group(selectedSession)] : null;
+  // Reveal a newly selected or regrouped conversation. An explicit collapse stays closed until it moves again.
+  if (sideSelection?.key !== sel || sideSelection?.section !== selectedSection) revealedSection = selectedSection;
+  sideSelection = {key: sel, section: selectedSection};
   const collapsed = collapsedSections();
   const section = (key, label, rows) => {
     if (!rows.length) return "";
-    const shut = collapsed.includes(key), action = t(shut ? "sectionExpand" : "sectionFold");
+    const shut = collapsed.includes(key) && revealedSection !== key, action = t(shut ? "sectionExpand" : "sectionFold");
     return `<div class="grp section"><span>${esc(label)} · ${rows.length}</span><button type="button" class="sectionToggle"
       data-section="${key}" aria-expanded="${!shut}" aria-controls="section-${key}" aria-label="${esc(label + " · " + action)}">${esc(action)}</button></div>`
       + `<div id="section-${key}"${shut ? " hidden" : ""}>${shut ? "" : rows.join("")}</div>`;
@@ -1461,7 +1468,11 @@ $("#list").addEventListener("click", e => {
   const toggle = e.target.closest("[data-section]");
   if (toggle) {
     const key = toggle.dataset.section, a = collapsedSections();
-    return setPref("collapsedSections", a.includes(key) ? a.filter(k => k !== key) : [...a, key]);
+    const wasOpen = toggle.getAttribute("aria-expanded") === "true";
+    if (revealedSection === key) revealedSection = null;
+    const next = a.filter(k => k !== key);
+    if (wasOpen) next.push(key);
+    return setPref("collapsedSections", next);
   }
   if (e.target.closest("#restartAll")) return restartWorkers(stoppedWorkers());
   const x = e.target.closest(".ses"); if (x) pick(x.dataset.a);
@@ -1548,9 +1559,10 @@ $("#list").addEventListener("keydown", e => {
 // Right-click (or the menu key on a focused row): pin a session or room to the top as a favorite.
 let ctxKey = null;
 function closeCtx() { $("#ctx").hidden = true; ctxKey = null; }
+const serveWorker = s => !!s && (s.worker || S.foreignWorkers.some(w => `${person()}/${w.name}` === s.address));
 function autoWakeNote(s) {
   if (!s) return "";
-  if (s.worker) return t(!s.live || s.stale || s.status === "offline" ? "workerStopped" : "workerAuto");
+  if (serveWorker(s)) return t(!s.live || s.stale || s.status === "offline" ? "workerStopped" : "workerAuto");
   return s.agent === "codex" && !s.resumable ? t("autoUnavailable") : "";
 }
 function openCtx(row, pointer) {
@@ -1558,7 +1570,7 @@ function openCtx(row, pointer) {
   ctxKey = row.dataset.a;
   $("#ctxFav").textContent = t(favs().includes(ctxKey) ? "unfav" : "fav");
   const ses = S.sessions.find(x => x.address === ctxKey);
-  $("#ctxAuto").hidden = !(ses && ses.resumable && !ses.worker);  // only resumable conversations, not serve workers
+  $("#ctxAuto").hidden = !(ses && ses.resumable && !serveWorker(ses));  // only resumable conversations, not serve workers
   const note = autoWakeNote(ses);
   $("#ctxAutoNote").hidden = !note;
   $("#ctxAutoNote").textContent = note;

@@ -131,7 +131,7 @@ const roomOf=k=>S.rooms.find(r=>'room:'+r.id===k);
 const reach=s=>s.status==='gone'?'gone':s.status==='offline'?'offline':s.tier==='pull'?'pull':'now';
 const reachLabel=s=>reach(s), NOW=['now'], LATER=['pull'];
 `, side);
-vm.runInContext(part('const collapsedSections', '// Preferences live'), side);
+vm.runInContext(part('let sideSelection', '// Preferences live'), side);
 vm.runInContext(part('function pref(key)', 'async function setPref'), side);
 vm.runInContext(part('function renderSide()', 'function renderTo()'), side);
 vm.runInContext(part('let ctxKey = null;', '$("#list").addEventListener("contextmenu"'), side);
@@ -166,5 +166,21 @@ assert.equal(nodes['#ctxAuto'].hidden,false); // favoriting never removes the to
 S.sessions[0].stale=true; openCtx(row('p/fav'),null);
 assert.equal(nodes['#ctxAutoNote'].textContent,'workerStopped');
 openCtx(row('room:r'),null); assert.equal(nodes['#ctxAutoNote'].hidden,true);
+// A selected row moving into a closed bucket stays reachable, while explicit collapse wins.
+sel='p/now'; S.prefs.favorites=[]; S.prefs.collapsedSections=['offline','history']; renderSide();
+S.sessions[1].status='offline'; renderSide();
+assert.ok(nodes['#list'].innerHTML.includes('data-a="p/now"'));
+assert.ok(!nodes['#list'].innerHTML.includes('id="section-offline" hidden'));
+revealedSection=null; renderSide(); // the disclosure click explicitly closed this bucket
+assert.ok(!nodes['#list'].innerHTML.includes('data-a="p/now"'));
+S.sessions[1].status='gone'; S.sessions[1].live=false; renderSide();
+assert.ok(nodes['#list'].innerHTML.includes('data-a="p/now"'));
+// An unadopted serve worker is still a worker; no adoption or auto-wake is needed.
+S.foreignWorkers=[{name:'outside'}];
+S.sessions.push({address:'p/outside',name:'outside',agent:'cli',live:true,status:'idle'});
+openCtx(row('p/outside'),null);
+assert.equal(nodes['#ctxAutoNote'].textContent,'workerAuto');
+assert.equal(nodes['#ctxAuto'].hidden,true);
+assert.equal(nodes['#ctxAdopt'].hidden,false);
 console.log('Sidebar regression checks passed');
 `, side);

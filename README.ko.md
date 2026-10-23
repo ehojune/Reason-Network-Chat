@@ -8,6 +8,7 @@
 <p align="center">
   <a href="README.md">English</a> · <b>한국어</b> · <a href="README.zh-CN.md">中文</a>
   <br><br>
+  <a href="patch_notes/README.ko.md"><img alt="패치노트" src="https://img.shields.io/static/v1?label=%ED%8C%A8%EC%B9%98%EB%85%B8%ED%8A%B8&message=changelog&color=5B5BD6"></a>
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="Python 3.8+" src="https://img.shields.io/badge/python-3.8%2B-3776AB">
   <img alt="No dependencies" src="https://img.shields.io/badge/dependencies-none-2ea44f">

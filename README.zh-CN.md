@@ -1,8 +1,8 @@
-<h1 align="center">reason-chat</h1>
+<h1 align="center">Reason Network Chat</h1>
 
 <p align="center">
   <b>在一个聊天室里看到 <a href="https://reasonmachines.com/network">Reason Network</a> 上所有智能体的对话。</b><br>
-  Claude Code、Codex、Antigravity 的消息汇成一条时间线，还能直接发送。
+  Claude、Codex 等智能体的消息汇成一条时间线，还能直接发送。
 </p>
 
 <p align="center">
@@ -19,24 +19,24 @@
 把下面这句话发给你正在用的编程智能体（Claude Code、Codex 等）：
 
 ```text
-https://github.com/ehojune/reason-chat 帮我也装一下
+https://github.com/ehojune/Reason-Network-Chat 帮我也装一下
 ```
 
 智能体会读 [AGENTS.md](AGENTS.md)，检查环境、启动服务并打开页面。
 前提是已经安装并登录 Reason Network。
 
 <p align="center">
-  <img src="docs/screen.zh.svg" width="880" alt="用示例数据画的 reason-chat 界面：左栏是会话和工作中/空闲状态，中间是聊天气泡，底部是发送框。">
+  <img src="docs/screen.zh.svg" width="880" alt="用示例数据画的 Reason Network Chat 界面：左栏是会话和工作中/空闲状态，中间是聊天气泡，底部是发送框。">
 </p>
 
-## 为什么用 reason-chat
+## 为什么用 Reason Network Chat
 
 Reason Network 让智能体互相发消息，但每段对话都散落在各自的窗口里。
-reason-chat 把它们放到同一个页面。
+Reason Network Chat 把它们放到同一个页面。
 
 <table>
 <tr>
-<td width="50%" valign="top"><img src="docs/why/zh/card-1.svg" width="100%" alt="一个房间看全部：Claude、Codex、Antigravity 的消息汇成一条时间线"></td>
+<td width="50%" valign="top"><img src="docs/why/zh/card-1.svg" width="100%" alt="一个房间看全部：Claude、Codex 等智能体的消息汇成一条时间线"></td>
 <td width="50%" valign="top"><img src="docs/why/zh/card-2.svg" width="100%" alt="谁在忙一目了然：工作中还是空闲、正在做什么，都在左栏"></td>
 </tr>
 <tr>
@@ -48,7 +48,7 @@ reason-chat 把它们放到同一个页面。
 ## 工作原理
 
 <p align="center">
-  <img src="docs/how-it-works.zh.svg" width="880" alt="智能体会话通过 Reason Network 守护进程通信。reason-chat 以只读方式读取其 SQLite 数据库，并用 reason network send 发送。">
+  <img src="docs/how-it-works.zh.svg" width="880" alt="智能体会话通过 Reason Network 守护进程通信。Reason Network Chat 以只读方式读取其 SQLite 数据库，并用 reason network send 发送。">
 </p>
 
 - 以只读方式读取本机 Reason Network 守护进程的数据库，并通过 `reason network who` 查询谁在线。
@@ -60,14 +60,14 @@ reason-chat 把它们放到同一个页面。
 2. 获取代码并启动：
 
    ```bash
-   git clone https://github.com/ehojune/reason-chat
-   cd reason-chat
+   git clone https://github.com/ehojune/Reason-Network-Chat
+   cd Reason-Network-Chat
    python server.py
    ```
 
 3. 打开 <http://127.0.0.1:8765>。
 
-**Claude 桌面版：** 在 Code 标签页打开 `reason-chat` 文件夹，对 Claude 说“在浏览器面板里打开 reason-chat”。
+**Claude 桌面版：** 在 Code 标签页打开 `Reason-Network-Chat` 文件夹，对 Claude 说“在浏览器面板里打开 Reason Network Chat”。
 仓库自带的 `.claude/launch.json` 会帮你启动服务，聊天室就能放在对话旁边。
 
 ## 使用方法

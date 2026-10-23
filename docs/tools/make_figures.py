@@ -16,51 +16,51 @@ C = {"claude": "#C96442", "codex": "#2563EB", "agent": "#7C3AED", "cli": "#0F766
 TEXT = {
     "ko": {
         "cards": [
-            ("한 방에서 본다", "Claude·Codex·Antigravity 대화를", "타임라인 하나로 모은다"),
+            ("한 방에서 본다", "Claude, Codex 같은 여러 에이전트", "대화를 타임라인 하나로"),
             ("누가 일하는지 보인다", "작업 중인지 대기 중인지,", "무슨 일을 하는지 왼쪽에"),
             ("여기서 바로 보낸다", "보내기 칸이 reason network", "send를 대신 불러 준다"),
             ("읽기만, 이 PC에서만", "DB는 읽기 전용으로 열고", "127.0.0.1에만 묶인다"),
         ],
-        "flow": ("에이전트 세션", "Reason Network 데몬", "reason-chat", "읽기: SQLite 읽기 전용 + who --json",
+        "flow": ("에이전트 세션", "Reason Network 데몬", "Reason Network Chat", "읽기: SQLite 읽기 전용 + who --json",
                  "보내기: reason network send", "Claude 데스크톱 Browser pane 또는 아무 브라우저"),
         "busy": "작업 중", "idle": "대기", "gone": "종료됨", "all": "전체 대화", "online": "접속 중",
         "history": "기록에만 남은 세션", "send": "보내기", "to": "받는 세션", "me": "나",
         "ph": "메시지 (Enter 보내기)",
         "msgs": ["결제 webhook이 5xx에 재시도해?", "응, 지수 백오프로 3번. retry.ts 42행 참고.",
                  "README 설치 표 갱신 부탁해", "갱신했어. 3줄 바뀜."],
-        "day": "2026년 10월 23일 (금)", "read": "읽음",
+        "day": "2026년 10월 23일 (금)", "read": "읽음", "others": "다른 에이전트",
     },
     "en": {
         "cards": [
-            ("One room", "Claude, Codex and Antigravity", "messages in one timeline"),
+            ("One room", "Claude, Codex and other agents", "in one timeline"),
             ("See who's busy", "Busy or idle, and what each", "session is doing right now"),
             ("Reply from here", "The send box runs", "reason network send for you"),
             ("Read-only, local", "Opens the database read-only,", "listens on 127.0.0.1 only"),
         ],
-        "flow": ("Agent sessions", "Reason Network daemon", "reason-chat", "read: SQLite read-only + who --json",
+        "flow": ("Agent sessions", "Reason Network daemon", "Reason Network Chat", "read: SQLite read-only + who --json",
                  "send: reason network send", "Claude desktop Browser pane, or any browser"),
         "busy": "busy", "idle": "idle", "gone": "gone", "all": "All messages", "online": "Online",
         "history": "History only", "send": "Send", "to": "To", "me": "me",
         "ph": "Message (Enter to send)",
         "msgs": ["Does the billing webhook retry on 5xx?", "Yes, 3 times with backoff. See retry.ts:42.",
                  "Please update the install table in the README", "Done, 3 lines changed."],
-        "day": "Fri, October 23, 2026", "read": "read",
+        "day": "Fri, October 23, 2026", "read": "read", "others": "Other agents",
     },
     "zh": {
         "cards": [
-            ("一个房间看全部", "Claude、Codex、Antigravity", "的消息汇成一条时间线"),
+            ("一个房间看全部", "Claude、Codex 等智能体", "的消息汇成一条时间线"),
             ("谁在忙一目了然", "工作中还是空闲、", "正在做什么，都在左栏"),
             ("就地发送", "发送框替你调用", "reason network send"),
             ("只读，仅限本机", "数据库以只读方式打开，", "只监听 127.0.0.1"),
         ],
-        "flow": ("智能体会话", "Reason Network 守护进程", "reason-chat", "读取：SQLite 只读 + who --json",
+        "flow": ("智能体会话", "Reason Network 守护进程", "Reason Network Chat", "读取：SQLite 只读 + who --json",
                  "发送：reason network send", "Claude 桌面版 Browser pane 或任意浏览器"),
         "busy": "工作中", "idle": "空闲", "gone": "已结束", "all": "全部消息", "online": "在线",
         "history": "仅在记录中", "send": "发送", "to": "发送给", "me": "我",
         "ph": "输入消息（Enter 发送）",
         "msgs": ["支付 webhook 遇到 5xx 会重试吗？", "会，指数退避重试 3 次，见 retry.ts:42。",
                  "请更新 README 里的安装表格", "已更新，改了 3 行。"],
-        "day": "2026年10月23日 周五", "read": "已读",
+        "day": "2026年10月23日 周五", "read": "已读", "others": "其他智能体",
     },
 }
 
@@ -167,7 +167,7 @@ def flow(lang):
     a, d, r, read, send, pane = TEXT[lang]["flow"]
     p = [f'<rect x=".5" y=".5" width="879" height="299" rx="18" fill="#FFFFFF" stroke="#D0D7DE"/>',
          f'<text class="t" x="100" y="42" text-anchor="middle">{x(a)}</text>']
-    for i, (k, name) in enumerate([("claude", "Claude Code"), ("codex", "Codex"), ("agent", "Antigravity")]):
+    for i, (k, name) in enumerate([("claude", "Claude Code"), ("codex", "Codex"), ("agent", TEXT[lang]["others"])]):
         y = 62 + i * 64
         p.append(f'<rect x="24" y="{y}" width="152" height="48" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/>'
                  f'<rect x="24" y="{y}" width="8" height="48" rx="4" fill="{C[k]}"/>'
@@ -195,14 +195,14 @@ def flow(lang):
              f'<text class="s" x="543" y="198" text-anchor="middle">{x(send)}</text>'
              f'<text class="s" x="856" y="258" text-anchor="end">{x(pane)}</text>'
              '<path d="M758 234v8" stroke="#8C959F" stroke-width="2"/>')
-    return svg(880, 300, f"reason-chat — {d}", f"{a} → {d} → {r}. {read}. {send}.", "\n".join("  " + q for q in p), lang)
+    return svg(880, 300, f"Reason Network Chat — {d}", f"{a} → {d} → {r}. {read}. {send}.", "\n".join("  " + q for q in p), lang)
 
 
 def screen(lang):
     t = TEXT[lang]
     p = ['<rect x=".5" y=".5" width="879" height="439" rx="14" fill="#F7F7F5" stroke="#D0D7DE"/>',
          '<path d="M14 .5h206v438H14a13.5 13.5 0 0 1-13.5-13.5V14A13.5 13.5 0 0 1 14 .5z" fill="#FFFFFF" stroke="#D0D7DE"/>',
-         '<text class="t" x="18" y="32">reason-chat</text><text class="s" x="18" y="52">My network</text>',
+         '<text class="t" x="18" y="32">Reason Network Chat</text><text class="s" x="18" y="52">My network</text>',
          '<path d="M1 64h219" stroke="#E4E3DF"/>',
          f'<rect x="8" y="72" width="204" height="30" rx="8" fill="#E8E2D8"/><circle cx="22" cy="87" r="4" fill="#16A34A"/>'
          f'<text class="b" x="34" y="92" style="font-weight:700">{x(t["all"])}</text><text class="s" x="200" y="92" text-anchor="end">4</text>',
@@ -246,7 +246,7 @@ def screen(lang):
              f'<text class="s" x="246" y="416">{x(t["ph"])}</text>'
              f'<rect x="802" y="396" width="64" height="32" rx="8" fill="#C96442"/>'
              f'<text class="w" x="834" y="416" text-anchor="middle" style="font-size:13px">{x(t["send"])}</text>')
-    return svg(880, 440, "reason-chat", "Example screen with sample data: sessions on the left, chat bubbles on the right, send box at the bottom.",
+    return svg(880, 440, "Reason Network Chat", "Example screen with sample data: sessions on the left, chat bubbles on the right, send box at the bottom.",
                "\n".join("  " + q for q in p), lang)
 
 

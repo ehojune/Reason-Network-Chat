@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="880" height="440" viewBox="0 0 880 440" role="img" aria-labelledby="t d" xml:lang="en">
-  <title id="t">reason-chat</title>
+  <title id="t">Reason Network Chat</title>
   <desc id="d">Example screen with sample data: sessions on the left, chat bubbles on the right, send box at the bottom.</desc>
   <style>
     text { font-family: "Noto Sans KR", "Noto Sans SC", "Apple SD Gothic Neo", "PingFang SC", "Segoe UI", "Malgun Gothic", "Microsoft YaHei", sans-serif; fill: #1F2328; }
@@ -20,7 +20,7 @@
   </defs>
   <rect x=".5" y=".5" width="879" height="439" rx="14" fill="#F7F7F5" stroke="#D0D7DE"/>
   <path d="M14 .5h206v438H14a13.5 13.5 0 0 1-13.5-13.5V14A13.5 13.5 0 0 1 14 .5z" fill="#FFFFFF" stroke="#D0D7DE"/>
-  <text class="t" x="18" y="32">reason-chat</text><text class="s" x="18" y="52">My network</text>
+  <text class="t" x="18" y="32">Reason Network Chat</text><text class="s" x="18" y="52">My network</text>
   <path d="M1 64h219" stroke="#E4E3DF"/>
   <rect x="8" y="72" width="204" height="30" rx="8" fill="#E8E2D8"/><circle cx="22" cy="87" r="4" fill="#16A34A"/><text class="b" x="34" y="92" style="font-weight:700">All messages</text><text class="s" x="200" y="92" text-anchor="end">4</text>
   <text class="s" x="16" y="124" style="font-size:11px">Online</text>

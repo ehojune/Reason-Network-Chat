@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "reason-chat",
+      "name": "reason-network-chat",
       "runtimeExecutable": "python",
       "runtimeArgs": ["-X", "utf8", "server.py"],
       "port": 8765

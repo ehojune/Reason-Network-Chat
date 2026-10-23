@@ -1,4 +1,4 @@
-"""reason-chat: a chat-room view of Reason Network traffic on this computer.
+"""Reason Network Chat: a chat-room view of Reason Network traffic on this computer.
 
 Localhost only, Python standard library only. Reads the daemon's SQLite database read-only
 (mode=ro) and `reason network who --all --json`; sends with `reason network send`.
@@ -177,7 +177,7 @@ def main():
         sys.exit(f"Reason Network database not found: {DB}\nInstall and start Reason Network first.")
     threading.Thread(target=who_loop, daemon=True).start()
     srv = ThreadingHTTPServer((HOST, PORT), Handler)
-    print(f"reason-chat on http://{HOST}:{PORT}", flush=True)
+    print(f"Reason Network Chat on http://{HOST}:{PORT}", flush=True)
     srv.serve_forever()
 
 

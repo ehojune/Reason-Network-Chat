@@ -1,4 +1,4 @@
-# AGENTS.md — setting up and operating reason-chat
+# AGENTS.md — setting up and operating Reason Network Chat
 
 For coding agents. Your user pasted this repo's URL and asked you to set it up, or is working in this repo.
 The README is for the human; this file has the procedure, checks, configuration and pitfalls.
@@ -25,19 +25,19 @@ Do these in order. Each step has a check; stop and tell the user when a check fa
    - If either fails, the user must install Reason Network from <https://reasonmachines.com/network> and run `reason network`
      to sign in. Do not install it or sign in for them: it opens a browser sign-in.
    - On Windows the CLI is usually `%LOCALAPPDATA%\Reason\bin\reason.exe`, which `server.py` finds without PATH.
-3. **Get the code.** Clone into a folder the user agrees to (default: `~/reason-chat`).
-   `git clone https://github.com/ehojune/reason-chat`
+3. **Get the code.** Clone into a folder the user agrees to (default: `~/Reason-Network-Chat`).
+   `git clone https://github.com/ehojune/Reason-Network-Chat`
 4. **Start the server** as a background process from the repo folder: `python server.py`.
-   It prints `reason-chat on http://127.0.0.1:8765`. It exits with a clear message if the database is missing.
+   It prints `Reason Network Chat on http://127.0.0.1:8765`. It exits with a clear message if the database is missing.
 5. **Verify.** `GET http://127.0.0.1:8765/api/state` returns JSON whose `sessions` is non-empty and `whoError` is `null`.
 6. **Open the page.**
    - Claude desktop app (Code tab): if the session's working folder is the repo, use the bundled `.claude/launch.json`
-     (`preview_start` with name `reason-chat`). Otherwise add this entry to the working folder's `.claude/launch.json`,
+     (`preview_start` with name `reason-network-chat`). Otherwise add this entry to the working folder's `.claude/launch.json`,
      with the absolute path to `server.py`:
 
      ```json
-     { "name": "reason-chat", "runtimeExecutable": "python",
-       "runtimeArgs": ["-X", "utf8", "/absolute/path/to/reason-chat/server.py"], "port": 8765 }
+     { "name": "reason-network-chat", "runtimeExecutable": "python",
+       "runtimeArgs": ["-X", "utf8", "/absolute/path/to/Reason-Network-Chat/server.py"], "port": 8765 }
      ```
 
    - Anything else: open <http://127.0.0.1:8765> in a browser.
@@ -87,7 +87,7 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
 - **Keep the bind address `127.0.0.1`.** The page shows private message text and can send as the user.
 - **Do not parse CLI text output.** On Korean/Chinese Windows the console code page (CP949, GBK) garbles it. Use `--json` or the database. Decode subprocess output as UTF-8.
 - **Windows batch shims.** If `REASON_BIN` points at a `.cmd`/`.bat`, cmd.exe would re-parse message text (`&`, `|`, `%`). `server.py` refuses to start; point it at `reason.exe`.
-- **Idle Codex app sessions** may leave a message unread until their next turn. Not a reason-chat bug. Workers from `reason network serve` answer at once.
+- **Idle Codex app sessions** may leave a message unread until their next turn. Not a Reason Network Chat bug. Workers from `reason network serve` answer at once.
 - **`reason network serve codex` on Windows** can fail with "contains a cmd.exe special character" when a `codex.cmd` shim comes first on PATH. Put the folder of the real `codex.exe` first on PATH for that process.
 - **Replies to `<person>/terminal`** stay unread in the database because nothing else reads that inbox. The page hides the read mark for them.
 - **Sending is acting for the user.** Send only what the user asked for, or the one-line test they approved.

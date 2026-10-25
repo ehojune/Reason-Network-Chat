@@ -5,6 +5,12 @@
 What changed in Reason Network Chat, newest first. Times are KST.
 Each row links to its pull request; the first two commits went straight to `main`.
 
+## 2026-10-26
+
+| Time | Change | What changed |
+|---|---|---|
+| 03:38 | [#44](https://github.com/ehojune/Reason-Network-Chat/pull/44) | Suspected encoding damage blocks chat sends and relays; an offline file checker explains the external-post boundary, and every README shows the existing rabbit icon. |
+
 ## 2026-10-24
 
 | Time | Change | What changed |

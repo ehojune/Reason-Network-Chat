@@ -1,3 +1,4 @@
+<p align="center"><img src="favicon.svg" width="88" height="88" alt="Reason Network Chat 兔子图标"></p>
 <h1 align="center">Reason Network Chat</h1>
 
 <p align="center">
@@ -281,6 +282,11 @@ worker 的回复总是如此。群聊在本页面的服务器运行期间工作�
 
 ## 须知
 
+- **疑似损坏的文字会被阻止发送或转发并显示提示。** 检查重复的 `?` 替换和无效 Unicode；收到的原文仍保留在历史中。
+  代码示例、引用证据和普通问句允许通过。此检查是启发式的，不能检测或修复所有损坏。
+  对外发布前，可用 `python rnc.py text check --file body.md` 检查 UTF-8 文件，发布后再与原文核对。
+  Chat 无法拦截 worker 单独运行的 `gh`。PowerShell 管道需要将 `$OutputEncoding` 和 `[Console]::OutputEncoding`
+  **都**设为 UTF-8；`python -X utf8` 无法恢复上游已被替换的文字。
 - **卡住的 worker**（忙碌 30 分钟以上且步骤没有变化）显示红色*疑似卡住*。右键 → **查看进程 · 重新启动** 可查看其下运行的
   进程，并以相同设置重新启动；未回答的消息会被再次处理。智能体重启 worker 时用 `python rnc.py worker restart 名称`
   （见 AGENTS.md），不要在自己的回合里直接运行 `reason network serve`。

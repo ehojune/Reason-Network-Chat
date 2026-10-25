@@ -26,6 +26,7 @@ import relay as relay_mod
 from relay import Relay, RelayError
 from rooms import RoomError, Rooms
 from wake import WakeError, Waker
+from text_guard import TextEncodingError, require_text
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("REASON_CHAT_PORT", "8765"))
@@ -479,7 +480,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json({"error": "name must be a string"}, 400)
                 LAUNCHER.stop(name)
                 self.send_json({"ok": True})
-        except (LaunchError, RoomError, PrefError, WakeError, RelayError) as e:
+        except (LaunchError, RoomError, PrefError, WakeError, RelayError, TextEncodingError) as e:
             self.send_json({"error": str(e)}, e.code)
         except Exception as e:
             self.send_json({"error": str(e)}, 500)
@@ -491,6 +492,7 @@ class Handler(BaseHTTPRequestHandler):
         to, body = to.strip(), body.strip()
         if not to or not body or to.startswith("-"):
             return self.send_json({"error": "to and body are required"}, 400)
+        require_text(body)
         rc, out, err = send_one(to, body + dm_note(to), fyi)
         self.send_json({"ok": rc == 0, "rc": rc, "out": out, "err": err}, 200 if rc == 0 else 502)
 
@@ -503,6 +505,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "No such group room."}, 404)
         if not isinstance(who, str) or not isinstance(body, str):
             return self.send_json({"error": "as and body must be strings"}, 400)
+        require_text(body)
         me = my_address()
         if not me:
             return self.send_json({"error": "Reason Network is not answering yet; try again."}, 503)
@@ -612,6 +615,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "No such room."}, 404)
         if not isinstance(body, str) or not body.strip() or not isinstance(fyi, bool):
             return self.send_json({"error": "body must be a non-empty string, fyi a boolean"}, 400)
+        require_text(body)
         if room.get("group"):  # members get the lines they missed; @mentions wake only those members
             me = my_address()
             if not me:

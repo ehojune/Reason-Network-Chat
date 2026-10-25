@@ -7,6 +7,7 @@
     python rnc.py worker restart NAME
     python rnc.py worker stop NAME
     python rnc.py worker adopt NAME [--model M] [--effort E]
+    python rnc.py text check --file UTF8_FILE
 
 For agents this is the only supported way to (re)start a worker. Never run `reason network serve` yourself, and
 never inside your own turn: a serve started from your shell inherits the turn's output handles, so the turn cannot
@@ -32,8 +33,10 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
 import urllib.error
 import urllib.request
+from text_guard import TextEncodingError, require_text
 
 PORT = int(os.environ.get("REASON_CHAT_PORT", "8765"))
 BASE = f"http://127.0.0.1:{PORT}"
@@ -180,6 +183,9 @@ def room_main(a, token):
 def parse(argv):
     p = argparse.ArgumentParser(prog="rnc.py", description="Manage Reason Network workers the way the page does.")
     sub = p.add_subparsers(dest="what", required=True)
+    tx = sub.add_parser("text", help="check a UTF-8 file before a message or an external post")
+    tx.add_argument("action", choices=["check"])
+    tx.add_argument("--file", required=True, help="UTF-8 text file; - reads UTF-8 bytes from stdin")
     rm = sub.add_parser("room", help="list group rooms, or post first in one as a member")
     rm.add_argument("action", choices=["list", "send"])
     rm.add_argument("room", nargs="?", help="room id or name")
@@ -194,6 +200,8 @@ def parse(argv):
     w.add_argument("--effort")
     w.add_argument("--full-access", action="store_true", help="run without approvals (dangerous by design)")
     a = p.parse_args(argv)
+    if a.what == "text":
+        return a
     if a.what == "room":
         if a.action == "send" and not (a.room and a.message and a.as_):
             p.error('room send needs ROOM, --as MEMBER and "MESSAGE"')
@@ -208,6 +216,15 @@ def parse(argv):
 
 def main(argv=None):
     a = parse(sys.argv[1:] if argv is None else argv)
+    if a.what == "text":
+        try:
+            data = sys.stdin.buffer.read() if a.file == "-" else Path(a.file).read_bytes()
+            require_text(data.decode("utf-8-sig"))
+        except (OSError, UnicodeError, TextEncodingError) as e:
+            print(f"Text check failed: {e}", file=sys.stderr)
+            return 1
+        print("UTF-8 text check passed (heuristic; compare the published text with the original too).")
+        return 0
     token = server_token()
     try:
         if a.what == "room":

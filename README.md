@@ -1,3 +1,4 @@
+<p align="center"><img src="favicon.svg" width="88" height="88" alt="Reason Network Chat rabbit icon"></p>
 <h1 align="center">Reason Network Chat</h1>
 
 <p align="center">
@@ -306,6 +307,12 @@ when it starts again.
 
 ## Good to know
 
+- **Damaged text is stopped before sending or relaying.** Repeated `?` replacements or invalid Unicode produce
+  a warning; the original received message stays in history. Code examples, quoted evidence and ordinary questions
+  are allowed. This is a heuristic, not a repair tool. For an external post, check its UTF-8 file with
+  `python rnc.py text check --file body.md`, then compare the published text with the original.
+  The chat cannot intercept a worker's separate `gh` command: in PowerShell pipes set **both** `$OutputEncoding`
+  and `[Console]::OutputEncoding` to UTF-8. `python -X utf8` cannot recover text already replaced upstream.
 - **A stuck worker** (busy for 30 minutes with no new step) shows *possibly stuck* in red. Right-click it →
   **Processes · restart** shows what runs under it and restarts it with the same settings; the messages it had
   not answered run again. Agents restart workers with `python rnc.py worker restart NAME` (see AGENTS.md), never

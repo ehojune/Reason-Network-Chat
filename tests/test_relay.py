@@ -24,6 +24,52 @@ class FakeRooms:
 
 
 class RelayTest(unittest.TestCase):
+    def test_damaged_human_and_member_posts_do_not_send_or_queue(self):
+        from text_guard import TextEncodingError
+        bad = "@b-claude " + "?? ???? ????? ?? ?????? ??? " * 4
+        for send in (lambda: self.r.post(self.room, ME, bad),
+                     lambda: self.r.post_as(self.room, A, bad, "session")):
+            with self.assertRaises(TextEncodingError):
+                send()
+        self.assertEqual(self.counts(), [0, 0, 0])
+        self.assertFalse(self.r.queue)
+
+    def test_damaged_reply_stays_in_history_but_is_not_relayed(self):
+        from text_guard import ENCODING_ERROR
+        self.r.post(self.room, ME, "@a-codex go")
+        bad = "@b-claude " + "?? ???? ????? ?? ?????? ??? " * 4
+        mid = self.insert(A, ME, bad, reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 0, 0])
+        self.assertEqual(self.rows("select body from messages where id = ?", (mid,))[0]["body"], bad)
+        self.assertEqual(self.r.notice[self.room["id"]], ENCODING_ERROR)
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 0, 0])
+
+    def test_damaged_dm_cannot_be_forwarded(self):
+        from text_guard import TextEncodingError
+        mid = self.insert(A, ME, "@b-claude " + "?? ???? ????? ?? ?????? ??? " * 4)
+        row = self.rows("select * from messages where id = ?", (mid,))[0]
+        with self.assertRaises(TextEncodingError):
+            self.r.forward(self.room, ME, row)
+        self.assertEqual(self.counts(), [0, 0, 0])
+
+    def test_old_damaged_context_does_not_poison_new_korean_message(self):
+        self.insert(A, B, "?? ???? ????? ?? ?????? ??? " * 4)
+        self.r.post(self.room, ME, "@c-codex 한글·中文·🤖 그대로 확인")
+        outgoing = self.sent_to(C)[-1]
+        self.assertNotIn("????", outgoing)
+        self.assertTrue(outgoing.endswith("@c-codex 한글·中文·🤖 그대로 확인"))
+
+    def test_old_queued_damage_is_not_sent_even_when_flushed(self):
+        bad = "@b-claude " + "?? ???? ????? ?? ?????? ??? " * 4
+        self.r.queue[self.room["id"]] = [{"reply":"old", "to":B, "sender":A, "body":bad, "hop":1}]
+        self.r.flush(self.room["id"])
+        for _ in range(relay.RETRIES):
+            self.r.drain(ME)
+        self.assertEqual(self.counts(), [0, 0, 0])
+        self.assertFalse(self.r.queue.get(self.room["id"]))
+
     def setUp(self):
         self.db = sqlite3.connect(":memory:", check_same_thread=False)
         self.db.row_factory = sqlite3.Row

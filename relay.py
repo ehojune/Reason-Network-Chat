@@ -39,6 +39,7 @@ import time
 import uuid
 from pathlib import Path
 from storage import atomic_json, file_lock
+from text_guard import ENCODING_ERROR, encoding_issue, require_text
 
 
 def _env_int(name, default):
@@ -425,7 +426,7 @@ class Relay:
         got = {(v["speaker"], v["core"]) for v in self.sent.values() if v.get("room") == room["id"] and v.get("to") == member}
         out, keys = [], set()
         for r in rows:
-            if r["id"] == skip or (r["sender"] != me and worker_failure(r["body"])):  # your own text is kept
+            if r["id"] == skip or encoding_issue(r["body"]) or (r["sender"] != me and worker_failure(r["body"])):
                 continue
             if r["sender"] not in everyone or r["recipient"] not in everyone or member in (r["sender"], r["recipient"]):
                 continue  # not room traffic, or traffic the member took part in
@@ -483,6 +484,10 @@ class Relay:
         """Compose and send one relayed message. The CLI runs without self.lock, so polling never waits on it.
         A queued `item` leaves the queue in the same save that records the message as sent: a restart in between
         cannot send it twice."""
+        if encoding_issue(core):
+            with self.lock:
+                self.notice[room["id"]] = ENCODING_ERROR
+            return False, ENCODING_ERROR
         with self.lock:
             flight = item.get("flight") if item is not None else None
             created = not flight
@@ -620,6 +625,7 @@ class Relay:
     # ---------- your message ----------
     def post(self, room, me, body):
         """Send your message to the members it @mentions (or the default recipient). A fresh hand-off budget."""
+        require_text(body)
         targets = self.targets(room, body)
         if not targets:
             raise RelayError("Mention who should receive it (@name, or @all for everyone), "
@@ -657,6 +663,7 @@ class Relay:
         if member not in room["members"]:
             raise RelayError("Not a member of this room.", 403)
         body = str(body or "").strip()
+        require_text(body)
         if no_answer(body) or len(body) > 20000:
             raise RelayError("Write a message (at most 20000 characters).")
         targets = self.mentioned(room, body, exclude=member)
@@ -683,6 +690,7 @@ class Relay:
             raise RelayError("Only a room member's message to you can be forwarded.")
         if worker_failure(msg["body"]):
             raise RelayError("That is the worker's failure, not an answer: send your message again instead.")
+        require_text(msg["body"])
         targets = self.mentioned(room, msg["body"], exclude=msg["sender"])
         if not targets:
             raise RelayError("It mentions no other member of this room.")
@@ -754,6 +762,9 @@ class Relay:
         """Where a member's answer goes: [(member, implicit)]. The members it @mentions, and the member whose message
         it answers (`rec`'s speaker) without being named, one level only: an answer that itself came back this way
         does not come back again. An empty answer, or a worker's failure, goes nowhere."""
+        if encoding_issue(reply["body"]):
+            self.notice[room["id"]] = ENCODING_ERROR
+            return []
         if no_answer(reply["body"]) or worker_failure(reply["body"]):
             return []
         out = [(m, False) for m in self.mentioned(room, reply["body"], exclude=reply["sender"])]

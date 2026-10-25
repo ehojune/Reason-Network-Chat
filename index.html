@@ -317,6 +317,7 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
 <script>
 const T = {
   ko: { all: "전체 대화", connecting: "연결 중…", loading: "불러오는 중…", empty: "메시지가 없습니다",
+    encodingBlocked: "글자 손상이 의심돼 전송·중계를 막았습니다. UTF-8 원문을 다시 확인하세요. PowerShell 파이프는 $OutputEncoding과 [Console]::OutputEncoding을 둘 다 UTF-8로 설정해야 합니다.",
     raw: "원문", formatted: "서식", reply: "답글", replyX: "답글 취소",
     dmHint: "이 대화는 1:1입니다. 답에 쓴 @는 방으로 넘어가지 않습니다. 여러 멤버에게 알릴 일은 방에서 보내세요.",
     dmNoted: "1:1 안내 붙음", forward: "방으로 전달", forwarded: "방으로 전달됨 → {names}", fwdDone: "방으로 전달함 → {names}",
@@ -408,6 +409,7 @@ const T = {
     noLimit: "제한 없음",
     noLimitAsk: "제한을 없애면 에이전트끼리 끝없이 주고받으며 차례(비용)를 계속 쓸 수 있습니다. 계속할까요?" },
   en: { all: "All messages", connecting: "Connecting…", loading: "Loading…", empty: "No messages",
+    encodingBlocked: "Sending or relaying was blocked because the text looks damaged. Check the original UTF-8 file. PowerShell pipes need both $OutputEncoding and [Console]::OutputEncoding set to UTF-8.",
     raw: "Source", formatted: "Formatted", reply: "Reply", replyX: "Cancel reply",
     dmHint: "This is a 1:1 conversation. @mentions in the answer are not passed on to the room. Send what several members should know in the room.",
     dmNoted: "1:1 note added", forward: "Forward to room", forwarded: "Forwarded to the room → {names}", fwdDone: "Forwarded to the room → {names}",
@@ -501,6 +503,7 @@ const T = {
     noLimit: "No limit",
     noLimitAsk: "Without a limit, agents can keep answering each other and keep spending turns (cost). Continue?" },
   zh: { all: "全部消息", connecting: "连接中…", loading: "加载中…", empty: "暂无消息",
+    encodingBlocked: "文字疑似损坏，已阻止发送或转发。请检查 UTF-8 原文。PowerShell 管道需要将 $OutputEncoding 和 [Console]::OutputEncoding 都设为 UTF-8。",
     raw: "原文", formatted: "格式", reply: "回复", replyX: "取消回复",
     dmHint: "这是 1:1 对话。回答里的 @ 不会转到聊天室。需要让多个成员知道的事，请在聊天室里发送。",
     dmNoted: "附 1:1 说明", forward: "转发到聊天室", forwarded: "已转发到聊天室 → {names}", fwdDone: "已转发到聊天室 → {names}",
@@ -629,6 +632,7 @@ const short = a => (a || "").replace(/^[^/]+\//, "");
 const fmtT = ms => new Date(ms).toLocaleTimeString(LOCALE[lang], {hour: "2-digit", minute: "2-digit"});
 const fmtD = ms => new Date(ms).toLocaleDateString(LOCALE[lang], {year: "numeric", month: "long", day: "numeric", weekday: "short"});
 const st = s => t(s) || s;
+const displayError = e => String(e).includes("Message blocked: suspected text encoding damage.") ? t("encodingBlocked") : e;
 
 async function post(url, obj) {
   const r = await fetch(url, {method: "POST", body: JSON.stringify(obj),
@@ -637,7 +641,7 @@ async function post(url, obj) {
   // The server restarted (new token) whatever its version: a fresh page from it carries the right token.
   if (r.status === 403 && /token/.test(j.error || "")) reloadOnce();
   if (!r.ok || j.error || j.ok === false) {
-    throw Object.assign(new Error(j.error || j.err || j.out || `HTTP ${r.status}`), {status: r.status});
+    throw Object.assign(new Error(displayError(j.error || j.err || j.out || `HTTP ${r.status}`)), {status: r.status});
   }
   return j;
 }
@@ -1350,7 +1354,7 @@ function render(force) {
   // Hand-offs over the room's limits wait in a queue (never dropped): say how many, and offer to send them now.
   const qz = room && S && S.queued[room.id], nz = room && S && S.notices[room.id];
   $("#paused").innerHTML = [qz && qz.waiting ? esc(t("qWaiting").replace("{n}", qz.waiting)) : "",
-    qz && qz.held ? esc(t("qHeld").replace("{n}", qz.held)) : "", nz ? esc(t("handoffFailed") + nz) : ""]
+    qz && qz.held ? esc(t("qHeld").replace("{n}", qz.held)) : "", nz ? esc(t("handoffFailed") + displayError(nz)) : ""]
     .filter(Boolean).join(" ") + (qz && (qz.waiting || qz.held) ? `<button type="button" id="flushBtn">${esc(t("flushAll"))}</button>` : "");
   $("#body").placeholder = room && room.group ? t("groupPh") : t("ph");
   renderRcpt();

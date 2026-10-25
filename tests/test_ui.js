@@ -8,6 +8,12 @@ const part = (from, to) => source.slice(source.indexOf(from), source.indexOf(to)
 const nodes = {};
 const routingCases = JSON.parse(fs.readFileSync(require('node:path').join(__dirname, 'routing_cases.json'), 'utf8'));
 const c = vm.createContext({assert, console, setTimeout: () => {}, nodes, routingCases});
+const errors = vm.createContext({assert});
+vm.runInContext('const t = k => "localized:" + k; ' + part('const displayError', 'async function post'), errors);
+vm.runInContext(`
+assert.equal(displayError('Message blocked: suspected text encoding damage. details'), 'localized:encodingBlocked');
+assert.equal(displayError('ordinary error'), 'ordinary error');
+`, errors);
 vm.runInContext(String.raw`
 let S, sel = '';
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

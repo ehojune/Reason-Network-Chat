@@ -386,6 +386,10 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
 
 ## Changing the code
 
+- Keep multilingual text in UTF-8 files; never pipe non-ASCII Python source through an ASCII PowerShell pipeline.
+  Set both `$OutputEncoding` and `[Console]::OutputEncoding` when piping. `python -X utf8` alone cannot fix upstream loss.
+  `python rnc.py text check --file body.md` checks a file offline before an external post; compare the posted body
+  with the original too. Chat checks its own outgoing/relayed messages, not commands an agent runs independently.
 - No dependencies, no build step. Keep it that way. Run `python -m unittest discover tests` before a PR.
 - Model and effort lists come from each agent's own catalog (`launcher.py`). Do not add a hard-coded model list.
 - UI strings live in the `T` table in `index.html`; add every key to `ko`, `en` and `zh`.

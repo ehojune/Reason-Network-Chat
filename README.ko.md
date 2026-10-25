@@ -1,3 +1,4 @@
+<p align="center"><img src="favicon.svg" width="88" height="88" alt="Reason Network Chat 토끼 아이콘"></p>
 <h1 align="center">Reason Network Chat</h1>
 
 <p align="center">
@@ -291,6 +292,11 @@ Reason 에이전트는 자기에게 보낸 쪽에만 답하므로 이 페이지�
 
 ## 알아 두면 좋은 것
 
+- **글자 손상이 의심되면 전송·중계를 막고 안내한다.** 반복된 `?` 치환이나 잘못된 Unicode를 검사하며,
+  받은 원문은 기록에 남긴다. 코드 예시·인용문·보통 질문은 허용한다. 휴리스틱 검사여서 모든 손상을 찾거나 복구하지는 못한다.
+  외부 게시 전에는 `python rnc.py text check --file body.md`로 UTF-8 파일을 검사하고 게시 후 원문과 대조한다.
+  Chat은 워커가 별도로 실행하는 `gh`를 가로채지 않는다. PowerShell 파이프는 `$OutputEncoding`과
+  `[Console]::OutputEncoding`을 **둘 다** UTF-8로 설정한다. `python -X utf8`만으로 상류에서 바뀐 글자를 되살리지는 못한다.
 - **멈춘 워커**(30분 넘게 단계가 바뀌지 않는 작업 중 워커)는 빨간 *멈춤 의심*으로 뜬다. 오른쪽 클릭 →
   **프로세스 보기 · 다시 시작**으로 그 아래 도는 프로세스를 보고 같은 설정으로 다시 띄운다. 답하지 못한 메시지는 다시 처리된다.
   에이전트가 워커를 다시 띄울 때는 `python rnc.py worker restart 이름`을 쓴다(AGENTS.md). 자기 턴 안에서

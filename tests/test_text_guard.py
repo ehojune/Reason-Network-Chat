@@ -67,6 +67,34 @@ class TextGuardTest(unittest.TestCase):
             h.send_message({"to":"pat/b-claude", "body":body})
         send.assert_called_once_with("pat/b-claude", body, False)
 
+    def test_damaged_direct_resend_is_rejected_before_claim(self):
+        h = object.__new__(server.Handler)
+        h.send_json = mock.Mock()
+        with mock.patch.object(server, "my_address", return_value="pat/terminal"), \
+                mock.patch.dict(server._who, {"data":{"sessions":[{"address":"pat/b-claude", "status":"idle"}]}}), \
+                mock.patch.object(server, "db_rows", return_value=[{"sender":"pat/terminal", "recipient":"pat/b-claude", "body":BAD}]), \
+                mock.patch.object(server.RELAY, "recipient_of", return_value=None), \
+                mock.patch.object(server.RELAY, "claim", return_value=True) as claim, \
+                mock.patch.object(server.LAUNCHER, "stale_names", return_value=set()), \
+                mock.patch.object(server, "send_one", return_value=(0,"","")) as send:
+            h.resend({"ids":["damaged"]})
+            claim.assert_not_called()
+            send.assert_not_called()
+        result, code = h.send_json.call_args.args
+        self.assertEqual(result["done"], 0)
+        self.assertEqual(result["results"][0]["err"], ENCODING_ERROR)
+        self.assertEqual(code, 409)
+
+    def test_damaged_message_can_still_be_dismissed(self):
+        h = object.__new__(server.Handler)
+        h.send_json = mock.Mock()
+        with mock.patch.object(server, "my_address", return_value="pat/terminal"), \
+                mock.patch.object(server.RELAY, "claim", return_value=True) as claim, \
+                mock.patch.object(server, "send_one") as send:
+            h.resend({"ids":["damaged"], "dismiss":True})
+        claim.assert_called_once_with("damaged", "dismissed")
+        send.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

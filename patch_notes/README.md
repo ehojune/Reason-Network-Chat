@@ -9,7 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 |---|---|---|
-| 03:38 | [#44](https://github.com/ehojune/Reason-Network-Chat/pull/44) | Suspected encoding damage blocks chat sends and relays; an offline file checker explains the external-post boundary, and every README shows the existing rabbit icon. |
+| 03:38 | [#44](https://github.com/ehojune/Reason-Network-Chat/pull/44) | Suspected encoding damage blocks sends, resends and saved relay envelopes; an offline file checker explains the external-post boundary, and every README shows the existing rabbit icon. |
 
 ## 2026-10-24
 

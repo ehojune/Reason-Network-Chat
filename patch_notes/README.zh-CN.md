@@ -9,7 +9,7 @@ Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（
 
 | 时间 | 变更 | 主要内容 |
 |---|---|---|
-| 03:38 | [#44](https://github.com/ehojune/Reason-Network-Chat/pull/44) | 疑似编码损坏会阻止发送或转发；增加发布前离线文件检查并说明保护范围，三种语言的 README 均展示现有兔子图标。 |
+| 03:38 | [#44](https://github.com/ehojune/Reason-Network-Chat/pull/44) | 疑似编码损坏会阻止发送、重发或重试已保存的转发封装；增加发布前离线文件检查并说明保护范围，三种语言的 README 均展示现有兔子图标。 |
 
 ## 2026-10-24
 

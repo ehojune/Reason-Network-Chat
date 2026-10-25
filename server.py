@@ -26,7 +26,7 @@ import relay as relay_mod
 from relay import Relay, RelayError
 from rooms import RoomError, Rooms
 from wake import WakeError, Waker
-from text_guard import TextEncodingError, require_text
+from text_guard import TextEncodingError, encoding_issue, require_text
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("REASON_CHAT_PORT", "8765"))
@@ -564,6 +564,9 @@ class Handler(BaseHTTPRequestHandler):
                     results.append({"id": mid, "ok": False, "err": "Only your own messages can be sent again."})
                     continue
                 row, to = rows[0], rows[0]["recipient"]
+            if row is not None and (error := encoding_issue(row["body"])):
+                results.append({"id": mid, "ok": False, "to": to, "err": error})
+                continue  # no claim and no send: the user may still dismiss or recreate the original
             # Nothing would take it: offline, or a worker of ours the network still shows although its process is gone.
             if status.get(to) in (None, "offline") or (to.split("/", 1)[0] == me.split("/", 1)[0]
                                                        and to.split("/", 1)[-1] in LAUNCHER.stale_names()):

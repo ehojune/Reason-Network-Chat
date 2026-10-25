@@ -24,6 +24,24 @@ class FakeRooms:
 
 
 class RelayTest(unittest.TestCase):
+    def test_legacy_flight_with_damaged_context_is_not_retried(self):
+        from text_guard import ENCODING_ERROR
+        body = "Earlier in the room:\na-codex: " + "?? ???? ????? ?? ?????? ??? " * 4 + "\n---\na-codex: @b-claude clean"
+        flight = {"body":body, "newest":0, "me":ME}
+        item = {"reply":"legacy", "to":B, "sender":A, "body":"@b-claude clean", "hop":1, "flight":flight.copy()}
+        self.r.queue[self.room["id"]] = [item]
+        self.r.save()
+        for _ in range(2):
+            self.r = self.new_relay()
+            self.r.flush(self.room["id"])
+            self.r.drain(ME)
+            self.assertEqual(self.counts(), [0, 0, 0])
+            saved = self.r.queue[self.room["id"]][0]
+            self.assertEqual(saved["flight"], flight)  # retain identity for receipt reconciliation
+            self.assertNotIn("force", saved)
+            self.assertEqual(self.r.view(set())[2][self.room["id"]], ENCODING_ERROR)
+            self.assertFalse(self.r.passes[self.room["id"]])
+
     def test_damaged_human_and_member_posts_do_not_send_or_queue(self):
         from text_guard import TextEncodingError
         bad = "@b-claude " + "?? ???? ????? ?? ?????? ??? " * 4

@@ -493,6 +493,11 @@ class Relay:
             created = not flight
             if flight:
                 body, newest = flight["body"], flight["newest"]
+                if encoding_issue(body):
+                    item.pop("force", None)
+                    self.refresh_transient_notice(room["id"], me)
+                    self.save(strict=True)
+                    return False, ENCODING_ERROR
             else:
                 body, newest = self.compose(room, member, me, speaker, core, skip, implicit)
                 # Distinct sends have distinct envelopes, including human posts and explicit resends.
@@ -581,6 +586,8 @@ class Relay:
         flights = [item["flight"] for item in self.queue.get(rid, []) if item.get("flight")]
         if any(flight.get("me") != me for flight in flights):
             self.transient_notice[rid] = SENDER_NOTICE
+        elif any(encoding_issue(flight["body"]) for flight in flights):
+            self.transient_notice[rid] = ENCODING_ERROR
         elif pending:
             self.transient_notice[rid] = pending
         elif flights:
@@ -811,6 +818,12 @@ class Relay:
                             break
                         if self.reconcile(room, me, item):
                             continue
+                        if encoding_issue(item["flight"]["body"]):
+                            # Keep the old flight/identity for reconciliation; never recompose an uncertain send.
+                            item.pop("force", None)
+                            self.refresh_transient_notice(rid, me)
+                            self.save()
+                            break  # even an explicit retry cannot resend known damaged bytes or spend a slot
                         if not item.get("force"):
                             self.refresh_transient_notice(rid, me)
                             break  # keep an ambiguous send; a restart must never guess and spend another turn

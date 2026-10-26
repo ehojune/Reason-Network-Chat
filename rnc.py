@@ -195,7 +195,7 @@ def parse(argv):
     w.add_argument("action", choices=["list", "start", "restart", "stop", "adopt"])
     w.add_argument("name", nargs="?")
     w.add_argument("--folder", help="absolute folder the worker works in (new workers)")
-    w.add_argument("--agent", choices=["codex", "claude"], help="agent of a new worker")
+    w.add_argument("--agent", choices=["codex", "claude", "antigravity"], help="agent of a new worker")
     w.add_argument("--model")
     w.add_argument("--effort")
     w.add_argument("--full-access", action="store_true", help="run without approvals (dangerous by design)")

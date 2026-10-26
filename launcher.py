@@ -132,6 +132,11 @@ def find_agy():
     return from_env("REASON_CHAT_AGY") or (str(p) if WIN and p.is_file() else None) or which_exe("agy")
 
 
+def find_reason_network():
+    path = HOME / '.reason' / 'bin' / ('reason-network.exe' if WIN else 'reason-network')
+    return str(path) if path.is_file() else which_exe('reason-network')
+
+
 def run_text(args, timeout):
     try:
         p = subprocess.run(args, capture_output=True, timeout=timeout, stdin=subprocess.DEVNULL,
@@ -265,7 +270,7 @@ FULL_ACCESS = {
 FAMILIES = [  # id, label, finder, catalog, Reason `serve` agent name or None
     ("claude", "Claude Code", find_claude, claude_catalog, "claude"),
     ("codex", "Codex", find_codex, codex_catalog, "codex"),
-    ("antigravity", "Antigravity", find_agy, agy_catalog, None),
+    ("antigravity", "Gemini (Antigravity CLI)", find_agy, agy_catalog, "antigravity"),
 ]
 
 
@@ -411,6 +416,11 @@ class Catalog:
             fam["modes"]["window"] = {"ok": bool(exe and WIN), "models": True, "modelsWhy": None,
                                       "why": missing or (None if WIN else "Terminal windows open on Windows only."),
                                       "fullAccess": fid in FULL_ACCESS}
+            if fid == 'antigravity':
+                fam['modes']['worker'] = {'ok': bool(exe and find_reason_network()), 'models': True,
+                    'why': missing or (None if find_reason_network() else 'reason-network is required.'),
+                    'modelsWhy': None, 'fullAccess': False}
+                fam['note'] = fam.get('note') or 'Reviewer: choose an explicit model. PR requests post P0/P1/P2/P3 reviews using the configured Gemini GitHub App.'
             out.append(fam)
         return out
 
@@ -652,6 +662,35 @@ def spawn(args, cwd, env, flags, log=None):
         raise LaunchError("Could not start it: " + r.stderr.decode("utf-8", "replace").strip()[-300:], 500)
 
 
+def spawn_receiver(args, cwd, env, log):
+    """The Windows receiver is created by WMI, with its own file logging and no inherited turn handles."""
+    if not WIN:
+        return spawn(args, cwd, env, NOWIN, log)
+    import base64
+    import tempfile
+    spec = {'command': subprocess.list2cmdline(args), 'cwd': cwd, 'env': env}
+    fd, path = tempfile.mkstemp(suffix='.json', prefix='rnc-receiver-')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as file:
+            json.dump(spec, file)
+        ps = """[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+$ErrorActionPreference='Stop'
+$s=Get-Content -LiteralPath 'SPEC_PATH' -Raw | ConvertFrom-Json
+$e=[string[]]@($s.env.PSObject.Properties | ForEach-Object {$_.Name+'='+[string]$_.Value})
+$startup=New-CimInstance Win32_ProcessStartup -Namespace root/cimv2 -ClientOnly -Property @{ShowWindow=[uint16]0;EnvironmentVariables=$e}
+$r=Invoke-CimMethod Win32_Process -MethodName Create -Arguments @{CommandLine=[string]$s.command;CurrentDirectory=[string]$s.cwd;ProcessStartupInformation=$startup}
+if($r.ReturnValue -ne 0){throw 'WMI receiver start failed'}
+Write-Output $r.ProcessId
+""".replace('SPEC_PATH', path.replace("'", "''"))
+        result = subprocess.run(['powershell.exe', '-NoProfile', '-EncodedCommand', base64.b64encode(ps.encode('utf-16le')).decode()],
+                                capture_output=True, timeout=30, creationflags=NOWIN)
+        if result.returncode:
+            raise LaunchError('WMI receiver start failed: ' + result.stderr.decode('utf-8', 'replace')[-500:])
+        return int(result.stdout.strip())
+    finally:
+        Path(path).unlink()
+
+
 def efforts_for(fam, entry):
     """Efforts a request may name: the chosen model's; with no model, the agent's known default model's;
     with neither, only those every listed model supports, so whatever model runs accepts it."""
@@ -737,6 +776,11 @@ def list_processes():
 def parse_serve(argv):
     """{family, name, cwd, fullAccess} of a `reason network serve [claude|codex] --name N --cwd D [--full-access]`
     command line, or None."""
+    if any(a.replace('\\', '/').split('/')[-1] == 'antigravity_worker.py' for a in argv):
+        def option(key):
+            return argv[argv.index(key) + 1] if key in argv and argv.index(key) + 1 < len(argv) else None
+        name = option('--name')
+        return {'family': 'antigravity', 'name': name, 'cwd': option('--cwd'), 'fullAccess': False} if name and NAME_RE.fullmatch(name) else None
     for i in range(len(argv) - 1):
         if argv[i] == "network" and argv[i + 1] == "serve":
             rest = argv[i + 2:]
@@ -827,9 +871,9 @@ def found_workers(procs):
     argv_of = {pid: argv for pid, _, _, argv in procs}
     out = []
     for pid, _, name, argv in procs:
-        if not name.lower().startswith("reason"):
-            continue
         s = parse_serve(argv)
+        if not name.lower().startswith('reason') and (not s or s['family'] != 'antigravity'):
+            continue
         if not s or not isinstance(pid, int):
             continue
         model = effort = None
@@ -960,7 +1004,7 @@ def spawned_here():
     return out
 
 
-BADGE = {"claude": "claude-code", "codex": "codex"}  # worker family -> the agent name sessions show
+BADGE = {"claude": "claude-code", "codex": "codex", "antigravity": "gemini"}
 INNER_RE = re.compile(r"^(?P<worker>[a-z0-9][a-z0-9-]*)-(claude|codex)(-\d+)?$")
 
 
@@ -1572,6 +1616,25 @@ class Launcher:
     def start_worker(self, fam, cwd, model, effort, name, full=False):
         env = base_env()
         fid = fam["id"]
+        if fid == 'antigravity':
+            if full or not model:
+                raise LaunchError('A reviewer requires an explicit model and does not allow full access.')
+            agy, engine = find_agy(), find_reason_network()
+            if not agy or not engine:
+                raise LaunchError('Antigravity CLI and reason-network must both be installed.')
+            env.update(LABHQ_COMMIT_AGENT='gemini', LABHQ_COMMIT_MODEL=model + ('-' + effort if effort else ''))
+            for key in ('GH_TOKEN', 'GITHUB_TOKEN'):
+                env.pop(key, None)
+            model_id = model + ('-' + effort if effort else '')
+            args = [sys.executable, str(Path(__file__).with_name('antigravity_worker.py')), '--name', name,
+                    '--cwd', cwd, '--agy', agy, '--reason-network', engine, '--model', model_id]
+            log = STATE / 'logs' / (name + '.log')
+            log.parent.mkdir(parents=True, exist_ok=True)
+            pid = spawn_receiver(args, cwd, env, str(log))
+            started = started_at(pid) or ''
+            record_spawn(name, pid, started)
+            return {'name': name, 'pid': pid, 'started': started, 'family': fid, 'model': model,
+                    'effort': effort or None, 'cwd': cwd, 'log': str(log), 'fullAccess': False, 'settings': None}
         real = find_claude() if fid == "claude" else find_codex()
         dirs = [str(Path(real).parent)]  # the real CLI ahead of any .cmd shim on PATH
         extra = model_args(fid, model, effort)

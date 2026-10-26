@@ -167,7 +167,7 @@ worker 已自动接收消息，因此菜单会显示说明，收藏中的 worker
 | 启动的是 | `reason network serve`（无界面） | 在新窗口中运行智能体自己的 CLI |
 | 何时回复消息 | 立即，你不在时也会回复 | 该会话下一轮运行时 |
 | 能否直接输入 | 不能 | 能 |
-| 支持的智能体 | Claude Code、Codex | Claude Code、Codex、Antigravity（Windows） |
+| 支持的智能体 | Claude Code、Codex、Gemini 审查器（Antigravity CLI） | Claude Code、Codex、Antigravity（Windows） |
 
 为什么分两种：空闲的应用或 CLI 会话可能要到下一轮才读消息。想在本页提问的会话用 worker，想亲自操作的会话开窗口。
 
@@ -177,6 +177,12 @@ worker 已自动接收消息，因此菜单会显示说明，收藏中的 worker
 - `reason network serve` 没有模型和推理强度选项。worker 的 PATH 最前面放着一个小启动器
   （`~/.reason-network-chat/codex-shim` 或 `claude-shim`），它加上模型和推理强度参数后运行真正的 CLI。
   参数在每次运行时从 `worker-settings/` 中该 worker 的文件读取。
+
+### Gemini 审查器
+
+安装并登录 [Antigravity CLI](https://www.antigravity.google/docs/getting-started/)，选择 **Gemini (Antigravity CLI) → worker** 和明确的模型。邀请它加入群聊，发送 `@gemini-reviewer https://github.com/OWNER/REPO/pull/123`，即可按 P0/P1/P2/P3 审查所提供的文本补丁，通过配置的 Gemini GitHub App 发布审查并回传链接。`PR #123` 使用工作目录的 origin 仓库；完整链接可选择同一所有者的其他仓库。
+
+对话按仓库和 PR 持久保存，普通聊天按群聊保存。`/status` 查询状态；失败后暂停新模型调用，等待 `/retry`。成功结果在发布前保存，重试投递无需再次调用模型。目前只处理聊天提及，不监听 PR 创建或 GitHub 提及。GitHub 身份配置见[智能体设置](AGENTS.md#gemini-reviewer-setup)。在独立资料目录中以 plan 模式运行，不支持完全权限。
 
 ### 权限
 

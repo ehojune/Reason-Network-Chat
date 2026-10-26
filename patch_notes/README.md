@@ -9,6 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 |---|---|---|
+| 12:00 | [#47](https://github.com/ehojune/Reason-Network-Chat/pull/47) | Chat mentions reach a persistent Gemini reviewer; PR requests return P0–P3 findings and a review posted by the configured Gemini GitHub App. |
 | 10:41 | [#45](https://github.com/ehojune/Reason-Network-Chat/pull/45) | Edit sidebar order with drag handles or up/down buttons. Saved rankings stay within each section and survive reloads. |
 | 03:38 | [#44](https://github.com/ehojune/Reason-Network-Chat/pull/44) | Suspected encoding damage blocks sends, resends and saved relay envelopes; an offline file checker explains the external-post boundary, and every README shows the existing rabbit icon. |
 

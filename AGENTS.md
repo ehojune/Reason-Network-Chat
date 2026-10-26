@@ -84,6 +84,13 @@ usage. Why not `serve` directly:
 - **Managed.** A worker started this way is recorded (`spawned.jsonl`, `worker-records.json`), so the page can
   change, restart and stop it; one you start yourself shows as *started elsewhere* until someone adopts it.
 
+## Codex Fast mode
+
+Codex launch/configure requests accept `fast: true|false|null`: Fast / Standard / inherit CLI config. Omitted speed
+on configure preserves the worker's current choice; old records inherit. Codex live settings update the next
+invocation without interrupting a turn. Restart records retain speed. Terminal windows receive the same overrides.
+Other agent families reject explicit speed. CLI new Codex workers accept `--fast` or `--standard`.
+
 ## Gemini reviewer setup
 
 `python rnc.py worker start gemini-reviewer --folder ABS_REPO --agent antigravity --model gemini-3.8-flash --effort high`

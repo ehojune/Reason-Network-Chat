@@ -189,6 +189,8 @@ worker는 메시지를 자동으로 받으므로 즐겨찾기에서도 메뉴에
 
 ### 권한
 
+Codex는 새 세션과 워커 설정 창에서 **속도 → 기본값 따름 / Standard / Fast**를 고른다. Fast는 지원 모델을 가속하고 사용량을 더 소모한다. 속도는 모델·계정에 따라 다르다([OpenAI 설명](https://learn.chatgpt.com/docs/agent-configuration/speed)). 실시간 설정을 쓰는 워커는 다음 메시지부터 적용하고 재시작 때도 기억한다. CLI로 새 워커를 만들 때는 `--fast` 또는 `--standard`를 쓴다.
+
 새 세션 양식에서 **권한**도 고른다.
 
 | | 기본 | 전체 권한 |

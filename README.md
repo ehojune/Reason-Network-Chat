@@ -192,6 +192,8 @@ Conversations persist per repository/PR and per room for ordinary chat. `/status
 
 ### Permissions
 
+Codex sessions offer **Speed → Inherit Codex settings / Standard / Fast** when starting or editing. Fast accelerates supported models and uses more quota; speed varies by model/account ([OpenAI](https://learn.chatgpt.com/docs/agent-configuration/speed)). A worker with live settings applies speed from its next message and remembers it on restart. New CLI workers accept `--fast` or `--standard`.
+
 The form also asks for **Permissions**:
 
 | | Default | Full access |

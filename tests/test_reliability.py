@@ -79,7 +79,7 @@ launcher.Launcher.alive=staticmethod(lambda w: True)
 class Catalog:
  def family(self,f): return {'id':f,'modes':{'worker':{'ok':True,'models':True,'fullAccess':True}},'models':[],'defaultModel':None,'efforts':[],'defaultEffort':None}
 l=launcher.Launcher('reason',Catalog())
-def spawn(fam,cwd,model,effort,name,full):
+def spawn(fam,cwd,model,effort,name,full,fast=None):
  with Path(sys.argv[1],'spawned').open('a') as f: f.write(sys.argv[2]+'\\n')
  return {'name':name,'pid':int(sys.argv[2]),'started':'t'+sys.argv[2],'family':'codex','cwd':cwd,'model':None,'effort':None,'fullAccess':False}
 l.start_worker=spawn

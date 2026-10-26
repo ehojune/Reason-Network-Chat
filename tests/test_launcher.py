@@ -61,6 +61,19 @@ class CheckTest(unittest.TestCase):
         self.bad(fullAccess=1)
         self.bad(agent="antigravity", mode="window", fullAccess=True)  # this fake agy has no such flag
 
+    def test_fast_is_codex_only_and_strictly_boolean_or_inherited(self):
+        self.l.check(self.req(fast=True), set())
+        self.l.check(self.req(fast=False), set())
+        self.l.check(self.req(fast=None), set())
+        for value in ('true', 1, 0, []):
+            self.bad(fast=value)
+        self.bad(agent='claude', fast=True)
+        self.bad(agent='claude', fast=False)
+        self.assertIn('service_tier=fast', launcher.window_args('codex', '', '', False, True))
+        self.assertIn('features.fast_mode=true', launcher.model_args('codex', '', '', True))
+        self.assertIn('service_tier=default', launcher.model_args('codex', '', '', False))
+        self.assertEqual(launcher.model_args('codex', '', '', None), [])
+
     def test_catalog_whitelist(self):
         self.bad(model="gpt-6.1-sol; calc")
         self.bad(model="gpt-6.1-sol", effort="ultra")
@@ -179,6 +192,16 @@ class ShimTest(unittest.TestCase):
         self.assertEqual(self.run_shim(REASON_CHAT_CODEX_REAL=sys.executable,
                                        REASON_CHAT_CODEX_ARGS=json.dumps(SHOW + ["old"])), str(["old", "tail"]))
 
+    def test_fast_switch_reaches_the_next_cli_invocation(self):
+        settings = Path(tempfile.mkdtemp()) / 'fast.json'
+        env = dict(REASON_CHAT_SHIM_REAL=sys.executable, REASON_CHAT_SHIM_SETTINGS=str(settings))
+        for fast, tier in ((True, 'fast'), (False, 'default'), (None, None)):
+            args = launcher.model_args('codex', 'gpt-6.1-sol', 'high', fast)
+            launcher.write_settings(settings, SHOW + args)
+            received = self.run_shim(**env)
+            self.assertEqual(received, str(args + ['tail']))
+            self.assertEqual('service_tier=' in received, tier is not None)
+
     def test_arguments_per_agent(self):
         self.assertEqual(launcher.model_args("claude", "claude-opus-5-5", "high"),
                          ["--model", "claude-opus-5-5", "--effort", "high"])
@@ -203,10 +226,10 @@ class ConfigureTest(unittest.TestCase):
         self.l.halt = lambda w: None
         self.l.settle = lambda w: None
 
-        def start(fam, cwd, model, effort, name, full):
+        def start(fam, cwd, model, effort, name, full, fast=None):
             self.restarts.append((fam["id"], model, effort, full))
             return {"name": name, "pid": 1, "started": "x", "family": fam["id"], "model": model or None,
-                    "effort": effort or None, "cwd": cwd, "log": "", "fullAccess": full, "settings": None}
+                    "effort": effort or None, "cwd": cwd, "log": "", "fullAccess": full, "fast": fast, "settings": None}
         self.l.start_worker = start
         self.settings = Path(tempfile.mkdtemp()) / "c.json"
         launcher.write_settings(self.settings, [])
@@ -245,6 +268,20 @@ class ConfigureTest(unittest.TestCase):
         self.assertTrue(self.conf(busy=True, name="live-codex", fullAccess=True, force=True)["restarted"])
         self.assertEqual(self.restarts, [("codex", "", "", True)])
         self.assertTrue(self.l.workers["live-codex"]["fullAccess"])
+
+    def test_fast_changes_live_and_omission_preserves_the_current_setting(self):
+        self.assertFalse(self.conf(name='live-codex', fast=True, busy=True)['restarted'])
+        self.assertEqual(self.l.workers['live-codex']['pid'], 1)
+        self.assertTrue(self.l.records['live-codex']['fast'])
+        self.assertIn('service_tier=fast', json.loads(self.settings.read_text(encoding='utf-8'))['args'])
+        self.conf(name='live-codex', model='gpt-6.1-sol')
+        self.assertTrue(self.l.workers['live-codex']['fast'])
+        self.conf(name='live-codex', model='gpt-6.1-sol', fast=False)
+        self.assertIn('service_tier=default', json.loads(self.settings.read_text(encoding='utf-8'))['args'])
+        self.conf(name='live-codex', model='gpt-6.1-sol', fast=None)
+        self.assertNotIn('service_tier=default', json.loads(self.settings.read_text(encoding='utf-8'))['args'])
+        self.assertIsNone(self.l.records['live-codex']['fast'])
+        self.assertEqual(self.restarts, [])
 
     def test_workers_without_a_settings_file_restart(self):
         self.assertTrue(self.conf(name="old-codex", model="gpt-6.1-sol", effort="low", fullAccess=True)["restarted"])
@@ -310,10 +347,10 @@ class StuckWorkerTest(unittest.TestCase):
         self.l.halt = lambda w: self.halted.append(w["name"])
         self.l.settle = lambda w: None
 
-        def start(fam, cwd, model, effort, name, full):
+        def start(fam, cwd, model, effort, name, full, fast=None):
             self.started.append((name, model, effort, full))
             return {"name": name, "pid": 50, "started": "500", "family": fam["id"], "model": model or None,
-                    "effort": effort or None, "cwd": cwd, "log": "", "fullAccess": full, "settings": None}
+                    "effort": effort or None, "cwd": cwd, "log": "", "fullAccess": full, "fast": fast, "settings": None}
         self.l.start_worker = start
         self.l.workers = {"lead-codex": {"name": "lead-codex", "pid": 10, "started": "100", "family": "codex",
                                          "model": "gpt-6.1-sol", "effort": "high", "cwd": FOLDER, "log": "",
@@ -417,6 +454,16 @@ class StartWorkerTest(unittest.TestCase):
         self.assertNotIn("REASON_CHAT_SHIM_SETTINGS", env)
         self.assertEqual(json.loads(env["REASON_CHAT_CODEX_ARGS"]), ["-c", "model=gpt-6.1-sol"])
         self.assertFalse(launcher.Launcher.live_settings(w))
+
+    def test_new_fast_worker_saves_the_requested_tier_and_cli_settings(self):
+        self.l.settle = lambda worker: None
+        self.l.launch({'agent':'codex','mode':'worker','folder':FOLDER,'name':'fast-codex',
+                       'model':'gpt-6.1-sol','effort':'high','fast':True}, set())
+        worker = self.l.workers['fast-codex']
+        self.assertTrue(worker['fast'])
+        self.assertTrue(self.l.records['fast-codex']['fast'])
+        self.assertTrue(self.l.list()[0]['fast'])
+        self.assertIn('service_tier=fast', json.loads(Path(worker['settings']).read_text(encoding='utf-8'))['args'])
 
 
 REASON = r"C:\Users\pat\AppData\Local\Reason\bin\reason.exe"
@@ -564,10 +611,10 @@ class RecordsTest(unittest.TestCase):
         self.l = launcher.Launcher("reason", FakeCatalog())
         self.started = []
 
-        def start(fam, cwd, model, effort, name, full):
+        def start(fam, cwd, model, effort, name, full, fast=None):
             self.started.append((name, fam["id"], cwd, model, effort, full))
             return {"name": name, "pid": 7, "started": "t7", "family": fam["id"], "model": model or None,
-                    "effort": effort or None, "cwd": cwd, "log": "", "fullAccess": full, "settings": None}
+                    "effort": effort or None, "cwd": cwd, "log": "", "fullAccess": full, "fast": fast, "settings": None}
         self.l.start_worker = start
         self.l.settle = lambda w: None
 
@@ -590,6 +637,16 @@ class RecordsTest(unittest.TestCase):
         out = self.l.restart(["lead-codex"], blocked=set())
         self.assertEqual(out["results"], [{"name": "lead-codex", "ok": True}])
         self.assertEqual(self.started, [("lead-codex", "codex", FOLDER, "gpt-6.1-sol", "high", True)])
+
+    def test_fast_record_survives_a_reboot(self):
+        self.l.records['lead-codex']['fast'] = True
+        self.l.save_records()
+        self.l.workers['lead-codex']['pid'] = 1001
+        self.l.save()
+        self.l.list()
+        self.l.restart(['lead-codex'], blocked=set())
+        self.assertTrue(self.l.workers['lead-codex']['fast'])
+        self.assertTrue(self.l.records['lead-codex']['fast'])
 
     def test_restart_refuses(self):
         res = lambda names, online=set(): self.l.restart(names, online)["results"]

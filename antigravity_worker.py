@@ -51,7 +51,7 @@ def pr_target(text, default_repo=None):
     matches = set(PR_RE.findall(text))
     if default_repo:
         numbers = set(re.findall(r'(?:\bPR\s*#?\s*|풀\s*리퀘스트\s*#?\s*)(\d+)\b', text, re.I))
-        matches = {(default_repo, number) for number in numbers}
+        matches.update((default_repo, number) for number in numbers)
     if len(matches) > 1:
         raise RequestError('Name exactly one PR per review request.')
     if not matches:

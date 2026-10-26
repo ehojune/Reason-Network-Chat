@@ -9,6 +9,7 @@ Reason Network Chat에서 바뀐 것을 최신순으로 적는다. 시간은 한
 
 | 시간 | 변경 | 주요 변경사항 |
 |---|---|---|
+| 12:00 | [#47](https://github.com/ehojune/Reason-Network-Chat/pull/47) | 방에서 Gemini 상시 리뷰어를 호명한다. PR 요청은 P0~P3 지적과 Gemini GitHub App 명의의 리뷰 링크로 돌아온다. |
 | 10:41 | [#45](https://github.com/ehojune/Reason-Network-Chat/pull/45) | 분류별 순서 편집에서 손잡이 드래그나 ↑·↓로 세션을 정렬합니다. 다른 분류로는 옮길 수 없으며 새로고침 뒤에도 순서가 유지됩니다. |
 | 03:38 | [#44](https://github.com/ehojune/Reason-Network-Chat/pull/44) | 글자 손상이 의심되면 전송·재전송·저장된 중계 봉투의 재시도를 막습니다. 외부 게시 전 파일 검사와 보호 범위를 안내하고 README 세 언어판에 기존 토끼 아이콘을 넣었습니다. |
 

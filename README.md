@@ -172,7 +172,7 @@ There are two ways to run it:
 | Starts | `reason network serve` (headless) | the agent's own CLI in a new window |
 | Answers messages | at once, even while you are away | when the session takes its next turn |
 | You can type in it | no | yes |
-| Agents | Claude Code, Codex | Claude Code, Codex, Antigravity (Windows) |
+| Agents | Claude Code, Codex, Gemini reviewer (Antigravity CLI) | Claude Code, Codex, Antigravity (Windows) |
 
 Why two: an idle app or CLI session may not read a message until its next turn, so a session you want to ask
 from this page should be a worker. Open a window when you want to drive the session yourself.
@@ -183,6 +183,12 @@ from this page should be a worker. Open a window when you want to drive the sess
 - `reason network serve` has no model or effort option. A worker gets them through a small launcher put first on
   its PATH (`~/.reason-network-chat/codex-shim` or `claude-shim`): it adds the model and effort arguments and runs
   the real CLI. It reads them from the worker's file in `worker-settings/` on every run.
+
+### Gemini reviewer
+
+Install and sign in to [Antigravity CLI](https://www.antigravity.google/docs/getting-started/), then choose **Gemini (Antigravity CLI) → worker** with an explicit model. Invite it to a room and send `@gemini-reviewer https://github.com/OWNER/REPO/pull/123`. It reviews the supplied text patches with P0/P1/P2/P3 severity, posts a GitHub review through the configured Gemini App, and returns its URL. The working folder's origin supplies the repository for `PR #123`; full URLs may select another repository under the same owner.
+
+Conversations persist per repository/PR and per room for ordinary chat. `/status` reports readiness; failures pause new model calls until `/retry`. Successful results are saved before posting to avoid another model call on delivery retries. This uses chat mentions, not PR-open or GitHub-mention webhooks. See [agent setup](AGENTS.md#gemini-reviewer-setup) for GitHub identity requirements. Runs in plan mode in a private packet folder; full access is unavailable.
 
 ### Permissions
 

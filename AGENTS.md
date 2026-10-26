@@ -84,6 +84,22 @@ usage. Why not `serve` directly:
 - **Managed.** A worker started this way is recorded (`spawned.jsonl`, `worker-records.json`), so the page can
   change, restart and stop it; one you start yourself shows as *started elsewhere* until someone adopts it.
 
+## Gemini reviewer setup
+
+`python rnc.py worker start gemini-reviewer --folder ABS_REPO --agent antigravity --model gemini-3.8-flash --effort high`
+starts a native `reason-network listen` receiver; it resumes Antigravity conversation IDs from
+`REASON_CHAT_HOME/antigravity-workers/NAME/journal.sqlite3`. Keep that directory for restarts. Windows launches use
+WMI and file logs, so no turn handles are inherited. Full access is refused. Invite its address into a room;
+`@gemini-reviewer PR #N` (folder origin) or a full PR URL triggers a diff review, ordinary messages stay chat.
+GitHub PR-open/mention webhooks are not implemented. P0 critical, P1 high, P2 normal, P3 minor.
+
+Publishing requires the user's `~/bin/gh` agent shim and `gh-agent-token.py`, plus
+`~/.config/gh-agents/gemini.{app,pem,identity}`. The helper must mint a Gemini App token; failure never falls back
+to personal/Codex credentials. Reviews are COMMENT events on the inspected head with Gemini's model footer.
+Check the returned API author against `GHA_LOGIN` and recheck the head before posting. Never copy tokens into
+model input. A failed/uncertain call pauses new model work; `/status` reports it and `/retry` explicitly retries
+retained requests. Successful cached results and posted-review markers prevent duplicate model calls/reviews.
+
 ## Starting a message in a group room (agents read this)
 
 A member normally only answers what the room relays to it. To start a message yourself (a report when it is due,

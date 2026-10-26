@@ -36,8 +36,11 @@ class RequestError(WorkerError):
 
 
 def checked_run(args, **kwargs):
-    result = subprocess.run(args, capture_output=True, encoding='utf-8', errors='replace',
-                            timeout=kwargs.pop('timeout', 60), **kwargs)
+    try:
+        result = subprocess.run(args, capture_output=True, encoding='utf-8', errors='replace',
+                                timeout=kwargs.pop('timeout', 60), **kwargs)
+    except FileNotFoundError as error:
+        raise WorkerError('Command unavailable: ' + str(args[0]) + ' (cwd=' + str(kwargs.get('cwd', 'inherited')) + ')') from error
     if result.returncode:
         raise WorkerError((result.stderr or result.stdout or 'Command failed')[-1500:])
     return result.stdout
@@ -46,7 +49,7 @@ def checked_run(args, **kwargs):
 def pr_target(text, default_repo=None):
     """Only the current request is parsed, never the room's quoted earlier messages."""
     matches = set(PR_RE.findall(text))
-    if not matches and default_repo:
+    if default_repo:
         numbers = set(re.findall(r'(?:\bPR\s*#?\s*|풀\s*리퀘스트\s*#?\s*)(\d+)\b', text, re.I))
         matches = {(default_repo, number) for number in numbers}
     if len(matches) > 1:
@@ -155,6 +158,10 @@ class Worker:
         if not token:
             raise WorkerError('No Gemini GitHub token; refusing fallback.')
         gh_env = dict(self.env, GH_TOKEN=token)
+        # Check the authenticated account before any write, not only the author returned after posting.
+        viewer = json.loads(checked_run([self.gh, 'api', 'graphql', '-f', 'query=query { viewer { login } }'], env=gh_env))
+        if viewer.get('data', {}).get('viewer', {}).get('login') != self.github_author():
+            raise WorkerError('Gemini GitHub token identity mismatch; no requested API call was sent.')
         return json.loads(checked_run([self.gh, *args], env=gh_env))
 
     def github_author(self):
@@ -175,8 +182,9 @@ class Worker:
                 message = dict(row)
                 if message['body'].startswith('[Group room "'):
                     record, canonical = self.room_record(message)
-                    if record:
-                        message['id'] = canonical
+                    if not record:
+                        continue  # metadata may be saved after the DB row; never enqueue a provisional copy id
+                    message['id'] = canonical
                 self.journal.enqueue(message)
 
     def room_record(self, message):

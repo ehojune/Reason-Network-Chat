@@ -44,6 +44,8 @@ class WorkerTests(unittest.TestCase):
         with self.assertRaises(aw.RequestError):
             aw.pr_target('PR #12 and PR #13', 'p/repo')
         with self.assertRaises(aw.RequestError):
+            aw.pr_target('https://github.com/p/repo/pull/12 and PR #13', 'p/repo')
+        with self.assertRaises(aw.RequestError):
             aw.pr_target('https://github.com/somebody/else/pull/1', 'p/repo')
 
     def test_restart_holds_uncertain_call_and_retains_outbox(self):
@@ -92,13 +94,15 @@ class WorkerTests(unittest.TestCase):
 
     def test_proven_envelope_copies_share_one_job(self):
         now = int(time.time() * 1000)
-        (self.root / 'relay.json').write_text(json.dumps({'sent': {'original': {
-            'core': 'PR #11', 'speaker': 'p/lead', 'room': 'r', 'to': self.worker.address, 'at': now}}}))
         with sqlite3.connect(str(aw.NETWORK_DB)) as db:
             for mid in ('original', 'local-copy'):
                 db.execute('INSERT INTO messages VALUES (?,?,?,?,?,?)',
                            (mid, 'p/terminal', self.worker.address, '[Group room "dev"]\nPR #11', now, None))
         db.close()
+        self.worker.ingest()
+        self.assertEqual(self.worker.journal.db.execute('SELECT COUNT(*) FROM jobs').fetchone()[0], 0)
+        (self.root / 'relay.json').write_text(json.dumps({'sent': {'original': {
+            'core': 'PR #11', 'speaker': 'p/lead', 'room': 'r', 'to': self.worker.address, 'at': now}}}))
         self.worker.ingest()
         self.assertEqual([row[0] for row in self.worker.journal.db.execute('SELECT id FROM jobs')], ['original'])
 
@@ -139,6 +143,19 @@ class WorkerTests(unittest.TestCase):
         with self.assertRaises(aw.WorkerError):
             self.worker.gh_json('api', 'anything')
         self.run.assert_not_called()
+
+    def test_wrong_token_identity_is_rejected_before_requested_api_call(self):
+        self.worker.gh = 'gh'
+        self.worker.github_author = lambda: 'gemini-ehojune[bot]'
+        helper = self.root / 'bin/gh-agent-token.py'
+        helper.parent.mkdir()
+        helper.touch()
+        self.run.reset_mock()
+        self.run.side_effect = ['token', json.dumps({'data': {'viewer': {'login': 'wrong[bot]'}}})]
+        with self.assertRaises(aw.WorkerError):
+            self.worker.gh_json('api', 'repos/p/r/pulls/1/reviews', '--input', 'body.json')
+        self.assertEqual(self.run.call_count, 2)
+        self.assertIn('graphql', self.run.call_args.args[0])
 
     def test_severity_schema_and_model_footer(self):
         good = {'summary': 'result', 'findings': [{'severity': 'P1', 'title': 'Missing cancellation',

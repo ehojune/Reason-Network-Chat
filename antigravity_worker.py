@@ -232,7 +232,9 @@ class Worker:
         if previous:
             args += ['--conversation', previous[0]]
         if schema:
-            args += ['--json-schema', json.dumps(schema)]
+            # Native --json-schema took minutes even for an empty review on CLI 1.4.7.
+            # Validate the returned object locally instead of adding its separate formatting turn.
+            prompt += '\nReturn only one JSON object matching this schema, without markdown fences:\n' + json.dumps(schema)
         # Only a review packet is the model's workspace; original checkouts are never changed by this adapter.
         packet = self.root / 'packets' / hashlib.sha256(key.encode('utf-8')).hexdigest()[:24]
         packet.mkdir(parents=True, exist_ok=True)
@@ -273,6 +275,8 @@ class Worker:
         posted = self.gh_json('api', f'repos/{repo}/pulls/{number}/reviews', '--input', str(path))
         if posted['user']['login'] != author or posted['commit_id'] != head:
             raise WorkerError('Published review author or head does not match the configured Gemini identity.')
+        if (posted.get('body') or '').replace('\r\n', '\n').strip() != body.replace('\r\n', '\n').strip():
+            raise WorkerError('Published review text differs from the UTF-8 source.')
         return posted['html_url']
 
     def process(self, job):

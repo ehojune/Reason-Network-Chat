@@ -70,6 +70,9 @@ class WorkerTests(unittest.TestCase):
         args = self.run.call_args.args[0]
         self.assertEqual(args[args.index('--conversation') + 1], 'kept-id')
         self.assertNotIn('--continue', args)
+        self.worker.model_call('review', 'pr:1', aw.SCHEMA)
+        self.assertNotIn('--json-schema', self.run.call_args.args[0])
+        self.assertIn('"severity"', json.loads(self.run.call_args.kwargs['input'])['message']['content'])
         for bad in ({**good, 'response': ''}, {**good, 'status': 'ERROR'}, {**good, 'denied_actions': ['read']},
                     {**good, 'conversation_id': ''}, {**good, 'conversation_id': 'wrong-id'}):
             self.run.return_value = json.dumps({'event': 'result', 'result': bad})

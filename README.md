@@ -85,6 +85,7 @@ The included `.claude/launch.json` starts the server for you, so the chat room s
 | Leave a note without interrupting | Tick **Don't wake**. It lands in the inbox only. |
 | Start an agent | **+ New session**. See [below](#start-a-new-session). |
 | Pin a session or room to the top | Right-click it (or Shift+F10 on a focused row) → **★ Favorite**. |
+| Reorder sessions within a section | **Edit order** beside its heading → drag the ☰ handles or use ↑/↓ → **Save**. The order survives reloads; items cannot move between sections. |
 | Talk to a few sessions at once | **+ Room**. See [Rooms](#rooms). |
 | Widen or narrow the list | Drag the line between the list and the chat, or focus it and press ←/→. Double-click resets. |
 | Switch language | KO / EN / 中 at the top left. |

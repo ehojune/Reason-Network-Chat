@@ -13,8 +13,19 @@ FAV_RE = re.compile(r"^(room:r-[0-9a-f]{8}|[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1
 ADDR_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,128}$")
 MAX_FAVORITES = 100
 MAX_AUTO_WAKE = 50
+MAX_ORDERED = 1000
 SIDE_MIN, SIDE_MAX = 180, 900
 SECTIONS = {"favorites", "rooms", "now", "later", "offline", "history"}
+
+
+def valid_sidebar_order(value):
+    return isinstance(value, dict) and all(
+        key in SECTIONS and isinstance(items, list) and len(items) <= MAX_ORDERED
+        and all(isinstance(item, str) and FAV_RE.fullmatch(item) for item in items)
+        and len(set(items)) == len(items)
+        for key, items in value.items())
+
+
 CHECKS = {
     "hideOffline": lambda v: isinstance(v, bool),
     # session addresses and room keys, pinned to the top of the list in this order
@@ -27,6 +38,8 @@ CHECKS = {
     and all(isinstance(x, str) and ADDR_RE.match(x) for x in v) and len(set(v)) == len(v),
     "collapsedSections": lambda v: isinstance(v, list) and len(v) <= len(SECTIONS)
     and all(isinstance(x, str) and x in SECTIONS for x in v) and len(set(v)) == len(v),
+    # Ranking only: section membership is always computed from live state/favorites.
+    "sidebarOrder": valid_sidebar_order,
 }
 DEFAULTS = {"hideOffline": True, "favorites": [], "sideWidth": 260, "autoWake": []}
 

@@ -126,7 +126,8 @@ const side = vm.createContext({assert, console});
 vm.runInContext(String.raw`
 let S, sel='';
 const nodes={};
-const $=s => nodes[s] ||= {innerHTML:'',dataset:{},style:{},hidden:false,focus(){},getBoundingClientRect(){return {left:0,bottom:0};},offsetWidth:200,offsetHeight:200};
+const $=s => nodes[s] ||= {innerHTML:'',dataset:{},style:{},hidden:false,focus(){},querySelectorAll(){return [];},
+  showModal(){this.open=true;},close(){this.open=false;},getBoundingClientRect(){return {left:0,bottom:0};},offsetWidth:200,offsetHeight:200};
 const document={activeElement:null}, innerWidth=1200, innerHeight=800;
 const esc=v=>String(v ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const t=k=>k, short=a=>a.split('/').pop(), st=s=>s;
@@ -139,7 +140,7 @@ const reachLabel=s=>reach(s), NOW=['now'], LATER=['pull'];
 `, side);
 vm.runInContext(part('let sideSelection', '// Preferences live'), side);
 vm.runInContext(part('function pref(key)', 'async function setPref'), side);
-vm.runInContext(part('function renderSide()', 'function renderTo()'), side);
+vm.runInContext(part('// Orders rank existing rows only.', 'function renderTo()'), side);
 vm.runInContext(part('let ctxKey = null;', '$("#list").addEventListener("contextmenu"'), side);
 vm.runInContext(String.raw`
 S={messages:[],team:'test',me:'p/terminal',launched:[],foreignWorkers:[],rooms:[{id:'r',name:'room',members:[]}],
@@ -190,3 +191,44 @@ assert.equal(nodes['#ctxAuto'].hidden,true);
 assert.equal(nodes['#ctxAdopt'].hidden,false);
 console.log('Sidebar regression checks passed');
 `, side);
+vm.runInContext(String.raw`
+(async () => {
+  sel=''; S.prefs={favorites:['p/fav'],collapsedSections:[],sidebarOrder:{now:['p/off','p/b','p/a'],later:['p/c']}};
+  S.sessions=[{address:'p/a',name:'a',status:'busy',live:true}, {address:'p/b',name:'b',status:'idle',live:true},
+    {address:'p/c',name:'c',status:'idle',live:true,tier:'pull'}, {address:'p/off',name:'off',status:'offline',live:true},
+    {address:'p/fav',name:'fav',status:'idle',live:true}];
+  renderSide();
+  assert.equal(sidebarSections.get('now').keys.join(','),'p/b,p/a'); // saved order beats busy-first
+  assert.equal(sidebarSections.get('offline').keys.join(','),'p/off'); // cannot move between sections
+  assert.equal(sidebarSections.get('favorites').keys.join(','),'p/fav');
+  S.sessions.push({address:'p/new',name:'new',status:'idle',live:true}); renderSide();
+  assert.equal(sidebarSections.get('now').keys.join(','),'p/b,p/a,p/new'); // new rows append
+  openOrder('now');
+  assert.equal(nodes['#orderDlg'].open,true);
+  assert.equal(moveOrder('p/c','p/b'),false); // another section's key cannot be dragged in
+  assert.equal(moveOrder('p/b','p/off'),false);
+  assert.equal(moveOrder('p/b','p/new'),true);
+  assert.equal(orderDraft.keys.join(','),'p/a,p/new,p/b');
+  assert.equal(S.prefs.sidebarOrder.now.join(','),'p/off,p/b,p/a'); // editing changes nothing until Save
+  assert.ok(nodes['#orderList'].innerHTML.includes('draggable="true"'));
+  assert.ok(nodes['#orderList'].innerHTML.includes('aria-label="orderUp: a" disabled'));
+  S.sessions[0].status='offline'; // state may change while the modal stays open
+  S.sessions.push({address:'p/arrived',name:'arrived',status:'idle',live:true});
+  let saved;
+  globalThis.setPref=async (key,value)=>{saved={key,value}; S.prefs[key]=value; renderSide(); return true;};
+  await saveOrder();
+  assert.equal(saved.key,'sidebarOrder');
+  assert.equal(saved.value.now.join(','),'p/new,p/b,p/arrived');
+  assert.equal(saved.value.later.join(','),'p/c'); // other section's preference preserved
+  assert.equal(S.prefs.favorites.join(','),'p/fav'); // no favoriting/unfavoriting side effect
+  assert.equal(sidebarSections.get('offline').keys.includes('p/a'),true);
+  assert.equal(nodes['#orderDlg'].open,false);
+  openOrder('now');
+  globalThis.setPref=async ()=>false;
+  await saveOrder(); assert.equal(nodes['#orderDlg'].open,true); // rejected save stays reviewable
+  S.prefs.sidebarOrder.favorites=['room:r','p/fav'];
+  S.prefs.favorites=['p/fav','room:r']; renderSide();
+  assert.equal(sidebarSections.get('favorites').keys.join(','),'room:r,p/fav');
+  console.log('Section order regression checks passed');
+})()
+`, side).catch(error => { console.error(error); process.exitCode=1; });

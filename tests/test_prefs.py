@@ -39,6 +39,21 @@ class PrefsTest(unittest.TestCase):
             with self.assertRaises(prefs.PrefError):
                 p.set("sideWidth", bad)
 
+    def test_sidebar_order_validation_and_persistence(self):
+        home = tempfile.mkdtemp()
+        p = prefs.Prefs(home)
+        order = {"now": ["pat/b", "pat/a"], "favorites": ["room:r-0123abcd", "pat/a"], "offline": []}
+        self.assertEqual(p.set("sidebarOrder", order)["sidebarOrder"], order)
+        self.assertEqual(prefs.Prefs(home).get()["sidebarOrder"], order)
+        self.assertEqual(p.get()["favorites"], [])  # rankings never grant membership
+        for bad in ([], None, {"new-group": []}, {"now": "pat/a"}, {"now": ["pat/a", "pat/a"]},
+                    {"now": ["<script>"]}, {"now": [5]}, {"rooms": ["room:bad"]},
+                    {"now": [f"pat/s{i}" for i in range(prefs.MAX_ORDERED + 1)]}):
+            with self.subTest(value=bad):
+                with self.assertRaises(prefs.PrefError):
+                    p.set("sidebarOrder", bad)
+        self.assertEqual(p.get()["sidebarOrder"], order)
+
     def test_auto_wake(self):
         p = prefs.Prefs(tempfile.mkdtemp())
         self.assertEqual(p.get()["autoWake"], [])

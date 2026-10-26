@@ -641,6 +641,9 @@ Object.assign(T.zh, {viewTrouble: "查看", troubleTitle: "没有得到回答的
   troubleEmpty: "当前视图没有剩余项目。", goOriginal: "跳转到原文", missingOriginal: "已加载的记录中没有原文。", switchedAll: "已在全部消息中显示原文。",
   ack: "✓ 已确认（无回答）", failureDetail: "失败详情", dismissOne: "搁置", deliveries: "转发记录"});
 const LOCALE = {ko: "ko-KR", en: "en-US", zh: "zh-CN"};
+Object.assign(T.ko, {logOnlyReply: "실제 답변 없이 실행 로그만 도착했습니다. 다른 멤버에게 중계하지 않습니다.", executionLog: "실행 로그 보기"});
+Object.assign(T.en, {logOnlyReply: "Only execution logs arrived, without an answer. They are not relayed to other members.", executionLog: "View execution logs"});
+Object.assign(T.zh, {logOnlyReply: "只收到了运行日志，没有实际回答。不会转发给其他成员。", executionLog: "查看运行日志"});
 const store = {get: k => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
   del: k => { try { localStorage.removeItem(k); } catch {} }};
@@ -1004,7 +1007,7 @@ function memberMentions(room, body, exclude) {
   return found;
 }
 function forwardRooms(m) {
-  if (m.rel || m.sender === S.me || m.to.length !== 1 || m.to[0] !== S.me) return [];
+  if (m.rel || m.sender === S.me || m.to.length !== 1 || m.to[0] !== S.me || isFailure(m.body)) return [];
   const parent = S.messages.find(x => x.id === m.reply_to);
   if (m.reply_to && (S.relays[m.reply_to] || parent && relayOf(parent))) return [];  // including proven envelope copies
   return groupRoomsOf(m.sender).filter(r => memberMentions(r, m.body, m.sender).length);
@@ -1277,9 +1280,11 @@ function renderTl() {
     if (d !== day) { h += `<div class="day">${esc(d)}</div>`; day = d; }
     // A worker's reply saying it could not run the message: a notice, not an answer. Only a reply from someone
     // else: your own text quoting such an error stays a bubble.
-    if (!m.rel && m.reply_to && m.sender !== S.me && isFailure(m.body)) {
-      h += `<div class="sysErr" role="note" data-ids="${messageIds(m)}">⚠ ${esc(short(m.sender))} · ${fmtT(m.sent_at)} · ${esc(t("wFailed"))}<div class="errText">${
-        esc(m.body.replace(/^The [A-Za-z ]+ worker failed: /, "").slice(0, 400))}</div>${deliveryHtml(m.deliveries)}</div>`;
+    if ((!m.rel && m.reply_to && m.sender !== S.me || m.rel && m.rel.hop > 0) && isFailure(m.body)) {
+      const logOnly = isLogOnly(m.body), speaker = m.rel ? m.rel.speaker : m.sender;
+      const detail = logOnly ? `<details><summary>${esc(t("executionLog"))}</summary><pre class="troubleText">${esc(m.body)}</pre></details>`
+        : `<div class="errText">${esc(m.body.replace(/^The [A-Za-z ]+ worker failed: /, "").slice(0, 400))}</div>`;
+      h += `<div class="sysErr" role="note" data-ids="${messageIds(m)}">⚠ ${esc(short(speaker))} · ${fmtT(m.sent_at)} · ${esc(t(logOnly ? "logOnlyReply" : "wFailed"))}${detail}${deliveryHtml(m.deliveries)}</div>`;
       continue;
     }
     if (isAck(m)) { h += ackHtml([m.reply_to]); continue; }
@@ -1332,7 +1337,12 @@ function fwdHtml(m) {
 
 // A worker's failure (`serve` could not run the turn) is not an answer; = relay.FAILURE_RE.
 const FAILURE_RE = /^(The [A-Za-z][A-Za-z ]{0,30} worker failed: |Codex failed: |(codex|grok) exited with -?\d+\s*$|You've hit your (session|usage) limit\b)/;
-const isFailure = b => FAILURE_RE.test(String(b || "").trimStart());
+const CODEX_LOG_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\s+(?:TRACE|DEBUG|INFO|WARN|ERROR)\s+codex_[A-Za-z0-9_:]+:.*$/;
+function isLogOnly(body) {
+  const lines = String(body || '').replace(/\x1b\[[0-9;]*m/g, '').replace(/\r\n?/g, '\n').split('\n').map(x => x.trim()).filter(Boolean);
+  return lines.length > 0 && lines.every(line => line === 'Reading additional input from stdin...' || CODEX_LOG_RE.test(line));
+}
+const isFailure = b => FAILURE_RE.test(String(b || "").trimStart()) || isLogOnly(b);
 const NOANS_MS = 10 * 60 * 1000, RECENT_MS = 24 * 3600 * 1000;
 // Your messages to a worker (`serve`, tier "turn") from the last day that came to nothing: only failures came back
 // ("failed"), or it took the message (read) and nothing came back for NOANS_MS while it is not working ("noanswer").

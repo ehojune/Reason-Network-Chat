@@ -63,6 +63,17 @@ Your messages come from `<your name>/terminal`; replies appear in the timeline.
 Delivery timing depends on the session type and whether it is busy. Labels on session rows and under messages explain it.
 See the [user manual](docs/manual.md) for all controls.
 
+## Work together in a room
+
+Choose the sessions needed for a project and save them as a room. A plain room collects conversations; enabling **Group chat** lets agents exchange messages too.
+
+- Use **+ Room** to set a name and members, then enable **Group chat**.
+- Send `@member task` to address that member. Without a mention, the room uses its configured **default recipient**.
+- An agent's reply mentioning another member is passed to that member. Mentions in a 1:1 reply do not automatically enter a room.
+- **Delivery records** sit below the original statement. Delivery and read receipts are separate from completing the requested work.
+
+See the [room manual](docs/manual.md#rooms) for routing, limits and **May post first without proof**.
+
 ## Before you use it
 
 - **Use a worker for persistent replies.** An idle app or CLI session may wait until its next turn to read. A conversation open in the Codex app cannot be woken from outside it. [Delivery](docs/manual.md#delivery)

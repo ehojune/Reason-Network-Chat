@@ -115,6 +115,19 @@ class WorkerTests(unittest.TestCase):
         with self.assertRaises(aw.RequestError):
             self.worker.request(message)
 
+    def test_reader_uses_writer_lock_and_only_one_snapshot_per_ingest(self):
+        with mock.patch('storage.file_lock') as lock:
+            self.worker.relay_records()
+        lock.assert_called_once_with(self.root / 'relay.state.lock')
+        with sqlite3.connect(str(aw.NETWORK_DB)) as db:
+            for mid in ('first', 'second'):
+                db.execute('INSERT INTO messages VALUES (?,?,?,?,?,?)',
+                           (mid, 'p/terminal', self.worker.address, '[Group room "dev"]\n/status', int(time.time() * 1000), None))
+        db.close()
+        with mock.patch.object(self.worker, 'relay_records', return_value={}) as read:
+            self.worker.ingest()
+        read.assert_called_once()
+
     def test_posting_reuses_marker_and_stops_when_head_changed(self):
         self.worker.github_author = lambda: 'gemini-ehojune[bot]'
         body = '<!-- reason-gemini-review:one -->\nbody'

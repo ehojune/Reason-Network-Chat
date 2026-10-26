@@ -5,6 +5,32 @@ const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, '..', 'index.html'), 'utf8');
 new vm.Script(source.split('<script>')[1].split('</script>')[0]);
 const part = (from, to) => source.slice(source.indexOf(from), source.indexOf(to));
+const speed = vm.createContext({assert});
+vm.runInContext(`
+const fields = {'#lfSpeedRow':{}, '#lfSpeed':{}, '#lfModel':{value:'m'}, '#lfEffort':{value:'high'},
+  '#lfGo':{}, '#dlg':{close(){this.closed=true}}};
+const $ = id => fields[id], t = key => key, esc = value => value;
+let LF = {agent:'codex',fast:true,full:false};
+const posted = [], hint=()=>{}, say=()=>{}, poll=()=>{};
+const post = async (path, body) => { posted.push({path,body}); return {restarted:false}; };
+`, speed);
+vm.runInContext(part('function renderSpeed()', 'function renderPerms()'), speed);
+vm.runInContext(part('async function configureWorker(force)', '// ---- rooms:'), speed);
+vm.runInContext(`
+(async () => {
+  renderSpeed(); assert.equal(fields['#lfSpeed'].value,'fast');
+  LF.fast=false; renderSpeed(); assert.equal(fields['#lfSpeed'].value,'standard');
+  LF.fast=null; renderSpeed(); assert.equal(fields['#lfSpeed'].value,'');
+  LF.agent='claude'; LF.fast=true; renderSpeed();
+  assert.equal(fields['#lfSpeedRow'].hidden,true); assert.equal(LF.fast,null);
+  LF.agent='codex'; LF.fast=true;
+  LF.w={name:'c',model:'m',effort:'high',fullAccess:false,liveSettings:true,fast:null};
+  await configureWorker(false);
+  assert.equal(posted.length,1); assert.equal(posted[0].path,'/api/workers/configure');
+  assert.equal(posted[0].body.fast,true); assert.equal(posted[0].body.force,false);
+  assert.equal(fields['#dlg'].closed,true);
+})().catch(error=>{throw error});
+`, speed);
 const nodes = {};
 const routingCases = JSON.parse(fs.readFileSync(require('node:path').join(__dirname, 'routing_cases.json'), 'utf8'));
 const c = vm.createContext({assert, console, setTimeout: () => {}, nodes, routingCases});

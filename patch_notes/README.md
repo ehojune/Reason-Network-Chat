@@ -9,6 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 |---|---|---|
+| 14:50 | [#49](https://github.com/ehojune/Reason-Network-Chat/pull/49) | Codex session and worker dialogs offer inherited speed, Standard or Fast; live changes apply on the next message and survive restarts. |
 | 12:51 | [#48](https://github.com/ehojune/Reason-Network-Chat/pull/48) | Gemini reads each relay snapshot under the writer's lock, so Windows can save new room deliveries while the receiver listens. |
 | 12:00 | [#47](https://github.com/ehojune/Reason-Network-Chat/pull/47) | Chat mentions reach a persistent Gemini reviewer; PR requests return P0–P3 findings and a review posted by the configured Gemini GitHub App. |
 | 10:41 | [#45](https://github.com/ehojune/Reason-Network-Chat/pull/45) | Edit sidebar order with drag handles or up/down buttons. Saved rankings stay within each section and survive reloads. |

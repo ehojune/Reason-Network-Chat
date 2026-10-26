@@ -313,11 +313,25 @@ def _shim_zip():
 SHIM_ZIP = _shim_zip()  # the end of the Windows shim .exe
 
 
-def model_args(fid, model, effort):
+def check_fast(fid, fast):
+    if fast is not None and type(fast) is not bool:
+        raise LaunchError('fast must be true, false or null (inherit Codex settings).')
+    if fid != 'codex' and fast is not None:
+        raise LaunchError('Fast mode is available for Codex only.')
+    return fast
+
+
+def model_args(fid, model, effort, fast=None):
     """CLI arguments that pick a model and effort for one agent family."""
+    check_fast(fid, fast)
     if fid == "claude":
         return (["--model", model] if model else []) + (["--effort", effort] if effort else [])
-    return (["-c", f"model={model}"] if model else []) + (["-c", f"model_reasoning_effort={effort}"] if effort else [])
+    args = (["-c", f"model={model}"] if model else []) + (["-c", f"model_reasoning_effort={effort}"] if effort else [])
+    if fast is not None:
+        args += ['-c', 'service_tier=' + ('fast' if fast else 'default')]
+    if fast:
+        args += ['-c', 'features.fast_mode=true']
+    return args
 
 
 def write_settings(path, args):
@@ -1157,7 +1171,7 @@ class Launcher:
         """Keep a worker's settings for a later restart (call with self.lock held)."""
         self.records[w["name"]] = {"name": w["name"], "family": w["family"], "cwd": w.get("cwd"),
                                    "model": w.get("model"), "effort": w.get("effort"),
-                                   "fullAccess": bool(w.get("fullAccess")), "started": int(time.time() * 1000)}
+                                   "fullAccess": bool(w.get("fullAccess")), "fast": w.get("fast"), "started": int(time.time() * 1000)}
         if save:
             self.save_records()
 
@@ -1226,7 +1240,8 @@ class Launcher:
                         raise LaunchError("Its folder no longer exists.")
                     if len({n for n, x in self.workers.items() if self.alive(x)} | self.restarting) >= MAX_WORKERS:
                         raise LaunchError(f"Already {MAX_WORKERS} workers started here; stop one first.", 429)
-                    nw = self.start_worker(fam, rec["cwd"], model, effort, name, bool(rec.get("fullAccess")))
+                    fast = check_fast(fam['id'], rec.get('fast'))
+                    nw = self.start_worker(fam, rec["cwd"], model, effort, name, bool(rec.get("fullAccess")), fast)
                     self.workers[name] = nw
                     self.stopped.discard(name)
                     self.save()
@@ -1266,10 +1281,11 @@ class Launcher:
                 log = STATE / "logs" / f"{f['name']}.log"
                 w = {"name": f["name"], "pid": f["pid"], "started": started, "family": f["family"],
                      "model": f["model"], "effort": f["effort"], "cwd": f["cwd"], "log": str(log),
-                     "fullAccess": f["fullAccess"], "settings": None, "adopted": True}
+                     "fullAccess": f["fullAccess"], "fast": None, "settings": None, "adopted": True}
                 # This page's own only on proof about this very process: its pid and creation time were recorded
                 # at start, or it has written its log here since it started. A log alone outlives its worker.
                 if ((f["pid"], started) in ours or wrote_our_log(f["name"], started)) and f["name"] not in self.workers:
+                    w['fast'] = self.records.get(f['name'], {}).get('fast')
                     self.workers[f["name"]] = w
                     self.stopped.discard(f["name"])
                     self.save()
@@ -1306,7 +1322,7 @@ class Launcher:
 
     def list_foreign(self):
         with self.lock:
-            return [{k: w.get(k) for k in ("name", "family", "model", "effort", "cwd", "fullAccess")}
+            return [{k: w.get(k) for k in ("name", "family", "model", "effort", "cwd", "fullAccess", "fast")}
                     for w in self.foreign.values() if self.alive(w)]
 
     @staticmethod
@@ -1321,7 +1337,7 @@ class Launcher:
             if gone:
                 self.save()
             return [dict({k: w.get(k) for k in ("name", "family", "model", "effort", "cwd")},
-                         fullAccess=bool(w.get("fullAccess")), liveSettings=self.live_settings(w),
+                         fullAccess=bool(w.get("fullAccess")), fast=w.get('fast'), liveSettings=self.live_settings(w),
                          adopted=bool(w.get("adopted")))
                     for w in self.workers.values()]
 
@@ -1434,6 +1450,7 @@ class Launcher:
             if not cwd or not Path(cwd).is_dir():
                 raise LaunchError("Its folder is unknown, so it cannot be restarted from here.", 409)
             full = bool(rec.get("fullAccess", w.get("fullAccess")))
+            fast = check_fast(fam['id'], rec.get('fast', w.get('fast')))
             self.restarting.add(name)
         try:
             procs = list_processes()
@@ -1444,7 +1461,7 @@ class Launcher:
                     kill_pid(pid)
             time.sleep(1)  # let the network take in "stopped" before the same name comes back
             with self.lock:
-                nw = self.start_worker(fam, cwd, model, effort, name, full)
+                nw = self.start_worker(fam, cwd, model, effort, name, full, fast)
                 self.workers[name] = nw
                 self.stopped.discard(name)
                 self.save()
@@ -1468,6 +1485,7 @@ class Launcher:
         fam = self.catalog.family(fid)
         if not fam:
             raise LaunchError("Unknown agent.")
+        check_fast(fid, req.get('fast'))
         m = fam["modes"].get(mode)
         if not m:
             raise LaunchError("mode must be worker or window.")
@@ -1520,10 +1538,10 @@ class Launcher:
         with self.lock:
             fam, mode, cwd, entry, model, effort, name, full = self.check(req, live_names)
             if mode == "window":
-                return self.open_window(fam, cwd, model, effort, full)
+                return self.open_window(fam, cwd, model, effort, full, req.get('fast'))
             if len({n for n, w in self.workers.items() if self.alive(w)} | self.restarting) >= MAX_WORKERS:
                 raise LaunchError(f"Already {MAX_WORKERS} workers started here; stop one first.", 429)
-            w = self.start_worker(fam, cwd, model, effort, name, full)
+            w = self.start_worker(fam, cwd, model, effort, name, full, req.get('fast'))
             self.workers[name] = w
             self.save()
             self.remember(w)
@@ -1578,20 +1596,21 @@ class Launcher:
             if not fam:
                 raise LaunchError("Unknown agent.")
             m = fam["modes"]["worker"]
+            fast = check_fast(w['family'], req.get('fast', w.get('fast')))
             if full and not m.get("fullAccess"):
                 raise LaunchError("This agent cannot run with full access here.")
             entry, model, effort = self.check_model(fam, m, model, effort)
             if not w.get("cwd") or not Path(w["cwd"]).is_dir():
                 raise LaunchError("Its folder is unknown, so it cannot be restarted from here. Restart it yourself.", 409)
             same_perm = bool(w.get("fullAccess")) == full
-            if same_perm and (w.get("model") or "") == model and (w.get("effort") or "") == effort:
+            if same_perm and (w.get("model") or "") == model and (w.get("effort") or "") == effort and w.get('fast') == fast:
                 return {"ok": True, "restarted": False, "unchanged": True}
             if same_perm and self.live_settings(w):
                 try:
-                    write_settings(Path(w["settings"]), model_args(w["family"], model, effort))
+                    write_settings(Path(w["settings"]), model_args(w["family"], model, effort, fast))
                 except OSError as e:
                     raise LaunchError(f"Could not save the worker's settings: {e}", 500)
-                w.update(model=model or None, effort=effort or None)
+                w.update(model=model or None, effort=effort or None, fast=fast)
                 self.save()
                 self.remember(w)  # a later restart (after a reboot) uses these settings
                 return {"ok": True, "restarted": False}
@@ -1604,7 +1623,7 @@ class Launcher:
             self.halt(w)
             time.sleep(1)  # let the network take in "stopped" before the same name comes back
             with self.lock:
-                nw = self.start_worker(fam, w["cwd"], model, effort, name, full)
+                nw = self.start_worker(fam, w["cwd"], model, effort, name, full, fast)
                 self.workers[name] = nw
                 self.save()
                 self.remember(nw)
@@ -1613,9 +1632,10 @@ class Launcher:
         self.settle(nw)
         return {"ok": True, "restarted": True}
 
-    def start_worker(self, fam, cwd, model, effort, name, full=False):
+    def start_worker(self, fam, cwd, model, effort, name, full=False, fast=None):
         env = base_env()
         fid = fam["id"]
+        check_fast(fid, fast)
         if fid == 'antigravity':
             if full or not model:
                 raise LaunchError('A reviewer requires an explicit model and does not allow full access.')
@@ -1637,7 +1657,7 @@ class Launcher:
                     'effort': effort or None, 'cwd': cwd, 'log': str(log), 'fullAccess': False, 'settings': None}
         real = find_claude() if fid == "claude" else find_codex()
         dirs = [str(Path(real).parent)]  # the real CLI ahead of any .cmd shim on PATH
-        extra = model_args(fid, model, effort)
+        extra = model_args(fid, model, effort, fast)
         settings = None
         shim = shim_dir(fid)
         if shim:  # always, so a Codex worker can change model later without a restart
@@ -1660,10 +1680,10 @@ class Launcher:
         record_spawn(name, pid, started)
         return {"name": name, "pid": pid, "started": started, "family": fid,
                 "model": model or None, "effort": effort or None, "cwd": cwd, "log": str(log_path),
-                "fullAccess": full, "settings": str(settings) if settings else None}
+                "fullAccess": full, "fast": fast, "settings": str(settings) if settings else None}
 
-    def open_window(self, fam, cwd, model, effort, full=False):
-        spawn(window_args(fam["id"], model, effort, full), cwd, base_env(), NEW_CONSOLE)
+    def open_window(self, fam, cwd, model, effort, full=False, fast=None):
+        spawn(window_args(fam["id"], model, effort, full, fast), cwd, base_env(), NEW_CONSOLE)
         return {"ok": True, "mode": "window"}
 
 
@@ -1671,13 +1691,13 @@ def serve_args(reason, fid, name, cwd, full):
     return [reason, "network", "serve", fid, "--name", name, "--cwd", cwd] + (["--full-access"] if full else [])
 
 
-def window_args(fid, model, effort, full):
+def window_args(fid, model, effort, full, fast=None):
     """The command line for an agent in a terminal window."""
+    check_fast(fid, fast)
     if fid == "claude":
         args = [find_claude()] + (["--model", model] if model else []) + (["--effort", effort] if effort else [])
     elif fid == "codex":
-        args = [find_codex()] + (["-m", model] if model else []) + \
-               (["-c", f"model_reasoning_effort={effort}"] if effort else [])
+        args = [find_codex()] + model_args(fid, model, effort, fast)
     else:
         mid = f"{model}-{effort}" if model and effort else model
         args = [find_agy()] + (["--model", mid] if mid else [])

@@ -196,6 +196,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .35); }
 #pdlgNote { font-size: 12px; color: var(--muted); white-space: pre-wrap; }
 dialog h2 { font-size: 16px; margin: 0 0 4px; }
 .fld { display: flex; flex-direction: column; gap: 4px; margin: 12px 0 0; font-size: 12px; color: var(--muted); }
+#lfSpeedRow[hidden] { display: none; }
 .fld input, .fld select { font-size: 14px; padding: 6px 8px; max-width: none; }
 .fld select:disabled, .fld input:disabled { opacity: .55; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -289,6 +290,8 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
       <label class="fld"><span data-t="model"></span><select id="lfModel"></select></label>
       <label class="fld"><span data-t="effort"></span><select id="lfEffort"></select></label>
     </div>
+    <label class="fld" id="lfSpeedRow" hidden><span data-t="speed"></span><select id="lfSpeed"></select>
+      <small class="hint" data-t="fastHint"></small></label>
     <div class="fld"><span data-t="perm"></span><div class="chips" id="lfPerms"></div></div>
     <p class="hint" id="lfPermHint"></p>
     <label class="fld" id="lfNameRow"><span data-t="name"></span>
@@ -365,7 +368,9 @@ const T = {
     relaunchAsk: "다음 워커를 마지막 설정으로 다시 시작할까요?\n{list}", restartDone: "다시 시작: {ok}개", restartBad: " · 실패: ",
     defModel: "기본 모델",
     adoptAsk: "{name}은(는) 이 페이지가 띄우지 않은 워커입니다. 이 페이지에서 설정을 바꾸고 멈출 수 있게 할까요? 설정을 바꾸면 이 페이지가 같은 이름으로 다시 시작합니다.",
-    confHintCodex: "Codex 워커: 모델·추론 강도는 다시 시작하지 않고 다음 메시지부터 적용됩니다. 권한을 바꾸면 다시 시작합니다.",
+    speed: "속도", speedDefault: "기본값 따름 (Codex 설정)",
+    fastHint: "Fast는 지원 모델의 응답을 가속하며 사용량을 더 빨리 소모합니다. 속도와 이용 가능 여부는 모델·계정에 따라 다릅니다.",
+    confHintCodex: "Codex 워커: 모델·추론 강도·속도는 다시 시작하지 않고 다음 메시지부터 적용됩니다. 권한을 바꾸면 다시 시작합니다.",
     confHintClaude: "Claude 워커: 바꾸면 같은 이름으로 다시 시작합니다. 보낸 사람별로 이어 오던 대화 맥락이 사라집니다.",
     confHintOld: "이 워커는 예전 방식으로 시작돼, 바꾸면 같은 이름으로 다시 시작합니다.",
     restartAsk: "새 설정은 워커를 같은 이름으로 다시 시작해야 적용됩니다. 계속할까요?",
@@ -459,7 +464,9 @@ const T = {
     relaunchAsk: "Start these workers again with their last settings?\n{list}", restartDone: "Started again: {ok}", restartBad: " · failed: ",
     defModel: "default model",
     adoptAsk: "{name} is a worker this page did not start. Manage it here, so you can change its settings and stop it? Changing a setting restarts it from this page under the same name.",
-    confHintCodex: "Codex worker: a new model or effort applies from its next message, without a restart. Changing permissions restarts it.",
+    speed: "Speed", speedDefault: "Inherit Codex settings",
+    fastHint: "Fast accelerates supported models and consumes usage faster. Speed and availability depend on the model and account.",
+    confHintCodex: "Codex worker: model, effort and speed apply from its next message without a restart. Changing permissions restarts it.",
     confHintClaude: "Claude worker: a change restarts it under the same name, and the conversations it kept per sender are lost.",
     confHintOld: "This worker was started the old way, so a change restarts it under the same name.",
     restartAsk: "The new settings take effect when the worker restarts under the same name. Continue?",
@@ -555,7 +562,9 @@ const T = {
     relaunchAsk: "用上次的设置重新启动以下 worker 吗？\n{list}", restartDone: "已重新启动：{ok} 个", restartBad: " · 失败：",
     defModel: "默认模型",
     adoptAsk: "{name} 不是本页面启动的 worker。要在这里管理它（更改设置、停止）吗？更改设置时，本页面会以同一名称重启它。",
-    confHintCodex: "Codex worker：新的模型或推理强度从下一条消息起生效，无需重启。更改权限会重启它。",
+    speed: "速度", speedDefault: "继承 Codex 设置",
+    fastHint: "Fast 加速受支持模型并消耗更多用量。速度与可用性取决于模型和账户。",
+    confHintCodex: "Codex worker：模型、推理强度和速度从下一条消息起生效，无需重启。更改权限会重启它。",
     confHintClaude: "Claude worker：任何更改都会以同一名称重启，并丢失它按发送者保留的对话上下文。",
     confHintOld: "这个 worker 是用旧方式启动的，更改会以同一名称重启它。",
     restartAsk: "新设置需要以同一名称重启 worker 才会生效。继续吗？",
@@ -647,7 +656,7 @@ Object.assign(T.en, {orderEdit: "Edit order", orderHelp: "Drag a handle or use �
 Object.assign(T.zh, {orderEdit: "调整顺序", orderHelp: "拖动手柄或使用 ↑/↓。仅可在此分类内移动。",
   orderUp: "上移", orderDown: "下移", orderPosition: "{name}：第 {n} 位"});
 
-const API = 20;  // must match API in server.py
+const API = 21;  // must match API in server.py
 const BOOT = document.querySelector('meta[name="reason-chat-boot"]').content;  // which server start served this page
 // Reload to pick up a restarted or newer server, at most once a minute so a broken setup cannot loop.
 function reloadOnce() {
@@ -865,6 +874,7 @@ function renderSide() {
     const lw = here && S.launched.find(w => `${person()}/${w.name}` === s.address);  // a worker started here
     // A worker taken back from a running process may not show its model: say so rather than "default".
     const conf = lw ? `<span class="tag wk">${esc([lw.model || t(lw.adopted ? "modelUnknown" : "default"), lw.effort].filter(Boolean).join(" · "))}</span>`
+      + (lw.fast === true ? `<span class="tag wk">Fast</span>` : "")
       + (lw.fullAccess ? `<span class="tag fa">${esc(t("permFull"))}</span>` : "") : "";
     return `<div class="ses ${s.live ? "" : "gone"} ${sel === s.address ? "sel" : ""}" tabindex="0" data-a="${esc(s.address)}"
       title="${esc(s.address)} · ${esc(st(s.status))}${s.tier ? " · " + esc(s.tier) : ""}${here ? " · " + esc(t("here")) : ""}">
@@ -1861,12 +1871,12 @@ $("#stop").addEventListener("click", async () => {
 // ---- new session: folder → agent → run as → model → effort, each list from the agent's own catalog ----
 // LF.edit: the name of the worker being changed (same dialog, folder/agent/mode fixed); LF.preset: its current
 // model and effort, applied once the lists are built.
-let CAT = null, LF = {agent: null, mode: "worker", full: false, edit: null}, nameEdited = false;
+let CAT = null, LF = {agent: null, mode: "worker", full: false, fast: null, edit: null}, nameEdited = false;
 const fam = id => CAT && CAT.families.find(f => f.id === id);
 function hint(msg, err) { $("#lfHint").className = "hint" + (err ? " err" : ""); $("#lfHint").textContent = msg || ""; }
 
 async function openLaunch(prefill, edit) {
-  if (!edit) Object.assign(LF, {full: false, edit: null, w: null, preset: null});
+  if (!edit) Object.assign(LF, {full: false, fast: null, edit: null, w: null, preset: null});
   $("#lfFolder").readOnly = !!edit;
   $("#dlg").showModal();
   hint(t("loadingCat"));
@@ -1886,7 +1896,7 @@ async function openLaunch(prefill, edit) {
 async function openConfigure(name) {
   const w = S.launched.find(x => x.name === name);
   if (!w) return;
-  Object.assign(LF, {agent: w.family, mode: "worker", full: !!w.fullAccess, edit: name, w,
+  Object.assign(LF, {agent: w.family, mode: "worker", full: !!w.fullAccess, fast: w.fast ?? null, edit: name, w,
     preset: {model: w.model || "", effort: w.effort || ""}});
   $("#lfFolder").value = w.cwd;
   await openLaunch(null, true);
@@ -1919,9 +1929,19 @@ function renderModels() {
   $("#lfNameRow").hidden = LF.mode !== "worker" || !!LF.edit;
   renderEfforts();
   renderPerms();
+  renderSpeed();
   if (!LF.edit) autoName();
   const conf = LF.edit && t(LF.w.family === "claude" ? "confHintClaude" : LF.w.liveSettings ? "confHintCodex" : "confHintOld");
   hint(!m.ok ? m.why : !m.models ? m.modelsWhy : conf || (LF.agent === "antigravity" && LF.mode === "worker" ? t("geminiWorkerHint") : f.note || t(LF.mode + "Hint")), !m.ok);
+}
+
+function renderSpeed() {
+  const codex = LF.agent === "codex";
+  $("#lfSpeedRow").hidden = !codex;
+  if (!codex) LF.fast = null;
+  $("#lfSpeed").innerHTML = [["", t("speedDefault")], ["standard", "Standard"], ["fast", "Fast"]]
+    .map(([value, label]) => `<option value="${value}">${esc(label)}</option>`).join("");
+  $("#lfSpeed").value = LF.fast === null ? "" : LF.fast ? "fast" : "standard";
 }
 
 function renderPerms() {
@@ -1962,13 +1982,14 @@ $("#newSes").addEventListener("click", () => openLaunch());
 $("#lfCancel").addEventListener("click", () => $("#dlg").close());
 $("#lfAgents").addEventListener("click", e => {
   const b = e.target.closest("button[data-agent]"); if (!b || b.disabled) return;
-  LF.agent = b.dataset.agent; $("#lfModel").value = ""; renderLaunch();
+  LF.agent = b.dataset.agent; LF.fast = null; $("#lfModel").value = ""; renderLaunch();
 });
 $("#lfModes").addEventListener("click", e => {
   const b = e.target.closest("button[data-mode]"); if (!b || b.disabled) return;
   LF.mode = b.dataset.mode; renderLaunch();
 });
 $("#lfModel").addEventListener("change", renderEfforts);
+$("#lfSpeed").addEventListener("change", e => { LF.fast = e.target.value === "" ? null : e.target.value === "fast"; });
 $("#lfPerms").addEventListener("click", e => {
   const b = e.target.closest("button[data-full]"); if (!b || b.disabled) return;
   LF.full = b.dataset.full === "true"; renderPerms();
@@ -1984,7 +2005,7 @@ $("#lf").addEventListener("submit", async e => {
   const req = {folder: $("#lfFolder").value.trim(), agent: LF.agent, mode: LF.mode,
     model: $("#lfModel").disabled ? "" : $("#lfModel").value,
     effort: $("#lfEffort").disabled ? "" : $("#lfEffort").value,
-    name: LF.mode === "worker" ? $("#lfName").value.trim() : "", fullAccess: LF.full};
+    name: LF.mode === "worker" ? $("#lfName").value.trim() : "", fullAccess: LF.full, fast: LF.fast};
   $("#lfGo").disabled = true; hint(t("starting"));
   try {
     const j = await post("/api/launch", req);
@@ -2002,12 +2023,12 @@ async function configureWorker(force) {
   const w = LF.w, model = $("#lfModel").disabled ? "" : $("#lfModel").value;
   const effort = $("#lfEffort").disabled ? "" : $("#lfEffort").value;
   const permChanged = !!w.fullAccess !== LF.full;
-  if (!permChanged && (w.model || "") === model && (w.effort || "") === effort) return hint(t("unchanged"));
+  if (!permChanged && (w.model || "") === model && (w.effort || "") === effort && (w.fast ?? null) === LF.fast) return hint(t("unchanged"));
   const restart = permChanged || !w.liveSettings;
   if (!force && restart && !confirm(t(w.family === "claude" ? "restartAskClaude" : "restartAsk"))) return;
   $("#lfGo").disabled = true; hint(t(restart ? "restarting" : "applying"));
   try {
-    const j = await post("/api/workers/configure", {name: w.name, model, effort, fullAccess: LF.full, force});
+    const j = await post("/api/workers/configure", {name: w.name, model, effort, fullAccess: LF.full, fast: LF.fast, force});
     $("#dlg").close();
     say(t(j.restarted ? "confRestarted" : "confLive") + w.name);
     poll();

@@ -86,7 +86,7 @@ class ViaServer:
         if a.folder or a.agent:
             return call(self.token, "/api/launch", {"folder": a.folder, "agent": a.agent, "mode": "worker",
                                                     "model": a.model or "", "effort": a.effort or "", "name": name,
-                                                    "fullAccess": a.full_access})
+                                                    "fullAccess": a.full_access, "fast": getattr(a, 'fast', None)})
         r = call(self.token, "/api/workers/restart", {"names": [name]})["results"][0]
         if not r["ok"]:
             raise Refused(r.get("error") or "not started")
@@ -126,7 +126,7 @@ class Local:
             if name in live and self.L.stale(name, who):
                 live.discard(name)  # only a killed worker of ours holds the name
             return self.L.launch({"folder": a.folder, "agent": a.agent, "mode": "worker", "model": a.model or "",
-                                  "effort": a.effort or "", "name": name, "fullAccess": a.full_access}, live)
+                                  "effort": a.effort or "", "name": name, "fullAccess": a.full_access, "fast": getattr(a, 'fast', None)}, live)
         r = self.L.restart([name], self.s.restart_blocked(self.who()))["results"][0]
         if not r["ok"]:
             raise Refused(r.get("error") or "not started")
@@ -198,6 +198,9 @@ def parse(argv):
     w.add_argument("--agent", choices=["codex", "claude", "antigravity"], help="agent of a new worker")
     w.add_argument("--model")
     w.add_argument("--effort")
+    speed = w.add_mutually_exclusive_group()
+    speed.add_argument('--fast', dest='fast', action='store_const', const=True, default=None, help='Codex Fast mode')
+    speed.add_argument('--standard', dest='fast', action='store_const', const=False, help='Codex Standard mode')
     w.add_argument("--full-access", action="store_true", help="run without approvals (dangerous by design)")
     a = p.parse_args(argv)
     if a.what == "text":
@@ -211,6 +214,8 @@ def parse(argv):
         p.error(f"worker {a.action} needs a NAME")
     if a.action == "start" and bool(a.folder) != bool(a.agent):
         p.error("a new worker needs both --folder and --agent (without them a recorded worker is started)")
+    if a.fast is not None and not (a.action == 'start' and a.folder and a.agent == 'codex'):
+        p.error('--fast/--standard require a new Codex worker; use the page to change a running worker')
     return a
 
 

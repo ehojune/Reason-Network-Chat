@@ -9,6 +9,7 @@ Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（
 
 | 时间 | 变更 | 主要内容 |
 |---|---|---|
+| 14:50 | [#49](https://github.com/ehojune/Reason-Network-Chat/pull/49) | Codex 新会话和设置窗口支持继承速度、Standard 或 Fast；实时更改从下一条消息生效，并在重启时保留。 |
 | 12:51 | [#48](https://github.com/ehojune/Reason-Network-Chat/pull/48) | Gemini 读取转发记录时与写入方共用锁，确保 Windows 可在接收器运行期间保存新群聊投递。 |
 | 12:00 | [#47](https://github.com/ehojune/Reason-Network-Chat/pull/47) | 群聊提及可调用持久 Gemini 审查器；PR 请求返回 P0–P3 问题及 Gemini GitHub App 发布的审查链接。 |
 | 10:41 | [#45](https://github.com/ehojune/Reason-Network-Chat/pull/45) | 通过拖动手柄或上下按钮调整侧栏顺序。排序仅限当前分类，刷新后保留。 |

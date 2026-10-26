@@ -9,6 +9,7 @@ Reason Network Chat에서 바뀐 것을 최신순으로 적는다. 시간은 한
 
 | 시간 | 변경 | 주요 변경사항 |
 |---|---|---|
+| 14:50 | [#49](https://github.com/ehojune/Reason-Network-Chat/pull/49) | Codex 새 세션·설정 창에서 기본 속도·Standard·Fast를 고른다. 실시간 변경은 다음 메시지부터 적용하고 재시작 때도 유지한다. |
 | 12:51 | [#48](https://github.com/ehojune/Reason-Network-Chat/pull/48) | Gemini가 전달 기록을 읽을 때 서버와 같은 잠금을 써 Windows에서도 새 방 호명 기록을 저장한다. |
 | 12:00 | [#47](https://github.com/ehojune/Reason-Network-Chat/pull/47) | 방에서 Gemini 상시 리뷰어를 호명한다. PR 요청은 P0~P3 지적과 Gemini GitHub App 명의의 리뷰 링크로 돌아온다. |
 | 10:41 | [#45](https://github.com/ehojune/Reason-Network-Chat/pull/45) | 분류별 순서 편집에서 손잡이 드래그나 ↑·↓로 세션을 정렬합니다. 다른 분류로는 옮길 수 없으며 새로고침 뒤에도 순서가 유지됩니다. |

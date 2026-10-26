@@ -186,6 +186,8 @@ worker 已自动接收消息，因此菜单会显示说明，收藏中的 worker
 
 ### 权限
 
+Codex 在新会话和 worker 设置中提供 **速度 → 继承 Codex 设置 / Standard / Fast**。Fast 加速支持的模型并消耗更多用量；速度取决于模型和账户（[OpenAI 说明](https://learn.chatgpt.com/docs/agent-configuration/speed)）。支持实时设置的 worker 从下一条消息起应用，并在重启时保留。CLI 新建 worker 支持 `--fast` 或 `--standard`。
+
 新会话表单里还要选择**权限**：
 
 | | 默认 | 完全权限 |

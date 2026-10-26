@@ -22,10 +22,22 @@
 
 ## 무엇을 할 수 있나
 
-- Claude·Codex·Gemini 등 여러 에이전트의 대화와 작업 상태를 한 화면에서 본다.
-- 채팅방에서 에이전트를 `@이름`으로 부르고 답을 받는다.
-- 새 워커를 만들고 모델·추론 강도·권한을 바꾼다. Codex는 Standard·Fast도 고른다.
-- 즐겨찾기와 분류별 순서 편집으로 자주 쓰는 세션을 정리한다.
+에이전트마다 흩어진 대화를 한 타임라인에 모으고, 대화 옆에서 필요한 기능을 바로 쓴다.
+
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/why/ko/card-1.svg" width="100%" alt="한 방에서 본다: Claude, Codex 같은 여러 에이전트 대화를 타임라인 하나로 모은다"></td>
+<td width="50%" valign="top"><img src="docs/why/ko/card-2.svg" width="100%" alt="누가 일하는지 보인다: 작업 중인지 대기 중인지, 무슨 일을 하는지 왼쪽에 띄운다"></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/why/ko/card-3.svg" width="100%" alt="여기서 바로 보낸다: 보내기 칸이 reason network send를 대신 부른다"></td>
+<td width="50%" valign="top"><img src="docs/why/ko/card-4.svg" width="100%" alt="여기서 세션을 연다: 폴더, 에이전트, 모델, 강도를 고르고 목록은 에이전트가 직접 준다"></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/why/ko/card-5.svg" width="100%" alt="필요한 세션만 한 방에: 고른 세션의 대화만 보이고, 단체 대화면 서로의 말도 듣는다"></td>
+<td width="50%" valign="top"><img src="docs/why/ko/card-6.svg" width="100%" alt="이 PC 안에서만: DB는 읽기 전용, 127.0.0.1에만, 모든 동작에 토큰 확인"></td>
+</tr>
+</table>
 
 ## 설치와 실행
 
@@ -64,6 +76,10 @@ Claude 데스크톱 앱에서는 Code 탭에 이 폴더를 열고 “브라우�
 자세한 조작은 [사용자 매뉴얼](docs/manual.ko.md)에서 찾는다.
 
 ## 대화방에서 함께 일하기
+
+<p align="center">
+  <img src="docs/group-chat.ko.svg" width="880" alt="내가 대화방에 보내면 Reason Network Chat이 @로 부른 멤버에게 각자 놓친 대화를 붙여 보낸다. @b-codex가 들어간 답은 b-codex에게 넘어가고, 답은 물어본 멤버에게 돌아간다. 대화방 한도를 넘은 넘겨주기는 버리지 않고 대기열에 넣는다.">
+</p>
 
 프로젝트마다 필요한 세션을 골라 방을 만든다. 일반 대화방은 대화를 모아 보는 용도이며, **단체 대화**를 켜면 에이전트끼리도 메시지를 주고받는다.
 

@@ -529,6 +529,11 @@ class DiscoverTest(unittest.TestCase):
         with self.assertRaises(launcher.LaunchError):
             self.l.adopt("their-codex")
 
+    def test_foreign_worker_does_not_inherit_an_older_workers_speed(self):
+        self.l.records['their-codex'] = {'fast': True}
+        self.l.discover(self.procs)
+        self.assertIsNone(self.l.foreign['their-codex']['fast'])
+
     def test_same_name_new_process_is_not_ours(self):
         launcher.ledger_path().write_text("", encoding="utf-8")
         launcher.record_spawn("lost-claude", 999, "t999")  # an earlier process of that name, long gone

@@ -1281,10 +1281,11 @@ class Launcher:
                 log = STATE / "logs" / f"{f['name']}.log"
                 w = {"name": f["name"], "pid": f["pid"], "started": started, "family": f["family"],
                      "model": f["model"], "effort": f["effort"], "cwd": f["cwd"], "log": str(log),
-                     "fullAccess": f["fullAccess"], "fast": self.records.get(f['name'], {}).get('fast'), "settings": None, "adopted": True}
+                     "fullAccess": f["fullAccess"], "fast": None, "settings": None, "adopted": True}
                 # This page's own only on proof about this very process: its pid and creation time were recorded
                 # at start, or it has written its log here since it started. A log alone outlives its worker.
                 if ((f["pid"], started) in ours or wrote_our_log(f["name"], started)) and f["name"] not in self.workers:
+                    w['fast'] = self.records.get(f['name'], {}).get('fast')
                     self.workers[f["name"]] = w
                     self.stopped.discard(f["name"])
                     self.save()

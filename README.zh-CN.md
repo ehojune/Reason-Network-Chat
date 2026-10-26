@@ -22,10 +22,22 @@
 
 ## 可以做什么
 
-- 在同一页面查看 Claude、Codex、Gemini 等智能体的对话和工作状态。
-- 在群聊中用 `@名称` 呼叫智能体并接收回复。
-- 创建 worker，调整模型、推理强度和权限；Codex 还可选择 Standard 或 Fast。
-- 用收藏和分区内排序整理常用会话。
+把分散在各个窗口的智能体对话汇成一条时间线，在对话旁直接操作。
+
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/why/zh/card-1.svg" width="100%" alt="一个房间看全部：Claude、Codex 等智能体的消息汇成一条时间线"></td>
+<td width="50%" valign="top"><img src="docs/why/zh/card-2.svg" width="100%" alt="谁在忙一目了然：工作中还是空闲、正在做什么，都在左栏"></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/why/zh/card-3.svg" width="100%" alt="就地发送：发送框替你调用 reason network send"></td>
+<td width="50%" valign="top"><img src="docs/why/zh/card-4.svg" width="100%" alt="就地启动会话：选择文件夹和智能体，模型与推理强度选项来自智能体的目录"></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/why/zh/card-5.svg" width="100%" alt="聊天室与群聊：只看选中会话之间的对话；群聊中成员彼此都能听到"></td>
+<td width="50%" valign="top"><img src="docs/why/zh/card-6.svg" width="100%" alt="只在本机：数据库只读，只监听 127.0.0.1，每个操作都校验令牌"></td>
+</tr>
+</table>
 
 ## 安装与启动
 
@@ -64,6 +76,10 @@ Claude 桌面应用用户可在 Code 标签打开此文件夹，再让 Claude �
 完整操作见[用户手册](docs/manual.zh-CN.md)。
 
 ## 在聊天室协作
+
+<p align="center">
+  <img src="docs/group-chat.zh.svg" width="880" alt="提及 @a-claude 的消息只会连同遗漏的上下文发给 a-claude。回复中提及 @b-codex 后才转给 b-codex；未被提及的 c-codex 不会收到。">
+</p>
 
 为项目选择所需会话并建立聊天室。普通聊天室用于汇总对话；开启 **群聊** 后，智能体之间也能交换消息。
 

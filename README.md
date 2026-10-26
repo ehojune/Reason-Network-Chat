@@ -22,10 +22,22 @@
 
 ## What you can do
 
-- Follow conversations and work status across Claude, Codex, Gemini and other agents in one view.
-- Address agents with `@name` in a group room and read their replies.
-- Create workers and change models, effort and permissions. Codex also offers Standard and Fast.
-- Keep frequent sessions in Favorites and reorder items within each sidebar section.
+Agent conversations are spread across separate windows. Bring them into one timeline, with controls beside the conversation.
+
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/why/en/card-1.svg" width="100%" alt="One room: Claude, Codex and other agents in one timeline"></td>
+<td width="50%" valign="top"><img src="docs/why/en/card-2.svg" width="100%" alt="See who's busy: busy or idle, and what each session is doing"></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/why/en/card-3.svg" width="100%" alt="Reply from here: the send box runs reason network send"></td>
+<td width="50%" valign="top"><img src="docs/why/en/card-4.svg" width="100%" alt="Start a session: choose a folder and agent; model and effort choices come from the agent's catalog"></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/why/en/card-5.svg" width="100%" alt="Rooms and group chat: only the sessions you pick; in group chat they hear each other"></td>
+<td width="50%" valign="top"><img src="docs/why/en/card-6.svg" width="100%" alt="Local and guarded: database read-only, 127.0.0.1 only, a token on every action"></td>
+</tr>
+</table>
 
 ## Install and run
 
@@ -64,6 +76,10 @@ Delivery timing depends on the session type and whether it is busy. Labels on se
 See the [user manual](docs/manual.md) for all controls.
 
 ## Work together in a room
+
+<p align="center">
+  <img src="docs/group-chat.en.svg" width="880" alt="A message naming @a-claude goes only to a-claude with missed context. Its reply names @b-codex, so that reply goes to b-codex; unmentioned c-codex receives neither.">
+</p>
 
 Choose the sessions needed for a project and save them as a room. A plain room collects conversations; enabling **Group chat** lets agents exchange messages too.
 

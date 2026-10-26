@@ -26,7 +26,7 @@ TEXT = {
             "room": ("한 방에서 본다", "Claude, Codex 같은 여러 에이전트", "대화를 타임라인 하나로"),
             "status": ("누가 일하는지 보인다", "작업 중인지 대기 중인지,", "무슨 일을 하는지 왼쪽에"),
             "send": ("여기서 바로 보낸다", "보내기 칸이 reason network", "send를 대신 불러 준다"),
-            "launch": ("여기서 세션을 연다", "폴더·에이전트·모델·강도를 고른다", "목록은 에이전트가 직접 준다"),
+            "launch": ("여기서 세션을 연다", "폴더·에이전트·모델 선택", "모델·강도 목록은 에이전트에서"),
             "rooms": ("필요한 세션만 한 방에", "고른 세션의 대화만 보이고,", "단체 대화면 서로의 말도 듣는다"),
             "local": ("이 PC 안에서만", "DB는 읽기 전용, 127.0.0.1에만,", "모든 동작에 토큰 확인"),
         },
@@ -40,7 +40,8 @@ TEXT = {
                  "README 설치 표 갱신 부탁해", "갱신했어. 3줄 바뀜."],
         "day": "2026년 10월 23일 (금)", "read": "읽음", "others": "다른 에이전트",
         "group": ("나", "① @부른 멤버에게만", "② + 각자 놓친 대화", "③ 답에 @b-codex", "④ b-codex에게 넘김",
-                  ["답은 물어본 멤버에게 돌아감", "한도를 넘으면 버리지 않고 대기", "한도는 대화방마다 정함"], "“@b-codex retry.ts 봐 줄래?”"),
+                  ["답은 물어본 멤버에게 돌아감", "한도를 넘으면 버리지 않고 대기", "한도는 대화방마다 정함"], "“@a-claude 이 PR 확인해 줘”"),
+        "notMentioned": "호명 없음 · 전달 안 함",
         "lf": {"title": "새 세션 열기", "folder": "폴더", "agent": "에이전트", "runAs": "실행 방식", "model": "모델",
                "effort": "추론 강도", "name": "세션 이름", "worker": "네트워크 워커", "window": "터미널 창",
                "hint": "reason network serve로 띄우는 헤드리스 에이전트. 메시지에 바로 답한다.",
@@ -51,7 +52,7 @@ TEXT = {
             "room": ("One room", "Claude, Codex and other agents", "in one timeline"),
             "status": ("See who's busy", "Busy or idle, and what each", "session is doing right now"),
             "send": ("Reply from here", "The send box runs", "reason network send for you"),
-            "launch": ("Start a session", "Folder, agent, model, effort:", "each list comes from the agent"),
+            "launch": ("Start a session", "Folder, agent, model, effort", "Model / effort: from agent"),
             "rooms": ("Rooms and group chat", "Only the sessions you pick;", "group chat: they hear each other"),
             "local": ("Local and guarded", "Database read-only, 127.0.0.1,", "a token on every action"),
         },
@@ -66,7 +67,8 @@ TEXT = {
         "day": "Fri, October 23, 2026", "read": "read", "others": "Other agents",
         "group": ("You", "① to the @mentioned only", "② + lines each one missed", "③ reply names @b-codex", "④ passed on to b-codex",
                   ["answers go back to the asker", "over a limit: queued, not dropped", "limits are set per room"],
-                  "“@b-codex can you check retry.ts?”"),
+                  "“@a-claude check this PR”"),
+        "notMentioned": "not mentioned · not sent",
         "lf": {"title": "Start a new session", "folder": "Folder", "agent": "Agent", "runAs": "Run as", "model": "Model",
                "effort": "Effort", "name": "Session name", "worker": "Network worker", "window": "Terminal window",
                "hint": "A headless agent started with reason network serve. It answers messages right away.",
@@ -77,7 +79,7 @@ TEXT = {
             "room": ("一个房间看全部", "Claude、Codex 等智能体", "的消息汇成一条时间线"),
             "status": ("谁在忙一目了然", "工作中还是空闲、", "正在做什么，都在左栏"),
             "send": ("就地发送", "发送框替你调用", "reason network send"),
-            "launch": ("就地启动会话", "选文件夹、智能体、模型、强度，", "列表都来自智能体本身"),
+            "launch": ("就地启动会话", "选文件夹、智能体与模型", "模型和强度来自智能体"),
             "rooms": ("聊天室与群聊", "只看选中会话之间的对话；", "群聊中成员彼此都能听到"),
             "local": ("只在本机", "数据库只读，只监听 127.0.0.1，", "每个操作都校验令牌"),
         },
@@ -91,7 +93,8 @@ TEXT = {
                  "请更新 README 里的安装表格", "已更新，改了 3 行。"],
         "day": "2026年10月23日 周五", "read": "已读", "others": "其他智能体",
         "group": ("你", "① 只发给 @ 的成员", "② + 各自错过的内容", "③ 回复里 @b-codex", "④ 转给 b-codex",
-                  ["回答自动回到提问者", "超过上限：排队，不丢弃", "上限按聊天室设置"], "“@b-codex 帮忙看下 retry.ts？”"),
+                  ["回答自动回到提问者", "超过上限：排队，不丢弃", "上限按聊天室设置"], "“@a-claude 请检查这个 PR”"),
+        "notMentioned": "未被提及 · 不转发",
         "lf": {"title": "启动新会话", "folder": "文件夹", "agent": "智能体", "runAs": "运行方式", "model": "模型",
                "effort": "推理强度", "name": "会话名称", "worker": "网络 worker", "window": "终端窗口",
                "hint": "用 reason network serve 启动的无界面智能体，收到消息立即回复。",
@@ -388,18 +391,22 @@ def group(lang):
         p.append(f'<rect x="700" y="{y}" width="156" height="48" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/>'
                  f'<rect x="700" y="{y}" width="8" height="48" rx="4" fill="{C[k]}"/>'
                  f'<text class="m" x="722" y="{y + 29}" style="font-size:13px;fill:{C["ink"]}">{name}</text>')
-        p.append(f'<path d="M534 176C610 176 620 {y + 30} 694 {y + 30}" fill="none" stroke="#1A7F37" stroke-width="2" marker-end="url(#a-green)"/>')
+        if name == "c-codex":
+            p.append(f'<text class="s" x="778" y="282" text-anchor="middle">{x(TEXT[lang]["notMentioned"])}</text>')
+    # The example names a-claude first. Only that member receives the initial
+    # message plus context; a-claude's reply then explicitly names b-codex.
+    p.append('<path d="M534 70H694" fill="none" stroke="#1A7F37" stroke-width="2" marker-end="url(#a-green)"/>')
 
     def badge(cx, cy, n, color):
         p.append(f'<circle cx="{cx}" cy="{cy}" r="10" fill="{color}"/><text class="w" x="{cx}" y="{cy + 4}" text-anchor="middle">{n}</text>')
 
     p.append('<path d="M148 156H296" stroke="#C96442" stroke-width="2.5" marker-end="url(#a-claude)"/>'
-             '<path d="M700 70C640 70 600 84 538 88" fill="none" stroke="#C96442" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#a-claude)"/>'
-             '<path d="M534 118C610 118 630 150 694 150" fill="none" stroke="#7C3AED" stroke-width="2.5" marker-end="url(#a-agent)"/>')
+             '<path d="M700 94C640 94 600 116 538 116" fill="none" stroke="#C96442" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#a-claude)"/>'
+             '<path d="M534 160H694" fill="none" stroke="#7C3AED" stroke-width="2.5" marker-end="url(#a-agent)"/>')
     badge(222, 156, 1, "#C96442")
-    badge(640, 230, 2, "#1A7F37")
-    badge(620, 76, 3, "#C96442")
-    badge(600, 128, 4, "#7C3AED")
+    badge(620, 70, 2, "#1A7F37")
+    badge(620, 105, 3, "#C96442")
+    badge(620, 160, 4, "#7C3AED")
     for i, (n, text, color) in enumerate([(1, s1, "#C96442"), (2, s2, "#1A7F37"), (3, s3, "#C96442"), (4, s4, "#7C3AED")]):
         cx, cy = 60 + (i % 2) * 400, 312 + (i // 2) * 26
         badge(cx, cy, n, color)

@@ -23,21 +23,20 @@
   <text class="t" x="84" y="161" text-anchor="middle">You</text>
   <rect x="300" y="36" width="230" height="248" rx="14" fill="#F0FAF3" stroke="#6CC08B"/>
   <text class="t" x="415" y="64" text-anchor="middle">Reason Network Chat</text>
-  <text class="s" x="415" y="100" text-anchor="middle" style="font-style:italic">“@b-codex can you check retry.ts?”</text>
+  <text class="s" x="415" y="100" text-anchor="middle" style="font-style:italic">“@a-claude check this PR”</text>
   <rect x="316" y="196" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="210" text-anchor="middle" style="font-size:11px">answers go back to the asker</text>
   <rect x="316" y="222" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="236" text-anchor="middle" style="font-size:11px">over a limit: queued, not dropped</text>
   <rect x="316" y="248" width="198" height="20" rx="10" fill="#FFFFFF" stroke="#6CC08B"/><text class="s" x="415" y="262" text-anchor="middle" style="font-size:11px">limits are set per room</text>
   <rect x="700" y="56" width="156" height="48" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/><rect x="700" y="56" width="8" height="48" rx="4" fill="#C96442"/><text class="m" x="722" y="85" style="font-size:13px;fill:#1F2328">a-claude</text>
-  <path d="M534 176C610 176 620 86 694 86" fill="none" stroke="#1A7F37" stroke-width="2" marker-end="url(#a-green)"/>
   <rect x="700" y="136" width="156" height="48" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/><rect x="700" y="136" width="8" height="48" rx="4" fill="#2563EB"/><text class="m" x="722" y="165" style="font-size:13px;fill:#1F2328">b-codex</text>
-  <path d="M534 176C610 176 620 166 694 166" fill="none" stroke="#1A7F37" stroke-width="2" marker-end="url(#a-green)"/>
   <rect x="700" y="216" width="156" height="48" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/><rect x="700" y="216" width="8" height="48" rx="4" fill="#2563EB"/><text class="m" x="722" y="245" style="font-size:13px;fill:#1F2328">c-codex</text>
-  <path d="M534 176C610 176 620 246 694 246" fill="none" stroke="#1A7F37" stroke-width="2" marker-end="url(#a-green)"/>
-  <path d="M148 156H296" stroke="#C96442" stroke-width="2.5" marker-end="url(#a-claude)"/><path d="M700 70C640 70 600 84 538 88" fill="none" stroke="#C96442" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#a-claude)"/><path d="M534 118C610 118 630 150 694 150" fill="none" stroke="#7C3AED" stroke-width="2.5" marker-end="url(#a-agent)"/>
+  <text class="s" x="778" y="282" text-anchor="middle">not mentioned · not sent</text>
+  <path d="M534 70H694" fill="none" stroke="#1A7F37" stroke-width="2" marker-end="url(#a-green)"/>
+  <path d="M148 156H296" stroke="#C96442" stroke-width="2.5" marker-end="url(#a-claude)"/><path d="M700 94C640 94 600 116 538 116" fill="none" stroke="#C96442" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#a-claude)"/><path d="M534 160H694" fill="none" stroke="#7C3AED" stroke-width="2.5" marker-end="url(#a-agent)"/>
   <circle cx="222" cy="156" r="10" fill="#C96442"/><text class="w" x="222" y="160" text-anchor="middle">1</text>
-  <circle cx="640" cy="230" r="10" fill="#1A7F37"/><text class="w" x="640" y="234" text-anchor="middle">2</text>
-  <circle cx="620" cy="76" r="10" fill="#C96442"/><text class="w" x="620" y="80" text-anchor="middle">3</text>
-  <circle cx="600" cy="128" r="10" fill="#7C3AED"/><text class="w" x="600" y="132" text-anchor="middle">4</text>
+  <circle cx="620" cy="70" r="10" fill="#1A7F37"/><text class="w" x="620" y="74" text-anchor="middle">2</text>
+  <circle cx="620" cy="105" r="10" fill="#C96442"/><text class="w" x="620" y="109" text-anchor="middle">3</text>
+  <circle cx="620" cy="160" r="10" fill="#7C3AED"/><text class="w" x="620" y="164" text-anchor="middle">4</text>
   <circle cx="60" cy="312" r="10" fill="#C96442"/><text class="w" x="60" y="316" text-anchor="middle">1</text>
   <text class="b" x="78" y="317">to the @mentioned only</text>
   <circle cx="460" cy="312" r="10" fill="#1A7F37"/><text class="w" x="460" y="316" text-anchor="middle">2</text>

@@ -1619,12 +1619,15 @@ class Launcher:
         if fid == 'antigravity':
             if full or not model:
                 raise LaunchError('A reviewer requires an explicit model and does not allow full access.')
+            agy, engine = find_agy(), find_reason_network()
+            if not agy or not engine:
+                raise LaunchError('Antigravity CLI and reason-network must both be installed.')
             env.update(LABHQ_COMMIT_AGENT='gemini', LABHQ_COMMIT_MODEL=model + ('-' + effort if effort else ''))
             for key in ('GH_TOKEN', 'GITHUB_TOKEN'):
                 env.pop(key, None)
             model_id = model + ('-' + effort if effort else '')
             args = [sys.executable, str(Path(__file__).with_name('antigravity_worker.py')), '--name', name,
-                    '--cwd', cwd, '--agy', find_agy(), '--reason-network', find_reason_network(), '--model', model_id]
+                    '--cwd', cwd, '--agy', agy, '--reason-network', engine, '--model', model_id]
             log = STATE / 'logs' / (name + '.log')
             log.parent.mkdir(parents=True, exist_ok=True)
             pid = spawn_receiver(args, cwd, env, str(log))

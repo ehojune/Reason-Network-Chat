@@ -197,6 +197,9 @@ class LauncherReceiverTests(unittest.TestCase):
                 instance.start_worker({'id': 'antigravity'}, 'C:/work', '', '', 'reviewer')
             with self.assertRaises(launcher.LaunchError):
                 instance.start_worker({'id': 'antigravity'}, 'C:/work', 'gemini-3.8-flash', 'high', 'reviewer', True)
+            with mock.patch.object(launcher, 'find_agy', return_value=None):
+                with self.assertRaises(launcher.LaunchError):
+                    instance.start_worker({'id': 'antigravity'}, 'C:/work', 'gemini-3.8-flash', 'low', 'reviewer')
 
 
 if __name__ == '__main__':

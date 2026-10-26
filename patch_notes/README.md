@@ -9,6 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 |---|---|---|
+| 21:33 | [#52](https://github.com/ehojune/Reason-Network-Chat/pull/52) | Show diagnostics-only Codex replies as expandable notices and exclude them from relays, retries of old relays, and room context. |
 | 17:23 | [#51](https://github.com/ehojune/Reason-Network-Chat/pull/51) | Restore six illustrated feature cards and the group-chat routing diagram to the README, with short explanations and links to the detailed manual. |
 | 16:14 | [#50](https://github.com/ehojune/Reason-Network-Chat/pull/50) | Shorter READMEs link to task-based manuals; agent setup, API and implementation details move to lookup-only references. |
 | 14:50 | [#49](https://github.com/ehojune/Reason-Network-Chat/pull/49) | Codex session and worker dialogs offer inherited speed, Standard or Fast; live changes apply on the next message and survive restarts. |

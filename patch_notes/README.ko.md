@@ -9,6 +9,7 @@ Reason Network Chat에서 바뀐 것을 최신순으로 적는다. 시간은 한
 
 | 시간 | 변경 | 주요 변경사항 |
 |---|---|---|
+| 21:33 | [#52](https://github.com/ehojune/Reason-Network-Chat/pull/52) | 실행 로그만 온 Codex 응답을 접이식 안내로 표시하고 자동 전달·과거 전달 재시도·대화 문맥에서 제외했다. |
 | 17:23 | [#51](https://github.com/ehojune/Reason-Network-Chat/pull/51) | README에 설명을 담은 기능 카드 6개와 단체 대화방 전달 흐름 그림을 복원하고 상세 매뉴얼 분리는 유지했다. |
 | 16:14 | [#50](https://github.com/ehojune/Reason-Network-Chat/pull/50) | README를 설치·첫 사용 중심으로 줄이고 세부 사용법과 에이전트 실행·API·구현 설명을 별도 문서로 옮겼다. |
 | 14:50 | [#49](https://github.com/ehojune/Reason-Network-Chat/pull/49) | Codex 새 세션·설정 창에서 기본 속도·Standard·Fast를 고른다. 실시간 변경은 다음 메시지부터 적용하고 재시작 때도 유지한다. |

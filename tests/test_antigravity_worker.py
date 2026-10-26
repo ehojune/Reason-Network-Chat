@@ -131,6 +131,7 @@ class WorkerTests(unittest.TestCase):
         head = 'a' * 40
         current = {'head': head, 'summary': 'current', 'findings': []}
         self.assertEqual(aw.review_result(json.dumps(current) + '\n' + json.dumps(current), head), current)
+        self.assertEqual(aw.review_result(json.dumps(current) + '\n' + json.dumps({'summary': 'old format', 'findings': []}), head), current)
         with self.assertRaises(aw.WorkerError):
             aw.review_result(json.dumps({**current, 'head': 'old'}), head)
         self.worker.github_author = lambda: 'gemini-ehojune[bot]'

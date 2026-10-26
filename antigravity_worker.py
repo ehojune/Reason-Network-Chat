@@ -94,7 +94,9 @@ def review_result(response, head=None):
             raise WorkerError('The current turn did not return a structured review.')
         values.append(value)
         text = text[end:].strip()
-    if not values or (head is not None and values[-1].get('head') != head):
+    if head is not None:
+        values = [value for value in values if value.get('head') == head]
+    if not values:
         raise WorkerError('The current review did not confirm the requested head.')
     return values[-1]
 

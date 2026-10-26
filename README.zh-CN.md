@@ -31,7 +31,7 @@
 </tr>
 <tr>
 <td width="50%" valign="top"><img src="docs/why/zh/card-3.svg" width="100%" alt="就地发送：发送框替你调用 reason network send"></td>
-<td width="50%" valign="top"><img src="docs/why/zh/card-4.svg" width="100%" alt="就地启动会话：选文件夹、智能体、模型、强度，列表都来自智能体本身"></td>
+<td width="50%" valign="top"><img src="docs/why/zh/card-4.svg" width="100%" alt="就地启动会话：选择文件夹和智能体，模型与推理强度选项来自智能体的目录"></td>
 </tr>
 <tr>
 <td width="50%" valign="top"><img src="docs/why/zh/card-5.svg" width="100%" alt="聊天室与群聊：只看选中会话之间的对话；群聊中成员彼此都能听到"></td>
@@ -78,7 +78,7 @@ Claude 桌面应用用户可在 Code 标签打开此文件夹，再让 Claude �
 ## 在聊天室协作
 
 <p align="center">
-  <img src="docs/group-chat.zh.svg" width="880" alt="你向聊天室发消息，Reason Network Chat 把它连同各成员错过的内容发给你 @ 的成员。回复里 @b-codex 时，转给 b-codex；回答会自动回到提问的成员。超过聊天室上限的转发会排队，不会丢弃。">
+  <img src="docs/group-chat.zh.svg" width="880" alt="提及 @a-claude 的消息只会连同遗漏的上下文发给 a-claude。回复中提及 @b-codex 后才转给 b-codex；未被提及的 c-codex 不会收到。">
 </p>
 
 为项目选择所需会话并建立聊天室。普通聊天室用于汇总对话；开启 **群聊** 后，智能体之间也能交换消息。

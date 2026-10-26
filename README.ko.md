@@ -31,7 +31,7 @@
 </tr>
 <tr>
 <td width="50%" valign="top"><img src="docs/why/ko/card-3.svg" width="100%" alt="여기서 바로 보낸다: 보내기 칸이 reason network send를 대신 부른다"></td>
-<td width="50%" valign="top"><img src="docs/why/ko/card-4.svg" width="100%" alt="여기서 세션을 연다: 폴더, 에이전트, 모델, 강도를 고르고 목록은 에이전트가 직접 준다"></td>
+<td width="50%" valign="top"><img src="docs/why/ko/card-4.svg" width="100%" alt="여기서 세션을 연다: 폴더와 에이전트를 고르고, 모델·추론 강도는 에이전트가 제공한 목록에서 선택한다"></td>
 </tr>
 <tr>
 <td width="50%" valign="top"><img src="docs/why/ko/card-5.svg" width="100%" alt="필요한 세션만 한 방에: 고른 세션의 대화만 보이고, 단체 대화면 서로의 말도 듣는다"></td>
@@ -78,7 +78,7 @@ Claude 데스크톱 앱에서는 Code 탭에 이 폴더를 열고 “브라우�
 ## 대화방에서 함께 일하기
 
 <p align="center">
-  <img src="docs/group-chat.ko.svg" width="880" alt="내가 대화방에 보내면 Reason Network Chat이 @로 부른 멤버에게 각자 놓친 대화를 붙여 보낸다. @b-codex가 들어간 답은 b-codex에게 넘어가고, 답은 물어본 멤버에게 돌아간다. 대화방 한도를 넘은 넘겨주기는 버리지 않고 대기열에 넣는다.">
+  <img src="docs/group-chat.ko.svg" width="880" alt="@a-claude로 부르면 놓친 대화와 함께 a-claude에게만 전달한다. 답에서 @b-codex를 부르면 그 답은 b-codex에게 가며, 호명하지 않은 c-codex에게는 전달하지 않는다.">
 </p>
 
 프로젝트마다 필요한 세션을 골라 방을 만든다. 일반 대화방은 대화를 모아 보는 용도이며, **단체 대화**를 켜면 에이전트끼리도 메시지를 주고받는다.

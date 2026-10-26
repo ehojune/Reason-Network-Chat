@@ -31,7 +31,7 @@ Agent conversations are spread across separate windows. Bring them into one time
 </tr>
 <tr>
 <td width="50%" valign="top"><img src="docs/why/en/card-3.svg" width="100%" alt="Reply from here: the send box runs reason network send"></td>
-<td width="50%" valign="top"><img src="docs/why/en/card-4.svg" width="100%" alt="Start a session: folder, agent, model and effort, each list from the agent itself"></td>
+<td width="50%" valign="top"><img src="docs/why/en/card-4.svg" width="100%" alt="Start a session: choose a folder and agent; model and effort choices come from the agent's catalog"></td>
 </tr>
 <tr>
 <td width="50%" valign="top"><img src="docs/why/en/card-5.svg" width="100%" alt="Rooms and group chat: only the sessions you pick; in group chat they hear each other"></td>
@@ -78,7 +78,7 @@ See the [user manual](docs/manual.md) for all controls.
 ## Work together in a room
 
 <p align="center">
-  <img src="docs/group-chat.en.svg" width="880" alt="You send a message to the room. Reason Network Chat sends it to the members you @mention, with the room lines each one missed. A member's reply that names @b-codex is passed on to b-codex, and an answer goes back to the member who asked. Hand-offs over a room's limits are queued, not dropped.">
+  <img src="docs/group-chat.en.svg" width="880" alt="A message naming @a-claude goes only to a-claude with missed context. Its reply names @b-codex, so that reply goes to b-codex; unmentioned c-codex receives neither.">
 </p>
 
 Choose the sessions needed for a project and save them as a room. A plain room collects conversations; enabling **Group chat** lets agents exchange messages too.

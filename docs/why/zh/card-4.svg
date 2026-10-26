@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="480" height="260" viewBox="0 0 480 260" role="img" aria-labelledby="t d" xml:lang="zh">
   <title id="t">就地启动会话</title>
-  <desc id="d">就地启动会话: 选文件夹、智能体、模型、强度， 列表都来自智能体本身</desc>
+  <desc id="d">就地启动会话: 选文件夹、智能体与模型 模型和强度来自智能体</desc>
   <style>
     text { font-family: "Noto Sans KR", "Noto Sans SC", "Apple SD Gothic Neo", "PingFang SC", "Segoe UI", "Malgun Gothic", "Microsoft YaHei", sans-serif; fill: #1F2328; }
     .h { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
@@ -22,7 +22,7 @@
   <circle cx="380" cy="130" r="92" fill="#EDE5FF"/>
   <circle cx="42" cy="74" r="14" fill="#7C3AED"/><text class="n" x="42" y="79" text-anchor="middle">4</text>
   <text class="h" x="28" y="128">就地启动会话</text>
-  <text class="l" x="28" y="164">选文件夹、智能体、模型、强度，</text><text class="l" x="28" y="188">列表都来自智能体本身</text>
+  <text class="l" x="28" y="164">选文件夹、智能体与模型</text><text class="l" x="28" y="188">模型和强度来自智能体</text>
   <rect x="292" y="34" width="172" height="192" rx="10" fill="#FFFFFF" stroke="#57606A" stroke-width="2"/><path d="M306 54h8l3 3h14v11h-25z" fill="#D4A72C"/><rect x="338" y="52" width="112" height="18" rx="5" fill="#F6F8FA" stroke="#D0D7DE"/><path d="M346 61h70" stroke="#8C959F" stroke-width="3" stroke-linecap="round"/>
   <rect x="306" y="86" width="44" height="20" rx="10" fill="#FFFFFF" stroke="#C96442" stroke-width="1.5"/><circle cx="318" cy="96" r="3.5" fill="#C96442"/><path d="M326 96h14" stroke="#8C959F" stroke-width="3" stroke-linecap="round"/>
   <rect x="356" y="86" width="44" height="20" rx="10" fill="#2563EB" stroke="#2563EB" stroke-width="1.5"/><circle cx="368" cy="96" r="3.5" fill="#FFFFFF"/><path d="M376 96h14" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>

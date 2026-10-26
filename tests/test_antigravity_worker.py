@@ -117,14 +117,30 @@ class WorkerTests(unittest.TestCase):
 
     def test_posting_reuses_marker_and_stops_when_head_changed(self):
         self.worker.github_author = lambda: 'gemini-ehojune[bot]'
-        existing = {'body': '<!-- reason-gemini-review:one -->', 'user': {'login': 'gemini-ehojune[bot]'}, 'html_url': 'receipt'}
+        body = '<!-- reason-gemini-review:one -->\nbody'
+        existing = {'id': 2, 'commit_id': 'a' * 40, 'body': body, 'user': {'login': 'gemini-ehojune[bot]'}, 'html_url': 'receipt'}
         self.worker.gh_json = mock.Mock(return_value=[[existing]])
-        self.assertEqual(self.worker.publish('one', ('p/repo', 1), 'a' * 40, 'body'), 'receipt')
+        self.assertEqual(self.worker.publish('one', ('p/repo', 1), 'a' * 40, body), 'receipt')
         self.assertEqual(self.worker.gh_json.call_count, 1)
         self.worker.gh_json = mock.Mock(side_effect=[[], {'headRefOid': 'b' * 40}])
         with self.assertRaises(aw.RequestError):
             self.worker.publish('one', ('p/repo', 1), 'a' * 40, 'body')
         self.assertEqual(self.worker.gh_json.call_count, 2)  # no write
+
+    def test_current_response_wins_over_stale_schema_metadata(self):
+        head = 'a' * 40
+        current = {'head': head, 'summary': 'current', 'findings': []}
+        self.assertEqual(aw.review_result(json.dumps(current) + '\n' + json.dumps(current), head), current)
+        with self.assertRaises(aw.WorkerError):
+            aw.review_result(json.dumps({**current, 'head': 'old'}), head)
+        self.worker.github_author = lambda: 'gemini-ehojune[bot]'
+        marker = '<!-- reason-gemini-review:one -->'
+        existing = {'id': 2, 'commit_id': head, 'body': marker + '\nstale schema text',
+                    'user': {'login': 'gemini-ehojune[bot]'}, 'html_url': 'receipt'}
+        corrected = {**existing, 'body': marker + '\ncurrent'}
+        self.worker.gh_json = mock.Mock(side_effect=[[[existing]], corrected])
+        self.assertEqual(self.worker.publish('one', ('p/repo', 1), head, corrected['body']), 'receipt')
+        self.assertIn('PUT', self.worker.gh_json.call_args.args)
 
     def test_room_conversation_survives_next_message_without_repeating_model(self):
         self.worker.reply = mock.Mock()

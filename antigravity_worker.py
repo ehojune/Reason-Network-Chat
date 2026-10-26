@@ -20,11 +20,11 @@ NETWORK_DB = Path(os.environ.get('REASON_CHAT_DB', HOME / '.reason/network/netwo
 FOOTER_ADDRESS = '176961590+gemini-code-assist[bot]@users.noreply.github.com'
 REPO_RE = r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+'
 PR_RE = re.compile(r'https://github\.com/(' + REPO_RE + r')/pull/(\d+)\b')
-SCHEMA = {'type': 'object', 'properties': {'summary': {'type': 'string'}, 'findings': {'type': 'array', 'items': {
+SCHEMA = {'type': 'object', 'properties': {'head': {'type': 'string'}, 'summary': {'type': 'string'}, 'findings': {'type': 'array', 'items': {
     'type': 'object', 'properties': {'severity': {'type': 'string', 'enum': ['P0', 'P1', 'P2', 'P3']},
     'title': {'type': 'string'}, 'body': {'type': 'string'}, 'path': {'type': 'string'},
     'line': {'type': 'integer', 'minimum': 1}}, 'required': ['severity', 'title', 'body', 'path', 'line'],
-    'additionalProperties': False}}}, 'required': ['summary', 'findings'], 'additionalProperties': False}
+    'additionalProperties': False}}}, 'required': ['head', 'summary', 'findings'], 'additionalProperties': False}
 
 
 class WorkerError(Exception):
@@ -80,6 +80,23 @@ def review_text(value, repo, number, head, marker, model):
     text = '\n'.join(lines)
     require_text(text)
     return text
+
+
+def review_result(response, head=None):
+    """Use the current response, never CLI metadata retained from a previous schema turn."""
+    text = response.strip()
+    fence = re.fullmatch(r'```(?:json)?\s*\n(.*)\n```', text, re.S)
+    text = fence[1].strip() if fence else text
+    decoder, values = json.JSONDecoder(), []
+    while text:
+        value, end = decoder.raw_decode(text)
+        if not isinstance(value, dict) or not isinstance(value.get('summary'), str) or not isinstance(value.get('findings'), list):
+            raise WorkerError('The current turn did not return a structured review.')
+        values.append(value)
+        text = text[end:].strip()
+    if not values or (head is not None and values[-1].get('head') != head):
+        raise WorkerError('The current review did not confirm the requested head.')
+    return values[-1]
 
 
 class Journal:
@@ -266,13 +283,24 @@ class Worker:
         for page in pages:
             for review in page:
                 if marker in (review.get('body') or '') and review['user']['login'] == author:
-                    return review['html_url']
+                    if review['commit_id'] != head:
+                        raise WorkerError('Existing review marker belongs to another head.')
+                    if review['body'].replace('\r\n', '\n').strip() == body.replace('\r\n', '\n').strip():
+                        return review['html_url']
+                    path = self.root / (mid + '-review.json')
+                    path.write_text(json.dumps({'body': body}, ensure_ascii=False), encoding='utf-8')
+                    posted = self.gh_json('api', '--method', 'PUT', f'repos/{repo}/pulls/{number}/reviews/{review["id"]}', '--input', str(path))
+                    return self.verify_posted(posted, author, head, body)
         current = self.gh_json('pr', 'view', str(number), '--repo', repo, '--json', 'headRefOid')
         if current['headRefOid'] != head:
             raise RequestError('PR head changed during review; request a review of the new head.')
         path = self.root / (mid + '-review.json')
         path.write_text(json.dumps({'commit_id': head, 'event': 'COMMENT', 'body': body}, ensure_ascii=False), encoding='utf-8')
         posted = self.gh_json('api', f'repos/{repo}/pulls/{number}/reviews', '--input', str(path))
+        return self.verify_posted(posted, author, head, body)
+
+    @staticmethod
+    def verify_posted(posted, author, head, body):
         if posted['user']['login'] != author or posted['commit_id'] != head:
             raise WorkerError('Published review author or head does not match the configured Gemini identity.')
         if (posted.get('body') or '').replace('\r\n', '\n').strip() != body.replace('\r\n', '\n').strip():
@@ -332,6 +360,7 @@ class Worker:
                               'Do not edit files, run commands, call MCP, post to GitHub, or merge. Return only the requested structured review. '
                               'Use P0=critical universal failure, P1=high impact must fix, P2=normal actionable bug, P3=minor. '
                               'This is a diff review; do not claim to have inspected files outside the supplied patches. '
+                              'Set the JSON head field to pr.headRefOid exactly, to confirm the current packet. '
                               'Report concrete bugs with evidence and accurate changed-file line numbers; omit speculative findings. '
                               'Write Korean, and return an empty findings array when none are established.\n' + json.dumps(
                                   {'request': text, 'pr': pr, 'diff': diff, 'installed_gh_api_help': cli_facts}, ensure_ascii=False))
@@ -349,7 +378,7 @@ class Worker:
                                             (json.dumps({'value': value, 'head': head}), mid))
             response = value['response'].strip()
             if target:
-                structured = value.get('structured_output') or json.loads(response)
+                structured = review_result(response, head)
                 if any(finding.get('path') not in value.get('_changed_files', []) for finding in structured.get('findings', [])):
                     raise WorkerError('A finding names a file outside the reviewed diff.')
                 body = review_text(structured, *target, head, f'<!-- reason-gemini-review:{mid} -->', self.model)

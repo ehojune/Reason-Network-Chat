@@ -220,6 +220,18 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
 .ack { font-size: 12px; color: var(--muted); margin: 5px 0; }
 .ack summary { cursor: pointer; }
 .ack pre, .troubleText { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.section > span { flex: 1; min-width: 0; }
+.sectionOrder { font: inherit; color: var(--muted); border: 0; background: none; cursor: pointer; margin-left: auto; padding: 2px 4px; flex: none; white-space: nowrap; }
+.sectionOrder:hover { color: var(--text); }
+.sectionOrder:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#orderDlg { max-height: 85vh; overflow: auto; }
+#orderList { list-style: none; padding: 0; margin: 12px 0; max-height: 50vh; overflow: auto; }
+.orderRow { display: flex; gap: 8px; align-items: center; border-bottom: 1px solid var(--line); padding: 8px 0; }
+.orderRow .orderName { flex: 1; overflow-wrap: anywhere; min-width: 0; }
+.orderHandle { cursor: grab; padding: 4px; color: var(--muted); }
+.orderRow.dragging { opacity: .45; }
+.orderRow button { font: inherit; min-width: 34px; min-height: 34px; }
+#orderLive { color: var(--muted); font-size: 12px; min-height: 1.5em; }
 #troubleDlg { width: min(760px, 92vw); max-height: 85vh; overflow: auto; }
 .troubleItem { border-top: 1px solid var(--line); padding: 12px 0; }
 .troubleItem .dbtn { justify-content: flex-start; flex-wrap: wrap; }
@@ -284,6 +296,14 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
     <div class="dbtn"><button type="button" class="plain" id="lfCancel" data-t="cancel"></button>
       <button type="submit" class="go" id="lfGo" data-t="start"></button></div>
   </form>
+</dialog>
+<dialog id="orderDlg" aria-labelledby="orderTitle" aria-describedby="orderHelp">
+  <h2 id="orderTitle"></h2>
+  <p id="orderHelp" class="hint" data-t="orderHelp"></p>
+  <ol id="orderList"></ol>
+  <div id="orderLive" role="status" aria-live="polite"></div>
+  <div class="dbtn"><button type="button" class="plain" id="orderCancel" data-t="cancel"></button>
+    <button type="button" class="go" id="orderSave" data-t="save"></button></div>
 </dialog>
 <dialog id="rdlg">
   <form id="rf">
@@ -613,7 +633,14 @@ let lang = new URLSearchParams(location.search).get("lang") || store.get("reason
 if (!T[lang]) lang = "en";
 const t = k => T[lang][k];
 const TOKEN = document.querySelector('meta[name="reason-chat-token"]').content;
-const API = 18;  // must match API in server.py
+Object.assign(T.ko, {orderEdit: "순서 편집", orderHelp: "손잡이를 드래그하거나 ↑·↓를 누르세요. 이 분류 안에서만 이동합니다.",
+  orderUp: "위로", orderDown: "아래로", orderPosition: "{name}: {n}번째"});
+Object.assign(T.en, {orderEdit: "Edit order", orderHelp: "Drag a handle or use ↑/↓. Items stay in this section.",
+  orderUp: "Move up", orderDown: "Move down", orderPosition: "{name}: position {n}"});
+Object.assign(T.zh, {orderEdit: "调整顺序", orderHelp: "拖动手柄或使用 ↑/↓。仅可在此分类内移动。",
+  orderUp: "上移", orderDown: "下移", orderPosition: "{name}：第 {n} 位"});
+
+const API = 19;  // must match API in server.py
 const BOOT = document.querySelector('meta[name="reason-chat-boot"]').content;  // which server start served this page
 // Reload to pick up a restarted or newer server, at most once a minute so a broken setup cannot loop.
 function reloadOnce() {
@@ -729,19 +756,72 @@ function pref(key) {
   return S && S.prefs ? S.prefs[key] : undefined;
 }
 async function setPref(key, value) {
+  let saved = true;
   try {
     S.prefs = (await post("/api/prefs", {key, value})).prefs;
     store.del("rnc-pref-" + key);
   } catch (err) {
     // A rejected value (4xx) is not kept anywhere; only a failed save falls back to this browser.
     // autoWake does nothing in a browser: only the server wakes sessions.
-    if ((err.status >= 400 && err.status < 500) || key === "autoWake") say(t("failed") + err.message, true);
+    if ((err.status >= 400 && err.status < 500) || key === "autoWake") { say(t("failed") + err.message, true); saved = false; }
     else { store.set("rnc-pref-" + key, JSON.stringify(value)); say(t("prefLocal") + err.message, true); }
   }
   render(true);
+  return saved;
+}
+
+// Orders rank existing rows only. Live status and favorites still determine every section's membership.
+const sidebarSections = new Map();
+let orderDraft = null, orderDrag = null;
+const sidebarOrder = () => { const value = pref("sidebarOrder"); return value && typeof value === "object" && !Array.isArray(value) ? value : {}; };
+function orderedRows(section, rows) {
+  const saved = sidebarOrder()[section], rank = new Map((Array.isArray(saved) ? saved : []).map((key, i) => [key, i]));
+  return [...rows].sort((a, b) => (rank.get(a.key) ?? Infinity) - (rank.get(b.key) ?? Infinity));
+}
+function orderName(key) {
+  return roomOf(key)?.name || S.sessions.find(s => s.address === key)?.name || short(key);
+}
+function renderOrder() {
+  $("#orderList").innerHTML = orderDraft.keys.map((key, i, keys) => `<li class="orderRow" tabindex="-1" data-key="${esc(key)}">
+    <span class="orderHandle" draggable="true" title="${esc(t("orderEdit"))}" aria-hidden="true">☰</span>
+    <span class="orderName">${esc(orderName(key))}</span><button type="button" data-step="-1" aria-label="${esc(t("orderUp") + ': ' + orderName(key))}"${i ? "" : " disabled"}>↑</button>
+    <button type="button" data-step="1" aria-label="${esc(t("orderDown") + ': ' + orderName(key))}"${i === keys.length - 1 ? " disabled" : ""}>↓</button></li>`).join("");
+}
+function openOrder(section) {
+  const group = sidebarSections.get(section);
+  if (!group || group.keys.length < 2) return;
+  orderDraft = {section, keys: [...group.keys]}; orderDrag = null;
+  $("#orderTitle").textContent = `${group.label} · ${t("orderEdit")}`;
+  $("#orderLive").textContent = "";
+  renderOrder(); $("#orderDlg").showModal();
+}
+function moveOrder(key, target, step) {
+  if (!orderDraft) return false;
+  const from = orderDraft.keys.indexOf(key), to = orderDraft.keys.indexOf(target);
+  if (from < 0 || to < 0 || from === to) return false;
+  orderDraft.keys.splice(to, 0, orderDraft.keys.splice(from, 1)[0]);
+  renderOrder();
+  const row = [...$("#orderList").querySelectorAll(".orderRow")].find(r => r.dataset.key === key);
+  (step && row?.querySelector(`button[data-step="${step}"]:not(:disabled)`) || row)?.focus();
+  $("#orderLive").textContent = t("orderPosition").replace("{name}", orderName(key)).replace("{n}", to + 1);
+  return true;
+}
+async function saveOrder() {
+  if (!orderDraft) return;
+  // Polling may have regrouped, removed or added sessions while this dialog was open.
+  renderSide();
+  const current = sidebarSections.get(orderDraft.section)?.keys || [], members = new Set(current);
+  const keys = orderDraft.keys.filter(k => members.has(k));
+  keys.push(...current.filter(k => !keys.includes(k)));
+  $("#orderSave").disabled = true;
+  try {
+    if (await setPref("sidebarOrder", {...sidebarOrder(), [orderDraft.section]: keys})) $("#orderDlg").close();
+    else $("#orderLive").textContent = $("#status").textContent;
+  } finally { $("#orderSave").disabled = false; }
 }
 
 function renderSide() {
+  sidebarSections.clear();
   const visibleMessages = S.messages.filter(m => !isAck(m));
   const count = a => visibleMessages.filter(m => m.sender === a || m.recipient === a).length;
   const group = s => NOW.includes(reach(s)) ? 0 : LATER.includes(reach(s)) ? 1 : ["offline", "stale"].includes(reach(s)) ? 2 : 3;
@@ -758,11 +838,13 @@ function renderSide() {
   sideSelection = {key: sel, section: selectedSection};
   const collapsed = collapsedSections();
   const section = (key, label, rows) => {
+    rows = orderedRows(key, rows);
+    sidebarSections.set(key, {label, keys: rows.map(r => r.key)});
     if (!rows.length) return "";
     const shut = collapsed.includes(key) && revealedSection !== key, action = t(shut ? "sectionExpand" : "sectionFold");
-    return `<div class="grp section"><span>${esc(label)} · ${rows.length}</span><button type="button" class="sectionToggle"
+    return `<div class="grp section"><span>${esc(label)} · ${rows.length}</span>${rows.length > 1 ? `<button type="button" class="sectionOrder" data-order-section="${key}" aria-label="${esc(label + ' · ' + t('orderEdit'))}">${esc(t("orderEdit"))}</button>` : ""}<button type="button" class="sectionToggle"
       data-section="${key}" aria-expanded="${!shut}" aria-controls="section-${key}" aria-label="${esc(label + " · " + action)}">${esc(action)}</button></div>`
-      + `<div id="section-${key}"${shut ? " hidden" : ""}>${shut ? "" : rows.join("")}</div>`;
+      + `<div id="section-${key}"${shut ? " hidden" : ""}>${shut ? "" : rows.map(r => r.html).join("")}</div>`;
   };
   const star = key => fav.includes(key) ? `<span class="star">★</span>` : "";
   const roomRow = r => {
@@ -785,20 +867,21 @@ function renderSide() {
   let h = `<div class="ses ${sel ? "" : "sel"}" tabindex="0" data-a=""><span class="dot idle"></span><span class="nm">${t("all")}</span>
     <span class="cnt">${visibleMessages.length}</span></div>`;
   // Favorites, in the order they were added; a favorite whose room or session no longer exists is skipped.
-  const favRows = fav.map(k => { const r = roomOf(k); if (r) return roomRow(r);
-    const s = S.sessions.find(x => x.address === k); return s ? sesRow(s) : ""; }).filter(Boolean);
+  const favRows = fav.map(k => { const r = roomOf(k); if (r) return {key: k, html: roomRow(r)};
+    const s = S.sessions.find(x => x.address === k); return s ? {key: k, html: sesRow(s)} : null; }).filter(Boolean);
   h += section("favorites", t("favs"), favRows);
   const rooms = (S.rooms || []).filter(r => !fav.includes(`room:${r.id}`));
-  h += section("rooms", t("rooms"), rooms.map(roomRow));
+  h += section("rooms", t("rooms"), rooms.map(r => ({key: `room:${r.id}`, html: roomRow(r)})));
   ["now", "later", "offline", "history"].forEach((key, g) => {
-    h += section(key, t(["gNow", "gLater", "offline", "history"][g]), ss.filter(s => group(s) === g).map(sesRow));
+    h += section(key, t(["gNow", "gLater", "offline", "history"][g]), ss.filter(s => group(s) === g).map(s => ({key: s.address, html: sesRow(s)})));
   });
-  const focused = document.activeElement?.closest?.("#list .ses, #list [data-section]");
+  const focused = document.activeElement?.closest?.("#list .ses, #list [data-section], #list [data-order-section]");
   const stopped = stoppedWorkers();
   if (stopped.length) h += `<button type="button" id="restartAll">${esc(t("restartAll").replace("{n}", stopped.length))}</button>`;
   $("#list").innerHTML = h;
-  if (focused) [...$("#list").querySelectorAll(".ses, [data-section]")].find(r => focused.dataset.section
-    ? r.dataset.section === focused.dataset.section : r.dataset.a === focused.dataset.a)?.focus();  // keep keyboard place
+  if (focused) [...$("#list").querySelectorAll(".ses, [data-section], [data-order-section]")].find(r => focused.dataset.section
+    ? r.dataset.section === focused.dataset.section : focused.dataset.orderSection
+      ? r.dataset.orderSection === focused.dataset.orderSection : r.dataset.a === focused.dataset.a)?.focus();  // keep keyboard place
   $("#team").textContent = `${S.team || t("noTeam")}${S.me ? ` · ${t("as")} ${S.me}` : ""}`;
 }
 
@@ -1469,6 +1552,8 @@ async function restartWorkers(recs) {
   } catch (err) { say(t("failed") + err.message, true); }
 }
 $("#list").addEventListener("click", e => {
+  const edit = e.target.closest("[data-order-section]");
+  if (edit) return openOrder(edit.dataset.orderSection);
   const toggle = e.target.closest("[data-section]");
   if (toggle) {
     const key = toggle.dataset.section, a = collapsedSections();
@@ -1480,6 +1565,41 @@ $("#list").addEventListener("click", e => {
   }
   if (e.target.closest("#restartAll")) return restartWorkers(stoppedWorkers());
   const x = e.target.closest(".ses"); if (x) pick(x.dataset.a);
+});
+// The editor contains one section, and only a drag started on its own handle can reorder it.
+$("#orderList").addEventListener("click", e => {
+  const button = e.target.closest("button[data-step]"), row = button?.closest(".orderRow");
+  if (!row || !orderDraft) return;
+  const i = orderDraft.keys.indexOf(row.dataset.key);
+  moveOrder(row.dataset.key, orderDraft.keys[i + Number(button.dataset.step)], button.dataset.step);
+});
+$("#orderList").addEventListener("dragstart", e => {
+  const handle = e.target.closest(".orderHandle"), row = handle?.closest(".orderRow");
+  if (!row || !orderDraft?.keys.includes(row.dataset.key)) { e.preventDefault(); return; }
+  orderDrag = row.dataset.key;
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("text/plain", orderDrag);
+  row.classList.add("dragging");
+});
+$("#orderList").addEventListener("dragover", e => {
+  if (orderDrag && e.target.closest(".orderRow")) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }
+});
+$("#orderList").addEventListener("drop", e => {
+  if (!orderDrag) return;
+  e.preventDefault();
+  moveOrder(orderDrag, e.target.closest(".orderRow")?.dataset.key);
+  orderDrag = null;
+});
+$("#orderList").addEventListener("dragend", () => {
+  orderDrag = null;
+  document.querySelectorAll("#orderList .dragging").forEach(row => row.classList.remove("dragging"));
+});
+$("#orderCancel").addEventListener("click", () => $("#orderDlg").close());
+$("#orderSave").addEventListener("click", saveOrder);
+$("#orderDlg").addEventListener("close", () => {
+  const section = orderDraft?.section;
+  orderDraft = null; orderDrag = null;
+  [...$("#list").querySelectorAll("[data-order-section]")].find(b => b.dataset.orderSection === section)?.focus();
 });
 // Reply (for you; agents never see the page): the composer gets a quote chip and the author as recipient, in a
 // group room by an @mention, elsewhere by picking the author under "To". The quote travels as one plain line with

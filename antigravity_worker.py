@@ -194,23 +194,33 @@ class Worker:
         return match[1]
 
     def ingest(self):
+        # Read once, under the writer's lock. Windows readers otherwise block atomic replacement.
+        records = self.relay_records()
+        known = {row[0] for row in self.journal.db.execute('SELECT id FROM jobs')}
         with closing(sqlite3.connect(NETWORK_DB.resolve().as_uri() + '?mode=ro', uri=True)) as db:
             db.row_factory = sqlite3.Row
             for row in db.execute('SELECT id,sender,recipient,body,sent_at FROM messages WHERE recipient=? AND sent_at>=? ORDER BY sent_at,id',
                                   (self.address, int(self.journal.get('since')))):
                 message = dict(row)
+                if message['id'] in known:
+                    continue
                 if message['body'].startswith('[Group room "'):
-                    record, canonical = self.room_record(message)
+                    record, canonical = self.room_record(message, records)
                     if not record:
                         continue  # metadata may be saved after the DB row; never enqueue a provisional copy id
                     message['id'] = canonical
                 self.journal.enqueue(message)
 
-    def room_record(self, message):
+    def relay_records(self):
+        from storage import file_lock
         try:
-            sent = json.loads((STATE / 'relay.json').read_text(encoding='utf-8')).get('sent', {})
+            with file_lock(STATE / 'relay.state.lock'):
+                return json.loads((STATE / 'relay.json').read_text(encoding='utf-8')).get('sent', {})
         except (OSError, ValueError):
-            return None, None
+            return {}
+
+    def room_record(self, message, records=None):
+        sent = self.relay_records() if records is None else records
         if message['id'] in sent:
             record = sent[message['id']]
             return record, record.get('copyOf', message['id'])

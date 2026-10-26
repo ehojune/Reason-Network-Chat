@@ -9,6 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 |---|---|---|
+| 17:23 | [#51](https://github.com/ehojune/Reason-Network-Chat/pull/51) | Restore six illustrated feature cards and the group-chat routing diagram to the README, with short explanations and links to the detailed manual. |
 | 16:14 | [#50](https://github.com/ehojune/Reason-Network-Chat/pull/50) | Shorter READMEs link to task-based manuals; agent setup, API and implementation details move to lookup-only references. |
 | 14:50 | [#49](https://github.com/ehojune/Reason-Network-Chat/pull/49) | Codex session and worker dialogs offer inherited speed, Standard or Fast; live changes apply on the next message and survive restarts. |
 | 12:51 | [#48](https://github.com/ehojune/Reason-Network-Chat/pull/48) | Gemini reads each relay snapshot under the writer's lock, so Windows can save new room deliveries while the receiver listens. |

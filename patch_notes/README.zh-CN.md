@@ -9,6 +9,7 @@ Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（
 
 | 时间 | 变更 | 主要内容 |
 |---|---|---|
+| 17:23 | [#51](https://github.com/ehojune/Reason-Network-Chat/pull/51) | README 恢复六张带说明的功能卡片和群聊转发示意图，详细操作仍放在独立手册中。 |
 | 16:14 | [#50](https://github.com/ehojune/Reason-Network-Chat/pull/50) | 精简 README，按任务查阅用户手册；智能体操作、API 和实现细节移至参考文档。 |
 | 14:50 | [#49](https://github.com/ehojune/Reason-Network-Chat/pull/49) | Codex 新会话和设置窗口支持继承速度、Standard 或 Fast；实时更改从下一条消息生效，并在重启时保留。 |
 | 12:51 | [#48](https://github.com/ehojune/Reason-Network-Chat/pull/48) | Gemini 读取转发记录时与写入方共用锁，确保 Windows 可在接收器运行期间保存新群聊投递。 |

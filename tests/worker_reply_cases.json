@@ -1,0 +1,14 @@
+[
+  {"name":"stdin only","text":"Reading additional input from stdin...","logOnly":true},
+  {"name":"observed warnings","text":"Reading additional input from stdin...\n2026-10-26T08:58:19.552291Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-26T08:58:19.552322Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-26T08:58:19.562227Z  WARN codex_core::shell_snapshot: Failed to create shell snapshot for powershell: Shell snapshot not supported yet for PowerShell","logOnly":true},
+  {"name":"warnings without preamble","text":"2026-10-26T08:58:19Z WARN codex_core::shell_snapshot: snapshot unavailable","logOnly":true},
+  {"name":"ANSI CRLF diagnostics with mention","text":"\u001b[33mReading additional input from stdin...\u001b[0m\r\n\r\n2026-10-26T17:58:19+09:00  WARN codex_core::test: @b-claude <script>not an answer</script>\r\n","logOnly":true},
+  {"name":"empty","text":"\n  ","logOnly":false},
+  {"name":"real answer after logs","text":"Reading additional input from stdin...\n2026-10-26T08:58:19Z WARN codex_core::test: warning\n@b-claude Fixed the test. CI passed.","logOnly":false},
+  {"name":"explanation before logs","text":"This warning is harmless:\n2026-10-26T08:58:19Z WARN codex_core::test: warning","logOnly":false},
+  {"name":"quoted diagnostics","text":"> Reading additional input from stdin...\n> 2026-10-26T08:58:19Z WARN codex_core::test: warning","logOnly":false},
+  {"name":"code example","text":"```text\nReading additional input from stdin...\n```","logOnly":false},
+  {"name":"same phrase in prose","text":"Reading additional input from stdin... means the CLI is reading your prompt.","logOnly":false},
+  {"name":"unknown application log","text":"2026-10-26T08:58:19Z WARN application: please investigate","logOnly":false},
+  {"name":"short answer","text":"4","logOnly":false}
+]

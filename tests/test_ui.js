@@ -33,7 +33,8 @@ vm.runInContext(`
 `, speed);
 const nodes = {};
 const routingCases = JSON.parse(fs.readFileSync(require('node:path').join(__dirname, 'routing_cases.json'), 'utf8'));
-const c = vm.createContext({assert, console, setTimeout: () => {}, nodes, routingCases});
+const workerReplyCases = JSON.parse(fs.readFileSync(require('node:path').join(__dirname, 'worker_reply_cases.json'), 'utf8'));
+const c = vm.createContext({assert, console, setTimeout: () => {}, nodes, routingCases, workerReplyCases});
 const errors = vm.createContext({assert});
 vm.runInContext('const t = k => "localized:" + k; ' + part('const displayError', 'async function post'), errors);
 vm.runInContext(`
@@ -70,6 +71,34 @@ assert.ok(!md('[x](https://e.test/" onclick="alert(1))').includes('href="https:/
 assert.match(md('- code:\n  \`\`\`python\n  if True:\n      print(1)\n\n  \`\`\`\n- next'), /<li><p>code:<\/p><pre><code>if True:\n    print\(1\)\n<\/code><\/pre><\/li><li><p>next/);
 assert.match(md('- \`\`\`\n  - kept as code\n  \`\`\`'), /<pre><code>- kept as code<\/code><\/pre>/);
 assert.ok(md('- '.repeat(2000) + 'end').length > 0); // bounded recursion on untrusted list text
+for (const example of workerReplyCases) {
+  assert.equal(isLogOnly(example.text),example.logOnly,example.name);
+  assert.equal(isFailure(example.text),example.logOnly,example.name);
+}
+S=base(); sel=''; S.rooms[0].group=true;
+const diagnostic='Reading additional input from stdin...\n2026-10-26T08:58:19Z WARN codex_core::test: @b <script>unsafe</script>';
+S.messages=[msg('request','p/terminal','p/a','question'),msg('log','p/a','p/terminal',diagnostic,'request')];
+TR=troubles(); assert.equal(TR.get('request').kind,'failed');
+assert.equal(forwardRooms({...S.messages[1],to:['p/terminal']}).length,0);
+renderTl();
+assert.ok(nodes['#tl'].innerHTML.includes('logOnlyReply'));
+assert.ok(nodes['#tl'].innerHTML.includes('<details><summary>executionLog'));
+assert.ok(nodes['#tl'].innerHTML.includes('&lt;script&gt;unsafe'));
+assert.ok(!nodes['#tl'].innerHTML.includes('<script>'));
+assert.equal((nodes['#tl'].innerHTML.match(/class="msg /g)||[]).length,1);
+S.messages=[msg('old-copy','p/terminal','p/b','old envelope')];
+S.relays={'old-copy':{room:'r',hop:1,speaker:'p/a',core:diagnostic,source:'unloaded'}};
+TR=troubles(); renderTl();
+assert.ok(nodes['#tl'].innerHTML.includes('logOnlyReply'));
+assert.equal((nodes['#tl'].innerHTML.match(/class="relay /g)||[]).length,0);
+S=base(); sel=''; S.messages=[msg('human','p/terminal','p/a',diagnostic)];
+TR=troubles(); renderTl();
+assert.ok(!nodes['#tl'].innerHTML.includes('logOnlyReply'));
+assert.equal((nodes['#tl'].innerHTML.match(/class="msg /g)||[]).length,1);
+S.messages.push(msg('answer','p/a','p/terminal',diagnostic+'\nThe change is ready.','human'));
+TR=troubles(); renderTl();
+assert.equal(TR.size,0);
+assert.equal((nodes['#tl'].innerHTML.match(/class="msg /g)||[]).length,2);
 S=base();
 S.messages=[msg('m','p/terminal','p/a','<script>alert(1)</script>'), msg('f','p/a','p/terminal',"You've hit your session limit · resets 5am",'m'), msg('n','p/terminal','p/b','second')];
 TR=troubles();

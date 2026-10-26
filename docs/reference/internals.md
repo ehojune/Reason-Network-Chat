@@ -102,6 +102,10 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
   The page shows a failure as a red notice and marks the message it answers *failed*; a message a `tier: "turn"`
   session read without answering for `NOANS_MS` (10 min) while not busy is *taken without an answer*. Both offer
   **Send again** (`/api/resend`) only while the recipient runs, and a bar per view lists them.
+  `log_only_reply` also rejects responses consisting entirely of the Codex stdin preamble and timestamped
+  `codex_*` diagnostic lines. The UI keeps their escaped original in collapsed details, including old relays.
+  Quoted logs, user questions and logs accompanied by an actual answer remain ordinary messages. Shared
+  `tests/worker_reply_cases.json` fixtures keep the Python and JavaScript classifiers aligned.
 - **Relay state survives restarts.** `relay.json` keeps `sent` (relayed messages), `seen`, the scan cursor `since`,
   `done` (hand-offs already queued), `queue`, `forwarded` and `settled`. A restarted server resumes from `since` (at most `RESUME_MS`, 24 h,
   back), so replies that arrived while it was down are passed on once. Saves read the file and merge `sent` / `seen`

@@ -293,6 +293,7 @@ when it starts again.
 
 | Symptom | Fix |
 |---|---|
+| Only execution logs arrived | No actual answer was received. Logs stay collapsed for inspection and are excluded from relays and room context. Inspect the worker before choosing **Send again**; there is no automatic retry. |
 | `database not found` on start | Reason Network is not installed or never ran. Run `reason network` once. |
 | "Can't read sessions" at the top | `reason` is not on PATH. Set `REASON_BIN` to the full path of the CLI. |
 | Send fails with a certificate error | Your network inspects TLS. Set `NODE_EXTRA_CA_CERTS` to your company root CA file. |

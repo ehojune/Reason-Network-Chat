@@ -130,11 +130,26 @@ def dm_note(person):
 # "The <Codex|Claude Code|Grok> worker failed: …"; a Codex turn that failed, "Codex failed: …"; an exit with no
 # output, "<codex|grok> exited with N".
 FAILURE_RE = re.compile(r"^(The [A-Za-z][A-Za-z ]{0,30} worker failed: |Codex failed: |(codex|grok) exited with -?\d+\s*$|You've hit your (session|usage) limit\b)")
+CODEX_LOG_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\s+(?:TRACE|DEBUG|INFO|WARN|ERROR)\s+codex_[A-Za-z0-9_:]+:.*$")
+LOG_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def log_only_reply(text):
+    """Known Codex bootstrap/diagnostic lines without any actual answer.
+
+    Keep in sync with isLogOnly in index.html and worker_reply_cases.json.
+    Match every nonblank line, not a substring: explanations, quotes, code
+    examples and a real answer after a warning must remain ordinary messages.
+    """
+    value = LOG_ANSI_RE.sub("", str(text or ""))
+    lines = [line.strip() for line in value.replace("\r\n", "\n").replace("\r", "\n").split("\n") if line.strip()]
+    return bool(lines) and all(line == "Reading additional input from stdin..." or CODEX_LOG_RE.fullmatch(line)
+                               for line in lines)
 
 
 def worker_failure(text):
     """A worker's reply saying it could not run the turn, not an answer."""
-    return bool(FAILURE_RE.match(str(text or "").lstrip()))
+    return bool(FAILURE_RE.match(str(text or "").lstrip())) or log_only_reply(text)
 
 
 def short(addr):

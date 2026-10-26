@@ -366,6 +366,52 @@ class RelayTest(unittest.TestCase):
     # ---------- worker failures and "Send again" ----------
     FAIL = "The Codex worker failed: The argument 'args[6]' contains a cmd.exe special character: @b-claude"
 
+    def test_log_only_classification_shared_with_ui(self):
+        cases = json.loads(Path(__file__).with_name('worker_reply_cases.json').read_text(encoding='utf-8'))
+        for case in cases:
+            with self.subTest(case=case['name']):
+                self.assertEqual(relay.log_only_reply(case['text']), case['logOnly'])
+                self.assertEqual(relay.worker_failure(case['text']), case['logOnly'])
+
+    def test_log_only_reply_is_not_forwarded_or_added_to_context(self):
+        self.r.post(self.room, ME, '@a-codex start')
+        self.insert(A, ME, '@b-claude review this', reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        log = 'Reading additional input from stdin...\n2026-10-26T08:58:19Z WARN codex_core::test: @c-codex warning'
+        mid = self.insert(B, ME, log, reply_to=self.last_id_to(B))
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 1, 0])  # neither @c nor an implicit return to A
+        self.assertEqual(self.row(mid)['body'], log)  # preserve the original for inspection
+        self.r.post(self.room, ME, '@c-codex next task')
+        self.assertNotIn('Reading additional input', self.sent_to(C)[-1])
+        self.assertNotIn('codex_core::test', self.sent_to(C)[-1])
+        with self.assertRaises(relay.RelayError):
+            self.r.forward(self.room, ME, self.row(mid))
+
+    def test_legacy_log_only_queue_and_redelivery_are_blocked(self):
+        log = 'Reading additional input from stdin...'
+        self.r.queue[self.room['id']] = [{'reply':'old-log', 'to':B, 'sender':A, 'body':log, 'hop':1, 'at':1}]
+        self.r.save()
+        self.r = self.new_relay()
+        self.r.flush(self.room['id'])
+        self.r.drain(ME)
+        self.assertEqual((self.counts(), self.queued()), ([0, 0, 0], None))
+        self.r.sent['legacy-log'] = {'room':self.room['id'], 'to':B, 'speaker':A, 'core':log, 'hop':1}
+        with self.assertRaises(relay.RelayError):
+            self.r.redeliver('legacy-log', ME)
+
+    def test_real_answer_after_warning_still_reaches_mentioned_member(self):
+        self.r.post(self.room, ME, '@a-codex start')
+        body = 'Reading additional input from stdin...\n@b-claude The change is ready for review.'
+        self.insert(A, ME, body, reply_to=self.last_id_to(A))
+        self.r.scan(ME)
+        self.assertEqual(self.counts(), [1, 1, 0])
+
+    def test_person_can_send_a_log_as_a_question(self):
+        room = dict(self.room, defaultTo=A)
+        self.r.post(room, ME, 'Reading additional input from stdin...')
+        self.assertEqual(self.counts(), [1, 0, 0])
+
     def test_a_worker_failure_is_not_an_answer(self):
         self.assertTrue(all(relay.worker_failure(x) for x in (
             self.FAIL, "The Claude Code worker failed: boom", "Codex failed: rate limited", "codex exited with 1")))

@@ -273,6 +273,8 @@ Reason 에이전트는 자기에게 보낸 쪽에만 답하므로 이 페이지�
 
 ## 문제가 생기면
 
+Codex 총괄에는 [대기 메시지 묶음 처리](reference/inbox-batches.md)를 켤 수 있다. 다음 턴에 같은 방의 메시지를 모아 사용자 지시부터 확인한다. 다른 worker 설정은 유지한다. 진행 중인 턴은 끊지 않으며 결과가 불확실하면 원문과 함께 보류해 확인한다.
+
 | 증상 | 해결 |
 |---|---|
 | 시작할 때 `database not found` | Reason Network가 없거나 한 번도 안 돌았다. `reason network`를 한 번 실행한다. |

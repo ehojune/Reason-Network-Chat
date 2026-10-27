@@ -10,6 +10,10 @@ from pathlib import Path
 os.environ["REASON_CHAT_HOME"] = tempfile.mkdtemp()
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import launcher  # noqa: E402
+# Another discovered test module can import launcher before this module sets the
+# environment. Bind the already-loaded module too; never write the user's registry.
+TEST_STATE = Path(os.environ["REASON_CHAT_HOME"])
+launcher.STATE = TEST_STATE
 
 FOLDER = tempfile.mkdtemp()
 SOL = {"id": "gpt-6.1-sol", "label": "GPT-6.1-Sol", "efforts": ["low", "high"], "defaultEffort": "low"}
@@ -631,6 +635,10 @@ class RecordsTest(unittest.TestCase):
         self.assertEqual((r["family"], r["model"], r["effort"], r["fullAccess"]), ("codex", "gpt-6.1-sol", "high", True))
         self.assertIn((5, "t5"), launcher.spawned_here())  # and its start proof
         self.assertIn("lead-codex", json.loads((launcher.STATE / "worker-records.json").read_text(encoding="utf-8")))
+
+    def test_registry_is_isolated_even_when_launcher_was_imported_earlier(self):
+        self.assertEqual(launcher.STATE, TEST_STATE)
+        self.assertNotEqual(launcher.STATE.resolve(), (Path.home() / ".reason-network-chat").resolve())
 
     def test_record_outlives_the_process_and_starts_it_again(self):
         self.l.workers["lead-codex"]["pid"] = 1001  # the reboot

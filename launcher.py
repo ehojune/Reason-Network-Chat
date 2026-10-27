@@ -290,14 +290,29 @@ real = env.get("REASON_CHAT_SHIM_REAL") or env.get("REASON_CHAT_CODEX_REAL")
 if not real:
     sys.exit("REASON_CHAT_SHIM_REAL is not set")
 extra = None
+settings = {}
 if env.get("REASON_CHAT_SHIM_SETTINGS"):
     try:
         with open(env["REASON_CHAT_SHIM_SETTINGS"], encoding="utf-8") as f:
-            extra = json.load(f).get("args")
+            settings = json.load(f)
+            extra = settings.get("args")
     except (OSError, ValueError, AttributeError):
+        if "exec" in sys.argv and "--json" in sys.argv and any("<reason-message " in a for a in sys.argv):
+            sys.exit("Worker settings unreadable; refusing to bypass possible batch receipts")
         extra = None
+        settings = {}
 if not isinstance(extra, list):
     extra = json.loads(env.get("REASON_CHAT_SHIM_ARGS") or env.get("REASON_CHAT_CODEX_ARGS") or "[]")
+if settings.get("inbox_batch"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        from inbox_batch import run
+        result = run(settings["inbox_batch"], real, [str(a) for a in extra], sys.argv[1:])
+        if result is not None:
+            sys.exit(result)
+    except Exception as exc:
+        print("Inbox batch held: " + str(exc), file=sys.stderr)
+        sys.exit(1)
 sys.exit(subprocess.call([real] + [str(a) for a in extra] + sys.argv[1:]))
 '''
 SHIM_AGENTS = ("codex", "claude")  # the CLI names `serve` looks up on PATH
@@ -307,6 +322,8 @@ def _shim_zip():
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:  # fixed timestamp: the same Python gives the same bytes
         z.writestr(zipfile.ZipInfo("__main__.py", date_time=(1980, 1, 1, 0, 0, 0)), SHIM_MAIN)
+        for name in ("inbox_batch.py", "storage.py"):
+            z.writestr(zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0)), Path(__file__).with_name(name).read_bytes())
     return buf.getvalue()
 
 
@@ -337,9 +354,10 @@ def model_args(fid, model, effort, fast=None):
 def write_settings(path, args):
     """The per-worker file the shim reads its model arguments from (written first, then swapped in)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"args": args}), encoding="utf-8")
-    os.replace(tmp, path)
+    with file_lock(path.with_suffix(".lock")):
+        settings = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        settings["args"] = args
+        atomic_json(path, settings)
 
 
 def shim_current(kind):
@@ -348,7 +366,9 @@ def shim_current(kind):
     if not WIN:
         target = STATE / f"{kind}-shim" / f"{kind}_shim.py"
         try:
-            return target.read_bytes() == SHIM_MAIN
+            return target.read_bytes() == SHIM_MAIN and all(
+                (target.parent / name).read_bytes() == Path(__file__).with_name(name).read_bytes()
+                for name in ("inbox_batch.py", "storage.py"))
         except OSError:
             return False
     try:
@@ -376,6 +396,8 @@ def shim_dir(kind="codex"):
         q = lambda b: b"'" + b.replace(b"'", b"'\\''") + b"'"
         main = d / f"{kind}_shim.py"
         extra.append((main, SHIM_MAIN))
+        for name in ("inbox_batch.py", "storage.py"):
+            extra.append((d / name, Path(__file__).with_name(name).read_bytes()))
         data = b"#!/bin/sh\nexec " + q(exe) + b" " + q(str(main).encode("utf-8")) + b' "$@"\n'
     try:
         d.mkdir(parents=True, exist_ok=True)

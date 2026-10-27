@@ -40,7 +40,32 @@ def file_lock(path, timeout=10):
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
-def atomic_json(path, value):
+def _sync_directory_tree(path):
+    """Persist the rename and any newly created ancestor directories on POSIX."""
+    directory = path.resolve().parent
+    while True:
+        fd = os.open(str(directory), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        if directory == directory.parent:
+            break
+        directory = directory.parent
+
+
+def _replace_write_through(source, target):
+    """Windows replacement with metadata write-through before model side effects."""
+    import ctypes
+    from ctypes import wintypes
+    move = ctypes.WinDLL("kernel32", use_last_error=True).MoveFileExW
+    move.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD]
+    move.restype = wintypes.BOOL
+    if not move(str(source.resolve()), str(target.resolve()), 0x1 | 0x8):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
+def atomic_json(path, value, durable=False):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = None
@@ -51,7 +76,12 @@ def atomic_json(path, value):
             json.dump(value, handle, ensure_ascii=False, indent=1)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temp, path)
+        if durable and os.name == "nt":
+            _replace_write_through(temp, path)
+        else:
+            os.replace(temp, path)
+            if durable:
+                _sync_directory_tree(path)
     finally:
         if temp is not None:
             try:

@@ -9,6 +9,7 @@ Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（
 
 | 时间 | 变更 | 主要内容 |
 |---|---|---|
+| 16:15 | [#54](https://github.com/ehojune/Reason-Network-Chat/pull/54) | Codex 批次只保留一份重复的投递说明，同时完整保留消息原文、上下文和路由信息。 |
 | 10:20 | [#53](https://github.com/ehojune/Reason-Network-Chat/pull/53) | Codex 可选择合并同一聊天室的待处理消息，优先读取用户指令，并保留原文及持久化送达记录。 |
 
 ## 2026-10-26

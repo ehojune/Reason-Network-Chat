@@ -218,6 +218,8 @@ def run(config, real, extra, args, runner=invoke):
 
 
 def main(argv=None):
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("enable", "disable", "status", "export"))
     parser.add_argument("--settings", type=Path, required=True, help="existing Codex worker settings JSON")

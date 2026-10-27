@@ -181,6 +181,33 @@ class InboxBatchTest(unittest.TestCase):
     def test_non_reason_commands_not_intercepted(self):
         self.assertIsNone(batch.run(self.config, "real", [], ["exec", "--json", "hello"]))
 
+    def test_configuration_preserves_model_and_disable_keeps_receipts(self):
+        settings = self.root / "lead.json"
+        self.write("rooms", [{"id": "room", "members": ["me/lead"]}])
+        batch.atomic_json(settings, {"args": ["-c", "model=test", "-c", "service_tier=fast"]})
+        args = ["--settings", str(settings)]
+        with contextlib.redirect_stdout(io.StringIO()):
+            batch.main(["enable"] + args + ["--recipient", "me/lead", "--person", "me/terminal",
+                       "--room", "room", "--chat-home", str(self.root), "--reason-home", str(self.root)])
+            saved = batch.read(settings)
+            batch.main(["disable"] + args)
+            disabled = batch.read(settings)
+            batch.main(["status"] + args)
+        self.assertEqual(saved["args"], disabled["args"])
+        self.assertTrue(saved["inbox_batch"]["enabled"])
+        self.assertFalse(disabled["inbox_batch"]["enabled"])
+        self.assertEqual(saved["inbox_batch"]["journal"], disabled["inbox_batch"]["journal"])
+
+    def test_missing_worker_settings_cannot_bypass_batch_receipts(self):
+        env = dict(os.environ, REASON_CHAT_SHIM_REAL=sys.executable,
+                   REASON_CHAT_SHIM_SETTINGS=str(self.root / "missing.json"),
+                   REASON_CHAT_SHIM_ARGS=json.dumps(["-c", "print('UNSAFE_FALLBACK')"]))
+        result = subprocess.run([sys.executable, "-c", launcher.SHIM_MAIN.decode()] + self.args(),
+                                env=env, capture_output=True, encoding="utf-8", timeout=20)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("UNSAFE_FALLBACK", result.stdout)
+        self.assertIn("settings unreadable", result.stderr)
+
     def test_cli_failure_even_with_receipt_is_not_success(self):
         code = "import json; print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':'text'}})); print(json.dumps({'type':'turn.completed'})); raise SystemExit(1)"
         with self.assertRaises(batch.BatchError):

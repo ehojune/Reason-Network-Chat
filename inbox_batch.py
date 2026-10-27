@@ -37,10 +37,16 @@ def records(config, current):
         return []
     valid = []
     seen = set()
+    if not isinstance(queue, list):
+        raise ValueError("Unexpected Reason queue shape")
     with contextlib.closing(sqlite3.connect(Path(config["database"]).resolve().as_uri() + "?mode=ro", uri=True)) as db:
         db.row_factory = sqlite3.Row
         for entry in queue:
+            if not isinstance(entry, dict) or "reply" in entry:
+                continue  # Reason already owns a cached answer awaiting publication
             request = entry.get("request", {})
+            if not isinstance(request, dict):
+                continue
             mid = request.get("id")
             if not isinstance(mid, str) or mid in seen:
                 continue
@@ -50,7 +56,7 @@ def records(config, current):
             speaker = provenance.get("speaker")
             if (row is None or row["recipient"] != config["recipient"] or
                     row["sender"] != config["person"] or request.get("from") != row["sender"] or
-                    request.get("to") != row["recipient"] or request.get("body") != row["body"] or
+                    ("to" in request and request["to"] != row["recipient"]) or request.get("body") != row["body"] or
                     provenance.get("room") != room_id or
                     speaker not in [config["person"]] + room.get("members", [])):
                 continue
@@ -191,7 +197,8 @@ def run(config, real, extra, args, runner=invoke):
             return None  # existing receipts still work when new batching is disabled
         try:
             rows = records(config, current)
-        except (OSError, ValueError, KeyError, TypeError, sqlite3.Error):
+        except (OSError, ValueError, KeyError, TypeError, AttributeError, sqlite3.Error) as exc:
+            print("Inbox snapshot unavailable; processing only the original request: " + type(exc).__name__, file=sys.stderr)
             return None  # unavailable snapshot: execute just the original request normally
         excluded = {r["id"] for j in jobs for r in j["messages"]}
         chosen = select(rows, current, excluded, config.get("max_messages", 24), config.get("max_bytes", 160000))

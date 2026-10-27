@@ -83,6 +83,30 @@ class InboxBatchTest(unittest.TestCase):
         for key, value in before.items():
             self.assertEqual(Path(self.config[key]).read_bytes(), value)
 
+    def test_reason_queue_without_optional_to_field_batches(self):
+        queue = batch.read(self.config["queue"])
+        for entry in queue:
+            del entry["request"]["to"]
+        self.write("queue", queue)
+        self.run_batch()
+        self.assertEqual([r["id"] for r in self.job()["messages"]], ["human", "old", "agent"])
+
+    def test_reason_cached_reply_is_not_reexecuted_or_consumed(self):
+        queue = batch.read(self.config["queue"])
+        queue[1]["reply"] = "cached answer awaiting publication"
+        self.write("queue", queue)
+        before = Path(self.config["queue"]).read_bytes()
+        self.run_batch()
+        self.assertEqual([r["id"] for r in self.job()["messages"]], ["human", "old"])
+        self.assertEqual(before, Path(self.config["queue"]).read_bytes())
+
+    def test_explicit_wrong_destination_is_still_rejected(self):
+        queue = batch.read(self.config["queue"])
+        queue[1]["request"]["to"] = "other/recipient"
+        self.write("queue", queue)
+        self.run_batch()
+        self.assertEqual([r["id"] for r in self.job()["messages"]], ["human", "old"])
+
     def test_later_messages_ack_without_model_after_publication(self):
         self.run_batch()
         self.publish()

@@ -114,7 +114,7 @@ def split_envelope(record):
         return None
     before = body[:-len(core)]
     boundary = before.rfind("\n---\n")
-    if boundary < 0 or not re.fullmatch(r"[^\r\n]{1,128}: ", before[boundary + 5:]):
+    if boundary < 0 or not re.fullmatch(r"[^\r\n]{1,193}: ", before[boundary + 5:]):
         return None
     header, label = before[:boundary], before[boundary:]
     marker = "\nEarlier in the room:\n"
@@ -146,11 +146,12 @@ def model_snapshot(records):
 
     for record in records:
         view = dict(record)
+        # Relay-only hints are never independent model input, even on fallback.
+        view.pop("core", None)
         view["encoding"] = "raw"
         parts = split_envelope(record)
         if parts is not None:
             header, context, label, core = parts
-            view.pop("core", None)
             view.update(encoding="shared", body=core, body_prefix=label,
                         wrapper_refs=[intern(line, line_ids, snapshot["wrapper_lines"])
                                       for line in header.splitlines(keepends=True)],

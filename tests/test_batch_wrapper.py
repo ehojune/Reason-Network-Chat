@@ -67,6 +67,19 @@ class SharedWrapperTest(unittest.TestCase):
         snapshot = batch.model_snapshot(variants)
         for original, view in zip(variants, snapshot["messages"]):
             self.assertEqual(view["encoding"], "raw")
+            self.assertNotIn("core", view)
+            self.assertEqual(batch.expand_message(snapshot, view), original["body"])
+
+    def test_long_full_address_speaker_label_uses_shared_encoding(self):
+        import rooms
+        address = "p" * 64 + "/" + "w" * 128
+        self.assertIsNotNone(rooms.ADDR_RE.fullmatch(address))
+        records = [self.record("a"), self.record("b")]
+        for record in records:
+            record["body"] = record["body"].replace("\n---\nworker: ", "\n---\n" + address + ": ")
+        snapshot = batch.model_snapshot(records)
+        for original, view in zip(records, snapshot["messages"]):
+            self.assertEqual(view["encoding"], "shared")
             self.assertEqual(batch.expand_message(snapshot, view), original["body"])
 
     def test_no_history_and_line_endings_preserved(self):

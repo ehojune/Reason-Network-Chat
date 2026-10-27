@@ -186,7 +186,17 @@ def state():
         who, who_err = _who["data"] or {}, _who["error"]
     person = who.get("person")
     me = f"{person}/terminal" if person else None  # address `reason network send` uses from a plain process
-    live = who.get("sessions") or []
+    launched = LAUNCHER.list()  # verifies PID/start time; saved records alone are not liveness evidence
+    live = list(who.get("sessions") or [])
+    if person:
+        addresses = {s["address"] for s in live}
+        for worker in launched:
+            address = f"{person}/{worker['name']}"
+            if address not in addresses:
+                live.append({"address": address, "name": worker["name"], "person": person,
+                             "machine": who.get("machine"), "agent": BADGE[worker["family"]],
+                             "status": "idle", "cwd": worker.get("cwd"), "worker": True})
+                addresses.add(address)
     seen = {s["address"] for s in live}
     # Codex sessions of yours on this computer can be woken (wake.py): their key in the database names the thread.
     mine = lambda person_, machine: person_ == person and machine in (None, who.get("machine"))
@@ -209,7 +219,7 @@ def state():
         seen.add(addr)
     records = {r["name"]: r for r in LAUNCHER.list_records()}
     stale = LAUNCHER.stale_names()
-    workers = set(records) | {w["name"] for w in LAUNCHER.list()}
+    workers = set(records) | {w["name"] for w in launched}
     for s in sessions:
         s["unread"] = unread.get(s["address"], 0)
         # A worker of this page keeps its badge when offline: the database stores serve workers as agent "cli".
@@ -241,7 +251,7 @@ def state():
     forwarded = RELAY.forwarded_view({m["id"] for m in msgs})
     settled = RELAY.settled_view({m["id"] for m in msgs})
     return {"api": API, "boot": BOOT, "team": who.get("team"), "me": me, "sessions": sessions, "messages": msgs,
-            "launched": LAUNCHER.list(), "foreignWorkers": LAUNCHER.list_foreign(), "workerRecords": list(records.values()), "rooms": ROOMS.list(), "relays": relays, "queued": queued, "notices": notices, "forwarded": forwarded, "settled": settled,
+            "launched": launched, "foreignWorkers": LAUNCHER.list_foreign(), "workerRecords": list(records.values()), "rooms": ROOMS.list(), "relays": relays, "queued": queued, "notices": notices, "forwarded": forwarded, "settled": settled,
             "relayDefaults": {"hops": relay_mod.MAX_HOPS, "budget": relay_mod.BUDGET, "window": relay_mod.BUDGET_WINDOW},
             "prefs": PREFS.get(), "wakes": WAKER.view(),
             "whoError": who_err, "now": int(time.time() * 1000)}
@@ -253,6 +263,8 @@ def me_and_known():
         who = _who["data"] or {}
     person = who.get("person")
     known = {s["address"] for s in who.get("sessions") or []}
+    if person:
+        known.update(f"{person}/{w['name']}" for w in LAUNCHER.list())
     for r in db_rows("select distinct sender as a from messages union select distinct recipient from messages"):
         known.add(r["a"])
     return (f"{person}/terminal" if person else None), known

@@ -9,6 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 |---|---|---|
+| 16:15 | [#54](https://github.com/ehojune/Reason-Network-Chat/pull/54) | Codex batches share repeated delivery instructions while preserving every original message, history and routing detail. |
 | 10:20 | [#53](https://github.com/ehojune/Reason-Network-Chat/pull/53) | Opt-in Codex batches read queued room messages together with user instructions first, retaining originals and durable delivery receipts. |
 
 ## 2026-10-26

@@ -9,6 +9,7 @@ Reason Network Chat에서 바뀐 것을 최신순으로 적는다. 시간은 한
 
 | 시간 | 변경 | 주요 변경사항 |
 |---|---|---|
+| 16:15 | [#54](https://github.com/ehojune/Reason-Network-Chat/pull/54) | Codex 배치의 공통 전달 안내를 한 번만 담고 메시지 원문·문맥·전달 경로는 모두 보존한다. |
 | 10:20 | [#53](https://github.com/ehojune/Reason-Network-Chat/pull/53) | Codex가 같은 방의 대기 메시지를 사용자 지시부터 묶어 읽도록 선택할 수 있게 하고 원문·전달 확인 기록을 보존한다. |
 
 ## 2026-10-26

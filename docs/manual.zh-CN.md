@@ -262,6 +262,8 @@ worker 的回复总是如此。群聊在本页面的服务器运行期间工作�
 
 ## 故障排查
 
+Codex 负责人可启用[待处理消息批次](reference/inbox-batches.md)：下一轮合并同一聊天室的待处理消息，先读已验证的用户指令。其他 worker 的设置不变，不中断正在运行的轮次。结果不确定时保留原文并暂停，供检查。
+
 | 现象 | 解决办法 |
 |---|---|
 | 启动时提示 `database not found` | 没装 Reason Network 或从未运行过。先运行一次 `reason network`。 |

@@ -11,6 +11,7 @@ and starts new agent sessions.
 |---|---|
 | `server.py` | Python standard library HTTP server on `127.0.0.1:8765`. No dependencies. |
 | `launcher.py` | New sessions: model catalogs, `reason network serve` workers, terminal windows, the model shims, permissions, changing a running worker. |
+| `inbox_batch.py` | Opt-in same-room Codex inbox snapshots, user-first input, durable receipts and held-result inspection. See [batch contract](inbox-batches.md). |
 | `wake.py` | Wake a sleeping Codex session: `codex exec resume <thread> <fixed prompt>` in its folder; auto-wake with limits. |
 | `prefs.py` | Viewer settings in `REASON_CHAT_HOME/prefs.json` (whitelisted keys), so they survive a lost localStorage. |
 | `rooms.py` | Rooms: named sets of session addresses in `REASON_CHAT_HOME/rooms.json`. |

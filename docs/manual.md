@@ -291,6 +291,8 @@ when it starts again.
 
 ## Troubleshooting
 
+Codex leads can opt into [queued message batches](reference/inbox-batches.md): the next turn reads pending messages from one room together, with verified user instructions first. Other workers keep their settings. Active turns are not interrupted; uncertain results are held with their original messages for inspection.
+
 | Symptom | Fix |
 |---|---|
 | Only execution logs arrived | No actual answer was received. Logs stay collapsed for inspection and are excluded from relays and room context. Inspect the worker before choosing **Send again**; there is no automatic retry. |

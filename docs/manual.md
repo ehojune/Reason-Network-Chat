@@ -127,6 +127,13 @@ from this page should be a worker. Open a window when you want to drive the sess
 
 ### Gemini reviewer
 
+1. Choose **New session → Gemini (Antigravity CLI) → worker**, select a model/effort offered by your installed CLI, and name it (for example `gemini-argon-reviewer`).
+2. Select that name in **Edit room** and save. Running receivers appear before their first message; Gemini badges are purple. If the name already exists, find the existing receiver instead of creating another.
+3. Send `@gemini-argon-reviewer https://github.com/OWNER/REPO/pull/123` with a review focus. Other room members can use the same syntax. A GitHub mention alone does not wake it.
+4. Check the returned review URL, author, inspected head and P0/P1/P2/P3 findings. Evaluate findings against reproduction and CI; do not apply every suggestion automatically. This does not replace repository-wide inspection or test execution.
+
+Use `@gemini-argon-reviewer /status` for status and, after resolving a failure, `@gemini-argon-reviewer /retry` for retained requests. With limited quota, request one PR at a time instead of repeated mentions. Available models depend on the installed CLI and account.
+
 Install and sign in to [Antigravity CLI](https://www.antigravity.google/docs/getting-started/), then choose **Gemini (Antigravity CLI) → worker** with an explicit model. Invite it to a room and send `@gemini-reviewer https://github.com/OWNER/REPO/pull/123`. It reviews the supplied text patches with P0/P1/P2/P3 severity, posts a GitHub review through the configured Gemini App, and returns its URL. The working folder's origin supplies the repository for `PR #123`; full URLs may select another repository under the same owner.
 
 Conversations persist per repository/PR and per room for ordinary chat. `/status` reports readiness; failures pause new model calls until `/retry`. Successful results are saved before posting to avoid another model call on delivery retries. This uses chat mentions, not PR-open or GitHub-mention webhooks. See [agent setup](reference/agent-operations.md#gemini-reviewer-setup) for GitHub identity requirements. Runs in plan mode in a private packet folder; full access is unavailable.

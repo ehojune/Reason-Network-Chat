@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import inbox_batch as batch
 import launcher
+import storage
 
 
 class InboxBatchTest(unittest.TestCase):
@@ -110,6 +111,31 @@ class InboxBatchTest(unittest.TestCase):
             self.run_batch("agent")
         self.assertEqual(len(self.calls), 0)
         self.assertEqual(len(self.job()["messages"]), 3)
+
+    def test_journal_uses_durable_write_before_model(self):
+        with patch.object(batch, "atomic_json", wraps=batch.atomic_json) as save:
+            def checked_runner(command, text):
+                self.assertTrue(save.call_args.kwargs["durable"])
+                self.assertEqual(self.job()["status"], "running")
+                return self.runner(command, text)
+            self.run_batch(runner=checked_runner)
+        self.assertTrue(all(call.kwargs.get("durable") for call in save.call_args_list))
+
+    def test_directory_sync_includes_new_ancestors(self):
+        target = self.root / "journal" / "batches.json"
+        with patch.object(storage.os, "open", return_value=123) as opened, \
+                patch.object(storage.os, "fsync") as synced, patch.object(storage.os, "close") as closed:
+            storage._sync_directory_tree(target)
+        self.assertEqual([call.args[0] for call in opened.call_args_list], [str(p) for p in target.resolve().parents])
+        self.assertEqual(synced.call_count, len(target.resolve().parents))
+        self.assertEqual(closed.call_count, synced.call_count)
+
+    def test_failed_durability_never_starts_model(self):
+        helper = "_replace_write_through" if os.name == "nt" else "_sync_directory_tree"
+        with patch.object(storage, helper, side_effect=OSError("cannot persist")):
+            with self.assertRaisesRegex(OSError, "cannot persist"):
+                self.run_batch()
+        self.assertEqual(self.calls, [])
 
     def test_missing_receipt_preserves_raw_answer_without_publication(self):
         with self.assertRaisesRegex(batch.BatchError, "receipt"):

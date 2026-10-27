@@ -57,8 +57,10 @@ def records(config, current):
             if mid != current and db.execute("SELECT 1 FROM messages WHERE reply_to=? LIMIT 1", (mid,)).fetchone():
                 continue
             # Preserve the entire original envelope, including provenance and context.
-            valid.append(dict(row) | {"speaker": speaker, "room": room_id,
-                                      "human": speaker == config["person"] and provenance.get("hop") == 0})
+            record = dict(row)
+            record.update(speaker=speaker, room=room_id,
+                          human=speaker == config["person"] and provenance.get("hop") == 0)
+            valid.append(record)
     if not any(r["id"] == current for r in valid):
         return []
     humans = sorted((r for r in valid if r["human"]), key=lambda r: (r["sent_at"], r["id"]), reverse=True)
@@ -175,14 +177,14 @@ def run(config, real, extra, args, runner=invoke):
                 continue
             if job["status"] != "completed":
                 job["status"] = "held"
-                atomic_json(path, journal)
+                atomic_json(path, journal, durable=True)
                 raise BatchError("Batch " + job["id"] + " is held; inspect its saved originals/result before explicit recovery")
             delivered = published(config, job)
             if not delivered:
                 ids = job.setdefault("publication_ids", [job["primary"]])
                 if current not in ids:
                     ids.append(current)
-                atomic_json(path, journal)
+                atomic_json(path, journal, durable=True)
             emit("-" if delivered else job["answer"], None if delivered else job.get("thread"))
             return 0
         if not config.get("enabled", False):
@@ -197,7 +199,7 @@ def run(config, real, extra, args, runner=invoke):
             return None
         job = {"id": uuid.uuid4().hex, "primary": current, "messages": chosen, "status": "running"}
         jobs.append(job)
-        atomic_json(path, journal)  # fsync BEFORE launching work
+        atomic_json(path, journal, durable=True)  # persist directory entries BEFORE work
         try:
             answer, thread, usage = runner([real] + extra + args[:-1] + ["-"], prompt(original, job))
             job.update(raw_answer=answer, thread=thread, usage=usage)
@@ -208,10 +210,10 @@ def run(config, real, extra, args, runner=invoke):
             if not clean:
                 raise BatchError("Empty batch answer; result saved for inspection")
             job.update(status="completed", answer=clean, publication_ids=[current])
-            atomic_json(path, journal)  # commit receipt BEFORE publishing
+            atomic_json(path, journal, durable=True)  # commit receipt BEFORE publishing
         except BaseException as exc:
             job.update(status="held", error=str(exc))
-            atomic_json(path, journal)
+            atomic_json(path, journal, durable=True)
             raise
         emit(job["answer"], job.get("thread"), job.get("usage"))
         return 0

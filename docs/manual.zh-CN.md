@@ -121,6 +121,13 @@ worker 已自动接收消息，因此菜单会显示说明，收藏中的 worker
 
 ### Gemini 审查器
 
+1. 选择 **新会话 → Gemini (Antigravity CLI) → worker**，从已安装 CLI 提供的选项中选择模型和强度，并命名（例如 `gemini-argon-reviewer`）。
+2. 在**编辑群聊**中选择该名称并保存。运行中的接收器在首次对话前即可显示，Gemini 徽章为紫色。名称已存在时，请查找已有接收器，不要重复创建。
+3. 发送 `@gemini-argon-reviewer https://github.com/OWNER/REPO/pull/123` 并说明审查重点。其他群成员也可这样调用；仅在 GitHub 中提及不会启动它。
+4. 核对返回的审查链接、作者、实际审查的 head 和 P0/P1/P2/P3。结合复现与 CI 判断，不要自动采纳所有建议。这不能代替全仓库检查或执行测试。
+
+使用 `@gemini-argon-reviewer /status` 查询状态；解决失败原因后，用 `@gemini-argon-reviewer /retry` 重试保留的请求。额度有限时每次只提交一个 PR，不要重复呼叫。可用模型取决于 CLI 和账户。
+
 安装并登录 [Antigravity CLI](https://www.antigravity.google/docs/getting-started/)，选择 **Gemini (Antigravity CLI) → worker** 和明确的模型。邀请它加入群聊，发送 `@gemini-reviewer https://github.com/OWNER/REPO/pull/123`，即可按 P0/P1/P2/P3 审查所提供的文本补丁，通过配置的 Gemini GitHub App 发布审查并回传链接。`PR #123` 使用工作目录的 origin 仓库；完整链接可选择同一所有者的其他仓库。
 
 对话按仓库和 PR 持久保存，普通聊天按群聊保存。`/status` 查询状态；失败后暂停新模型调用，等待 `/retry`。成功结果在发布前保存，重试投递无需再次调用模型。目前只处理聊天提及，不监听 PR 创建或 GitHub 提及。GitHub 身份配置见[智能体设置](reference/agent-operations.md#gemini-reviewer-setup)。在独立资料目录中以 plan 模式运行，不支持完全权限。

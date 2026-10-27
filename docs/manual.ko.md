@@ -124,6 +124,13 @@ worker는 메시지를 자동으로 받으므로 즐겨찾기에서도 메뉴에
 
 ### Gemini 리뷰어
 
+1. **새 세션 → Gemini (Antigravity CLI) → 워커**에서 설치된 CLI가 제공하는 모델·강도를 고르고 이름을 정한다(예: `gemini-argon-reviewer`).
+2. **대화방 편집**에서 그 이름을 선택해 저장한다. 실행 중인 수신기는 첫 대화 전에도 목록에 나오며 Gemini 배지는 보라색이다. 같은 이름이 이미 있다는 오류가 나면 새로 만들지 말고 기존 수신기를 찾는다.
+3. 방에서 `@gemini-argon-reviewer https://github.com/OWNER/REPO/pull/123`과 검토 초점을 보낸다. 다른 구성원도 같은 방식으로 호출한다. GitHub의 `@`만으로는 기동하지 않는다.
+4. 반환된 리뷰 URL·작성자·검토 head·P0/P1/P2/P3를 확인한다. 모델 의견을 모두 자동 반영하지 말고 재현·CI와 함께 판단한다. 전체 저장소 탐색이나 테스트 실행을 대신하지 않는다.
+
+상태 확인은 `@gemini-argon-reviewer /status`. 실패 원인을 해결한 뒤 `@gemini-argon-reviewer /retry`로 보관된 요청을 재시도한다. 사용량이 적을 때는 반복 호명하지 말고 PR 하나씩 맡긴다. 모델 선택 목록은 CLI 설치·계정에 따라 달라진다.
+
 [Antigravity CLI](https://www.antigravity.google/docs/getting-started/)를 설치하고 로그인한 뒤 **Gemini (Antigravity CLI) → 워커**에서 모델을 고른다. 방에 초대하고 `@gemini-reviewer https://github.com/OWNER/REPO/pull/123`으로 부르면 제공된 텍스트 diff를 P0/P1/P2/P3로 검토한다. 설정한 Gemini GitHub App으로 리뷰를 올리고 방에 링크를 돌려준다. `PR #123`은 작업 폴더의 origin 저장소를 쓰며 전체 URL이면 같은 소유자의 다른 저장소도 지정한다.
 
 대화는 저장소·PR별로 이어지고 일반 채팅은 방별로 기억한다. `/status`로 상태를 확인한다. 실패하면 새 모델 호출을 멈추고 `/retry`를 기다린다. 성공한 응답은 게시 전에 저장해 전달 재시도 때 모델을 다시 부르지 않는다. 현재 트리거는 방의 호명이며 PR 생성·GitHub mention 감시는 없다. GitHub 작성자 설정은 [에이전트 절차](reference/agent-operations.md#gemini-reviewer-setup)를 따른다. 별도 리뷰 패킷 폴더에서 plan 모드로 돌며 전체 권한은 지원하지 않는다.

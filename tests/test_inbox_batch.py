@@ -199,6 +199,12 @@ class InboxBatchTest(unittest.TestCase):
         self.assertEqual([r["id"] for r in self.job()["messages"]], ["human", "old"])
         self.assertEqual(len(batch.read(self.config["queue"])), 3)
 
+    def test_byte_limit_cannot_hide_newest_human_instruction(self):
+        self.config["max_bytes"] = 1
+        self.run_batch()
+        self.assertEqual([r["id"] for r in self.job()["messages"]], ["human", "old"])
+        self.assertEqual(len(batch.read(self.config["queue"])), 3)
+
     def test_late_arrivals_not_claimed_by_earlier_batch(self):
         self.run_batch()
         self.publish()

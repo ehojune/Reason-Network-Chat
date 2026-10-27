@@ -75,14 +75,18 @@ def records(config, current):
 
 
 def select(rows, current, excluded, max_messages=24, max_bytes=160000):
-    """Always include the active delivery; never clip or delete overflow."""
+    """Keep active delivery and newest human instruction; never clip overflow."""
     active = next((r for r in rows if r["id"] == current), None)
     if active is None:
         return []
     chosen = [active]
-    size = len(json.dumps(active, ensure_ascii=False).encode("utf-8"))
+    newest_human = next((r for r in rows if r["human"] and r["id"] not in excluded), None)
+    if newest_human is not None and newest_human["id"] != current:
+        chosen.append(newest_human)  # a large old report must not hide a pending stop instruction
+    selected = {r["id"] for r in chosen}
+    size = sum(len(json.dumps(r, ensure_ascii=False).encode("utf-8")) for r in chosen)
     for row in rows:
-        if row["id"] == current or row["id"] in excluded:
+        if row["id"] in selected or row["id"] in excluded:
             continue
         addition = len(json.dumps(row, ensure_ascii=False).encode("utf-8"))
         if len(chosen) >= max_messages or size + addition > max_bytes:

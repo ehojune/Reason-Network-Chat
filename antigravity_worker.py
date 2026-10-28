@@ -68,8 +68,8 @@ def diagnose(error, log_dir=None):
             pass
     blob = text + '\n' + tail
     for cause, pattern in (('timeout', r'print timeout|timed out|TimeoutExpired|deadline exceeded'),
-                           ('quota', r'quota|rate.?limit|RESOURCE_EXHAUSTED|429|usage limit'),
-                           ('auth', r'unauthenticated|not logged in|login required|credentials|401|403|permission denied')):
+                           ('quota', r'quota|rate.?limit|RESOURCE_EXHAUSTED|\b429\b|usage limit'),
+                           ('auth', r'unauthenticated|not logged in|login required|credentials|\b401\b|\b403\b|permission denied')):
         if re.search(pattern, blob, re.I):
             break
     else:

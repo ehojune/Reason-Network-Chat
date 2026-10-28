@@ -267,6 +267,9 @@ class WorkerTests(unittest.TestCase):
         os.utime(logs / 'cli-2.log', (time.time() + 5, time.time() + 5))
         self.assertIn('cause=quota', aw.diagnose(aw.WorkerError('x'), logs))
         self.assertIn('cause=auth', aw.diagnose(aw.WorkerError('401 unauthenticated'), self.root / 'none'))
+        for code, cause in (('HTTP 403', 'auth'), ('HTTP 401', 'auth'), ('status 429', 'quota')):
+            self.assertIn('cause=' + cause, aw.diagnose(aw.WorkerError(code), self.root / 'none'))
+        self.assertIn('cause=unknown', aw.diagnose(aw.WorkerError('port 14290 closed'), self.root / 'none'))
         self.assertIn('cause=abnormal exit', aw.diagnose(aw.WorkerError('Command failed'), self.root / 'none'))
         with mock.patch.object(aw.subprocess, 'run', side_effect=aw.subprocess.TimeoutExpired('agy', 330)):
             self.command.stop()

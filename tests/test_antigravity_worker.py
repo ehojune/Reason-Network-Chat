@@ -231,6 +231,9 @@ class WorkerTests(unittest.TestCase):
         self.assertFalse(aw.addressed_to('@claude-tech-lead call @gemini-reviewer', 'gemini-reviewer'))
         self.assertFalse(aw.addressed_to('PR #1 for @gemini-reviewer', 'gemini-reviewer'))
         self.assertFalse(aw.addressed_to('@gemini-reviewer-2 review', 'gemini-reviewer'))
+        self.assertTrue(aw.addressed_to('@p/gemini-reviewer review', 'gemini-reviewer', 'p/gemini-reviewer'))
+        self.assertFalse(aw.addressed_to('@other/gemini-reviewer review', 'gemini-reviewer', 'p/gemini-reviewer'))
+        self.assertTrue(aw.addressed_to('@gemini-reviewer review', 'gemini-reviewer', 'p/gemini-reviewer'))
 
     def test_prompt_carries_reviewer_rules(self):
         job = self.room_job('ask', '@gemini-reviewer 설명해 주세요')
@@ -262,6 +265,8 @@ class WorkerTests(unittest.TestCase):
         text = aw.diagnose(aw.WorkerError('No successful, nonempty model result.'), logs)
         self.assertIn('cause=timeout', text)
         self.assertIn('cli-1.log', text)
+        # A stale timeout line in the shared log must not override the current, different error.
+        self.assertIn('cause=auth', aw.diagnose(aw.WorkerError('HTTP 401 unauthenticated'), logs))
         (logs / 'cli-2.log').write_text('rpc error: code = 429 RESOURCE_EXHAUSTED quota', encoding='utf-8')
         import os
         os.utime(logs / 'cli-2.log', (time.time() + 5, time.time() + 5))

@@ -46,10 +46,15 @@ class WorkerError(Exception):
     pass
 
 
-def addressed_to(text, name):
-    """A room request opens with its addressees. A mention later in the body is a quoted example or a notice."""
-    lead = re.match(r'\s*((?:@[A-Za-z0-9][A-Za-z0-9_-]*[\s,]*)+)', text)
-    return bool(lead) and name in {m.lower() for m in re.findall(r'@([A-Za-z0-9][A-Za-z0-9_-]*)', lead[1])}
+def addressed_to(text, name, address=None):
+    """A room request opens with its addressees. A mention later in the body is a quoted example or a notice.
+    A handle may be `@name` or the fully qualified `@person/name` that the room uses for shared session names."""
+    handle = r'@(?:[A-Za-z0-9][A-Za-z0-9_-]*/)?[A-Za-z0-9][A-Za-z0-9_-]*'
+    lead = re.match(r'\s*((?:' + handle + r'[\s,]*)+)', text)
+    if not lead:
+        return False
+    mine = {name, address.lower()} if address else {name}
+    return any(m.lower().lstrip('@') in mine for m in re.findall(handle, lead[1]))
 
 
 def call_timeout(prompt, base=DEFAULT_TIMEOUT, cap=DEFAULT_TIMEOUT_MAX):
@@ -66,14 +71,13 @@ def diagnose(error, log_dir=None):
             tail = logs[-1].read_text(encoding='utf-8', errors='replace')[-6000:]
         except OSError:
             pass
-    blob = text + '\n' + tail
-    for cause, pattern in (('timeout', r'print timeout|timed out|TimeoutExpired|deadline exceeded'),
-                           ('quota', r'quota|rate.?limit|RESOURCE_EXHAUSTED|\b429\b|usage limit'),
-                           ('auth', r'unauthenticated|not logged in|login required|credentials|\b401\b|\b403\b|permission denied')):
-        if re.search(pattern, blob, re.I):
-            break
-    else:
-        cause = 'abnormal exit' if re.search(r'exited|Command failed|No successful', text) else 'unknown'
+    causes = (('timeout', r'print timeout|timed out|TimeoutExpired|deadline exceeded'),
+              ('quota', r'quota|rate.?limit|RESOURCE_EXHAUSTED|\b429\b|usage limit'),
+              ('auth', r'unauthenticated|not logged in|login required|credentials|\b401\b|\b403\b|permission denied'))
+    # The current error decides first; the shared newest log is only a fallback for a bare "no result" error.
+    cause = (next((c for c, pattern in causes if re.search(pattern, text, re.I)), None)
+             or next((c for c, pattern in causes if re.search(pattern, tail, re.I)), None)
+             or ('abnormal exit' if re.search(r'exited|Command failed|No successful', text) else 'unknown'))
     where = str(logs[-1]) if logs else str(folder)
     return f'cause={cause}; log={where}; detail={text[-400:].strip()}'
 
@@ -379,7 +383,7 @@ class Worker:
         if context is None:
             return
         text, speaker, room = context
-        if room and not addressed_to(text, self.name):
+        if room and not addressed_to(text, self.name, self.address):
             # A quoted example, notice or message to someone else. No model call, no reply, no pause.
             self.journal.update(mid, status='ignored', error='Not addressed to this reviewer; not a review request.')
             return

@@ -49,7 +49,9 @@ class WorkerError(Exception):
 def addressed_to(text, name, address=None):
     """A room request opens with its addressees. A mention later in the body is a quoted example or a notice.
     A handle may be `@name` or the fully qualified `@person/name` that the room uses for shared session names."""
-    handle = r'@(?:[A-Za-z0-9][A-Za-z0-9_-]*/)?[A-Za-z0-9][A-Za-z0-9_-]*'
+    from relay import routing_text  # quotes (the page's reply flow) and code are examples, not addressees
+    text = routing_text(text)
+    handle = r'@(?:[A-Za-z0-9][A-Za-z0-9._-]*/)?[A-Za-z0-9][A-Za-z0-9._-]*'
     lead = re.match(r'\s*((?:' + handle + r'[\s,]*)+)', text)
     if not lead:
         return False

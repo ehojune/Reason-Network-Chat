@@ -231,6 +231,10 @@ class WorkerTests(unittest.TestCase):
         self.assertFalse(aw.addressed_to('@claude-tech-lead call @gemini-reviewer', 'gemini-reviewer'))
         self.assertFalse(aw.addressed_to('PR #1 for @gemini-reviewer', 'gemini-reviewer'))
         self.assertFalse(aw.addressed_to('@gemini-reviewer-2 review', 'gemini-reviewer'))
+        # The page's reply flow puts a generated quotation before the typed mention.
+        self.assertTrue(aw.addressed_to('> @lead earlier: call @gemini-reviewer?\n\n@gemini-reviewer PR #1', 'gemini-reviewer'))
+        self.assertFalse(aw.addressed_to('> @gemini-reviewer quoted only\n\n@lead thanks', 'gemini-reviewer'))
+        self.assertFalse(aw.addressed_to('```\n@gemini-reviewer\n```\n@lead', 'gemini-reviewer'))
         self.assertTrue(aw.addressed_to('@p/gemini-reviewer review', 'gemini-reviewer', 'p/gemini-reviewer'))
         self.assertFalse(aw.addressed_to('@other/gemini-reviewer review', 'gemini-reviewer', 'p/gemini-reviewer'))
         self.assertTrue(aw.addressed_to('@gemini-reviewer review', 'gemini-reviewer', 'p/gemini-reviewer'))

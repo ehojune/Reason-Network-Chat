@@ -9,7 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 |---|---|---|
-| 13:35 | [PR pending](https://github.com/ehojune/Reason-Network-Chat/pulls) | Allow reviewers alongside two leads and six workers, with capacity for 12 managed workers. |
+| 13:35 | [#58](https://github.com/ehojune/Reason-Network-Chat/pull/58) | Allow reviewers alongside two leads and six workers, with capacity for 12 managed workers. |
 | 05:05 | [#57](https://github.com/ehojune/Reason-Network-Chat/pull/57) | The Gemini reviewer ignores notices that only quote its name, gets operating rules in every prompt, has configurable timeouts, and reports failure cause and log path instead of a bare pause. Failure notices retain posted-review evidence. |
 
 ## 2026-10-27

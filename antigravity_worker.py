@@ -56,7 +56,7 @@ def addressed_to(text, name, address=None):
     if not lead:
         return False
     mine = {name, address.lower()} if address else {name}
-    return any(m.lower().lstrip('@') in mine for m in re.findall(handle, lead[1]))
+    return any(m.lower().lstrip('@').rstrip('.') in mine for m in re.findall(handle, lead[1]))
 
 
 def call_timeout(prompt, base=DEFAULT_TIMEOUT, cap=DEFAULT_TIMEOUT_MAX):

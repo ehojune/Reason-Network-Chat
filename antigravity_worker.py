@@ -52,7 +52,7 @@ def addressed_to(text, name, address=None):
     from relay import routing_text  # quotes (the page's reply flow) and code are examples, not addressees
     text = routing_text(text)
     handle = r'@(?:[A-Za-z0-9][A-Za-z0-9._-]*/)?[A-Za-z0-9][A-Za-z0-9._-]*'
-    lead = re.match(r'\s*((?:' + handle + r'[\s,]*)+)', text)
+    lead = re.match(r'[^\w@]*((?:' + handle + r'[^\w@]*)+)', text)
     if not lead:
         return False
     mine = {name, address.lower()} if address else {name}

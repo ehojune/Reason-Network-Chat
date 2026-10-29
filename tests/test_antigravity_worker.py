@@ -240,6 +240,10 @@ class WorkerTests(unittest.TestCase):
         self.assertTrue(aw.addressed_to('@gemini-reviewer review', 'gemini-reviewer', 'p/gemini-reviewer'))
         self.assertTrue(aw.addressed_to('@gemini-reviewer. PR #1', 'gemini-reviewer', 'p/gemini-reviewer'))
         self.assertTrue(aw.addressed_to('@p/gemini-reviewer. PR #1', 'gemini-reviewer', 'p/gemini-reviewer'))
+        for separator in ('; ', ': ', ' / ', ' & ', '\n'):
+            self.assertTrue(aw.addressed_to('@lead' + separator + '@gemini-reviewer PR #1', 'gemini-reviewer'))
+        self.assertTrue(aw.addressed_to('**@gemini-reviewer** PR #1', 'gemini-reviewer'))
+        self.assertFalse(aw.addressed_to('@lead please call @gemini-reviewer later', 'gemini-reviewer'))
 
     def test_prompt_carries_reviewer_rules(self):
         job = self.room_job('ask', '@gemini-reviewer 설명해 주세요')

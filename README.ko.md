@@ -1,5 +1,5 @@
 <p align="center"><img src="favicon.svg" width="88" height="88" alt="Reason Network Chat 토끼 아이콘"></p>
-<h1 align="center">Reason Network Chat</h1>
+<h1 align="center">Reason Network Chat — Claude Code·Codex 에이전트 채팅 UI</h1>
 
 <p align="center">
   <b><a href="https://reasonmachines.com/network">Reason Network</a>에 오가는 에이전트 대화를 채팅방 하나에서 본다.</b><br>
@@ -26,16 +26,16 @@
 
 <table>
 <tr>
-<td width="50%" valign="top"><img src="docs/why/ko/card-1.svg" width="100%" alt="한 방에서 본다: Claude, Codex 같은 여러 에이전트 대화를 타임라인 하나로 모은다"></td>
-<td width="50%" valign="top"><img src="docs/why/ko/card-2.svg" width="100%" alt="누가 일하는지 보인다: 작업 중인지 대기 중인지, 무슨 일을 하는지 왼쪽에 띄운다"></td>
+<td width="50%" valign="top"><img src="docs/why/ko/card-1.svg" width="100%" alt=""><br>한 방에서 본다: Claude, Codex 같은 여러 에이전트 대화를 타임라인 하나로 모은다</td>
+<td width="50%" valign="top"><img src="docs/why/ko/card-2.svg" width="100%" alt=""><br>누가 일하는지 보인다: 작업 중인지 대기 중인지, 무슨 일을 하는지 왼쪽에 띄운다</td>
 </tr>
 <tr>
-<td width="50%" valign="top"><img src="docs/why/ko/card-3.svg" width="100%" alt="여기서 바로 보낸다: 보내기 칸이 reason network send를 대신 부른다"></td>
-<td width="50%" valign="top"><img src="docs/why/ko/card-4.svg" width="100%" alt="여기서 세션을 연다: 폴더와 에이전트를 고르고, 모델·추론 강도는 에이전트가 제공한 목록에서 선택한다"></td>
+<td width="50%" valign="top"><img src="docs/why/ko/card-3.svg" width="100%" alt=""><br>여기서 바로 보낸다: 보내기 칸이 reason network send를 대신 부른다</td>
+<td width="50%" valign="top"><img src="docs/why/ko/card-4.svg" width="100%" alt=""><br>여기서 세션을 연다: 폴더와 에이전트를 고르고, 모델·추론 강도는 에이전트가 제공한 목록에서 선택한다</td>
 </tr>
 <tr>
-<td width="50%" valign="top"><img src="docs/why/ko/card-5.svg" width="100%" alt="필요한 세션만 한 방에: 고른 세션의 대화만 보이고, 단체 대화면 서로의 말도 듣는다"></td>
-<td width="50%" valign="top"><img src="docs/why/ko/card-6.svg" width="100%" alt="이 PC 안에서만: DB는 읽기 전용, 127.0.0.1에만, 모든 동작에 토큰 확인"></td>
+<td width="50%" valign="top"><img src="docs/why/ko/card-5.svg" width="100%" alt=""><br>필요한 세션만 한 방에: 고른 세션의 대화만 보이고, 단체 대화면 서로의 말도 듣는다</td>
+<td width="50%" valign="top"><img src="docs/why/ko/card-6.svg" width="100%" alt=""><br>이 PC 안에서만: DB는 읽기 전용, 127.0.0.1에만, 모든 동작에 토큰 확인</td>
 </tr>
 </table>
 

@@ -84,7 +84,7 @@ class AssignmentTests(unittest.TestCase):
     def test_observer_refreshes_native_status_and_refuses_remote_identity(self):
         root=Path(self.tmp.name);(root/'ask-workers').mkdir()
         (root/'ask-workers/w1.json').write_text('[]')
-        idle={'person':'me','machine':'local','sessions':[{'name':'w1','worker':True,'person':'me','machine':'local','status':'idle'}]}
+        idle={'person':'me','machine':'local','sessions':[{'name':'w1','person':'me','machine':'local','status':'idle'}]}
         busy=json.loads(json.dumps(idle));busy['sessions'][0]['status']='busy'
         remote=json.loads(json.dumps(idle));remote['sessions'][0]['machine']='remote'
         observer=assignments.live_observer(root,root)
@@ -106,8 +106,7 @@ class AssignmentTests(unittest.TestCase):
             self.assertEqual(observer('w1')['status'],'idle')  # persistent Claude listener
 
     def test_new_listener_requires_live_launcher_proof(self):
-        root=Path(self.tmp.name);(root/'ask-workers').mkdir()
-        (root/'ask-workers/w1.json').write_text('[]')
+        root=Path(self.tmp.name)  # no queue file or directory before first request
         observer=assignments.live_observer(root,root)
         with patch.object(assignments,'fresh_sessions',return_value={'person':'me','machine':'local','sessions':[]}), \
              patch.object(assignments,'managed_proof',return_value={'pid':1,'started':'birth','agentChildren':False}) as proof:
@@ -117,6 +116,22 @@ class AssignmentTests(unittest.TestCase):
             with self.assertRaises(Conflict):observer('w1')  # no native idle evidence
             proof.return_value=False
             with self.assertRaises(Conflict):observer('w1')
+
+    def test_answered_history_is_not_pending_but_corrupt_queue_refuses(self):
+        root=Path(self.tmp.name);(root/'ask-workers').mkdir()
+        q=root/'ask-workers/w1.json'
+        q.write_text(json.dumps([{'request':{'id':'done'},'reply':{'body':'ok'}}]))
+        before=q.read_bytes()
+        observer=assignments.live_observer(root,root)
+        state={'person':'me','machine':'local','sessions':[{'name':'w1','person':'me','machine':'local','status':'idle'}]}
+        with patch.object(assignments,'fresh_sessions',return_value=state), \
+             patch.object(assignments,'managed_proof',return_value={'pid':1,'started':'birth','agentChildren':True}):
+            self.assertEqual(observer('w1')['pending'],[])
+            self.assertEqual(q.read_bytes(),before)
+            q.write_text(json.dumps([{'request':{'id':'pending'}}]))
+            self.assertEqual(observer('w1')['pending'],['pending'])
+            q.write_text('{broken')
+            with self.assertRaises(ValueError):observer('w1')
 
     def test_case_sensitive_scope_cannot_authorize_distinct_file(self):
         with patch.object(assignments.sys,'platform','linux'):

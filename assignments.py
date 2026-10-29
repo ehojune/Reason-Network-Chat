@@ -136,7 +136,7 @@ def live_observer(reason_home, chat_home=None):
             if not proof:
                 raise Conflict('live launcher/process proof unavailable: '+owner)
             named=[s for s in state.get('sessions',[]) if s.get('name')==owner]
-            matches=[s for s in named if s.get('worker') and s.get('person')==state['person']
+            matches=[s for s in named if s.get('person')==state['person']
                      and s.get('machine')==state['machine']]
             identity=(proof['pid'],proof['started'])
             if len(matches)==1:return (state['person'],state['machine'],matches[0].get('status'))+identity
@@ -145,10 +145,13 @@ def live_observer(reason_home, chat_home=None):
                 return (state['person'],state['machine'],'idle')+identity
             raise Conflict('worker identity missing or ambiguous: '+owner)
         def queue():
-            rows=json.loads((Path(reason_home)/'ask-workers'/(owner+'.json')).read_text(encoding='utf-8'))
+            queue_name=re.sub(r'[^a-zA-Z0-9-]','-',owner)
+            try:raw=(Path(reason_home)/'ask-workers'/(queue_name+'.json')).read_text(encoding='utf-8')
+            except FileNotFoundError:return []  # a verified new listener has no queue yet
+            rows=json.loads(raw)
             if not isinstance(rows,list) or any(not isinstance(x,dict) or not isinstance(x.get('request'),dict) for x in rows):
                 raise Conflict('worker queue unavailable: '+owner)
-            return rows
+            return [x for x in rows if 'reply' not in x]
         before=status();first=queue();after=status();second=queue()
         if before!=after or first!=second:
             raise Conflict('worker status/queue changed during observation: '+owner)

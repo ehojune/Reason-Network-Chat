@@ -26,6 +26,8 @@ on case-sensitive volumes. File containment retains exact case outside Windows. 
 launcher's verified PID/birth/serve identity, stable native status and empty queues. Persistent Claude agent
 processes and Windows console hosts are not themselves busy evidence. Before a listener has native status,
 only its console host may be present; an agent child makes that fallback unavailable.
+Queue checks count unanswered requests, preserve answered history, and accept a missing first-use queue;
+unreadable or malformed existing queues are refused. The native session needs no web-only worker flag.
 Scoped parallel claims require the worker's checkout root and a matching GitHub origin. Scope ancestors and
 contents must be free of symlinks, Windows reparse points and hard-linked files; begin/check revalidate them.
 The registered checkout is retained in the claim. A whole-repository `.` claim needs no checkout argument.

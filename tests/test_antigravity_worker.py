@@ -201,6 +201,109 @@ class WorkerTests(unittest.TestCase):
             with self.assertRaises(aw.WorkerError):
                 aw.review_text(bad, 'p/repo', 1, 'a' * 40, 'marker', 'flash')
 
+    def room_job(self, mid, core):
+        now = int(time.time() * 1000)
+        with sqlite3.connect(str(aw.NETWORK_DB)) as db:
+            db.execute('INSERT INTO messages VALUES (?,?,?,?,?,?)', (mid, 'p/terminal', self.worker.address, '[Group room "dev"]\n---\n' + core, now, None))
+        db.close()
+        (self.root / 'relay.json').write_text(json.dumps({'sent': {mid: {
+            'core': core, 'speaker': 'p/terminal', 'room': 'r', 'to': self.worker.address, 'at': now}}}))
+        self.worker.ingest()
+        return self.worker.journal.db.execute('SELECT * FROM jobs WHERE id=?', (mid,)).fetchone()
+
+    def test_notice_with_example_mention_is_not_a_request(self):
+        # Shape of 01M61YEHR31QP3VG5QAZZEV08Y: addressed to the lead, names the reviewer only as a usage example.
+        core = ('@claude-tech-lead 인계 안내입니다. https://github.com/p/other/pull/54\n'
+                '새 리뷰어는 방의 @gemini-reviewer + 전체 PR URL로 호출합니다.')
+        job = self.room_job('notice', core)
+        self.run.reset_mock()
+        with mock.patch.object(self.worker, 'model_call') as model:
+            self.worker.process(job)
+        model.assert_not_called()
+        self.assertEqual(self.run.call_count, 0)  # no reply either
+        row = self.worker.journal.db.execute("SELECT status FROM jobs WHERE id='notice'").fetchone()
+        self.assertEqual(row[0], 'ignored')
+        self.assertIsNone(self.worker.journal.get('paused'))
+
+    def test_addressed_to_reads_only_the_leading_mentions(self):
+        self.assertTrue(aw.addressed_to('@gemini-reviewer https://github.com/p/r/pull/1', 'gemini-reviewer'))
+        self.assertTrue(aw.addressed_to('  @claude-tech-lead, @gemini-reviewer review', 'gemini-reviewer'))
+        self.assertFalse(aw.addressed_to('@claude-tech-lead call @gemini-reviewer', 'gemini-reviewer'))
+        self.assertFalse(aw.addressed_to('PR #1 for @gemini-reviewer', 'gemini-reviewer'))
+        self.assertFalse(aw.addressed_to('@gemini-reviewer-2 review', 'gemini-reviewer'))
+        # The page's reply flow puts a generated quotation before the typed mention.
+        self.assertTrue(aw.addressed_to('> @lead earlier: call @gemini-reviewer?\n\n@gemini-reviewer PR #1', 'gemini-reviewer'))
+        self.assertFalse(aw.addressed_to('> @gemini-reviewer quoted only\n\n@lead thanks', 'gemini-reviewer'))
+        self.assertFalse(aw.addressed_to('```\n@gemini-reviewer\n```\n@lead', 'gemini-reviewer'))
+        self.assertTrue(aw.addressed_to('@p/gemini-reviewer review', 'gemini-reviewer', 'p/gemini-reviewer'))
+        self.assertFalse(aw.addressed_to('@other/gemini-reviewer review', 'gemini-reviewer', 'p/gemini-reviewer'))
+        self.assertTrue(aw.addressed_to('@gemini-reviewer review', 'gemini-reviewer', 'p/gemini-reviewer'))
+        self.assertTrue(aw.addressed_to('@gemini-reviewer. PR #1', 'gemini-reviewer', 'p/gemini-reviewer'))
+        self.assertTrue(aw.addressed_to('@p/gemini-reviewer. PR #1', 'gemini-reviewer', 'p/gemini-reviewer'))
+        for separator in ('; ', ': ', ' / ', ' & ', '\n'):
+            self.assertTrue(aw.addressed_to('@lead' + separator + '@gemini-reviewer PR #1', 'gemini-reviewer'))
+        self.assertTrue(aw.addressed_to('**@gemini-reviewer** PR #1', 'gemini-reviewer'))
+        self.assertFalse(aw.addressed_to('@lead please call @gemini-reviewer later', 'gemini-reviewer'))
+
+    def test_prompt_carries_reviewer_rules(self):
+        job = self.room_job('ask', '@gemini-reviewer 설명해 주세요')
+        good = {'status': 'SUCCESS', 'response': 'ok', 'conversation_id': 'c1'}
+        with mock.patch.object(self.worker, 'model_call', return_value=good) as model:
+            self.worker.process(job)
+        prompt = model.call_args.args[0]
+        for part in ('Caller: p/terminal', 'gemini-reviewer', 'Forbidden', 'head SHA', 'P0 critical'):
+            self.assertIn(part, prompt)
+
+    def test_timeout_is_configurable_and_grows_with_prompt_to_a_cap(self):
+        self.assertEqual(aw.call_timeout('x'), 300)
+        self.assertEqual(aw.call_timeout('x' * 100000), 300 + 15 * 10)
+        self.assertEqual(aw.call_timeout('x' * 10_000_000), 900)
+        self.assertEqual(aw.call_timeout('x', 60, 120), 60)
+        slow = aw.Worker('slow-reviewer', self.root, 'agy', 'reason-network', 'm', 'p/repo', 120, 240)
+        self.addCleanup(slow.journal.db.close)
+        self.run.reset_mock()
+        self.run.return_value = json.dumps({'event': 'result', 'result': {'status': 'SUCCESS', 'response': 'ok', 'conversation_id': 'c'}})
+        slow.model_call('hi', 'k')
+        args = self.run.call_args.args[0]
+        self.assertEqual(args[args.index('--print-timeout') + 1], '120s')
+        self.assertEqual(self.run.call_args.kwargs['timeout'], 150)
+
+    def test_delivery_failure_preserves_published_review_evidence(self):
+        self.job('posted')
+        url = 'https://github.com/p/repo/pull/1#pullrequestreview-2'
+        self.worker.journal.update('posted', status='outbox', review_url=url)
+        error = aw.WorkerError('Room reply timed out')
+        self.assertIn(url, self.worker.failure_notice('posted', error))
+        self.job('uncertain')
+        self.assertIn('posting status is unconfirmed', self.worker.failure_notice('uncertain', error))
+        self.assertNotIn('no review was posted', self.worker.failure_notice('posted', error))
+
+    def test_failure_report_names_cause_and_log_and_is_never_a_pass(self):
+        logs = self.root / 'agylog'
+        logs.mkdir()
+        (logs / 'cli-1.log').write_text('W1027 poll.go:188] Print mode: print timeout after 5m0s with turn in progress', encoding='utf-8')
+        text = aw.diagnose(aw.WorkerError('No successful, nonempty model result.'), logs)
+        self.assertIn('cause=timeout', text)
+        self.assertIn('cli-1.log', text)
+        # A stale timeout line in the shared log must not override the current, different error.
+        self.assertIn('cause=auth', aw.diagnose(aw.WorkerError('HTTP 401 unauthenticated'), logs))
+        (logs / 'cli-2.log').write_text('rpc error: code = 429 RESOURCE_EXHAUSTED quota', encoding='utf-8')
+        import os
+        os.utime(logs / 'cli-2.log', (time.time() + 5, time.time() + 5))
+        self.assertIn('cause=quota', aw.diagnose(aw.WorkerError('x'), logs))
+        self.assertIn('cause=auth', aw.diagnose(aw.WorkerError('401 unauthenticated'), self.root / 'none'))
+        for code, cause in (('HTTP 403', 'auth'), ('HTTP 401', 'auth'), ('status 429', 'quota')):
+            self.assertIn('cause=' + cause, aw.diagnose(aw.WorkerError(code), self.root / 'none'))
+        self.assertIn('cause=unknown', aw.diagnose(aw.WorkerError('port 14290 closed'), self.root / 'none'))
+        self.assertIn('cause=abnormal exit', aw.diagnose(aw.WorkerError('Command failed'), self.root / 'none'))
+        with mock.patch.object(aw.subprocess, 'run', side_effect=aw.subprocess.TimeoutExpired('agy', 330)):
+            self.command.stop()
+            try:
+                with self.assertRaisesRegex(aw.WorkerError, 'timed out after 330'):
+                    aw.checked_run(['agy'], timeout=330)
+            finally:
+                self.command.start()
+
 
 class LauncherReceiverTests(unittest.TestCase):
     def test_parser_discovers_wmi_python_receiver(self):

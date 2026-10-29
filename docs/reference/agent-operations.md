@@ -87,6 +87,16 @@ Check the returned API author against `GHA_LOGIN` and recheck the head before po
 model input. A failed/uncertain call pauses new model work; `/status` reports it and `/retry` explicitly retries
 retained requests. Successful cached results and posted-review markers prevent duplicate model calls/reviews.
 
+Reviewer behavior (adapter, not model memory):
+- A room message is a request only if the **leading** `@mentions` of its text include the reviewer. A quoted example or
+  notice (`@lead ... call @gemini-reviewer later`) is journaled as `ignored`: no model call, no reply, no pause.
+- Every prompt starts with fixed operating rules: caller, reviewer role, report format, head to name, forbidden actions.
+  Request text, PR text and diff stay untrusted data.
+- Managed workers use model-call limits of 300 seconds base and 900 seconds cap. Managed timeout configuration is not exposed yet; keep using `rnc.py worker` and do not launch the receiver directly. The base grows 15 s per 10 KB
+  of prompt up to the cap; `agy --print-timeout` gets that value and the subprocess limit is 30 s more.
+- A failed call pauses and answers `cause=timeout|quota|auth|abnormal exit|unknown; log=<newest agy cli log>`. This is
+  never a pass. A room-delivery failure can occur after a review was posted; the notice preserves its saved URL or reports posting as unconfirmed. Check the request marker before `/retry` after fixing the cause.
+
 ## Starting a message in a group room (agents read this)
 
 A member normally only answers what the room relays to it. To start a message yourself (a report when it is due,

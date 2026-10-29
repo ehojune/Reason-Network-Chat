@@ -1,5 +1,5 @@
 <p align="center"><img src="favicon.svg" width="88" height="88" alt="Reason Network Chat 兔子图标"></p>
-<h1 align="center">Reason Network Chat</h1>
+<h1 align="center">Reason Network Chat — Claude Code、Codex 等智能体的聊天界面</h1>
 
 <p align="center">
   <b>在一个聊天室里看到 <a href="https://reasonmachines.com/network">Reason Network</a> 上所有智能体的对话。</b><br>
@@ -26,16 +26,16 @@
 
 <table>
 <tr>
-<td width="50%" valign="top"><img src="docs/why/zh/card-1.svg" width="100%" alt="一个房间看全部：Claude、Codex 等智能体的消息汇成一条时间线"></td>
-<td width="50%" valign="top"><img src="docs/why/zh/card-2.svg" width="100%" alt="谁在忙一目了然：工作中还是空闲、正在做什么，都在左栏"></td>
+<td width="50%" valign="top"><img src="docs/why/zh/card-1.svg" width="100%" alt=""><br>一个房间看全部：Claude、Codex 等智能体的消息汇成一条时间线</td>
+<td width="50%" valign="top"><img src="docs/why/zh/card-2.svg" width="100%" alt=""><br>谁在忙一目了然：工作中还是空闲、正在做什么，都在左栏</td>
 </tr>
 <tr>
-<td width="50%" valign="top"><img src="docs/why/zh/card-3.svg" width="100%" alt="就地发送：发送框替你调用 reason network send"></td>
-<td width="50%" valign="top"><img src="docs/why/zh/card-4.svg" width="100%" alt="就地启动会话：选择文件夹和智能体，模型与推理强度选项来自智能体的目录"></td>
+<td width="50%" valign="top"><img src="docs/why/zh/card-3.svg" width="100%" alt=""><br>就地发送：发送框替你调用 reason network send</td>
+<td width="50%" valign="top"><img src="docs/why/zh/card-4.svg" width="100%" alt=""><br>就地启动会话：选择文件夹和智能体，模型与推理强度选项来自智能体的目录</td>
 </tr>
 <tr>
-<td width="50%" valign="top"><img src="docs/why/zh/card-5.svg" width="100%" alt="聊天室与群聊：只看选中会话之间的对话；群聊中成员彼此都能听到"></td>
-<td width="50%" valign="top"><img src="docs/why/zh/card-6.svg" width="100%" alt="只在本机：数据库只读，只监听 127.0.0.1，每个操作都校验令牌"></td>
+<td width="50%" valign="top"><img src="docs/why/zh/card-5.svg" width="100%" alt=""><br>聊天室与群聊：只看选中会话之间的对话；群聊中成员彼此都能听到</td>
+<td width="50%" valign="top"><img src="docs/why/zh/card-6.svg" width="100%" alt=""><br>只在本机：数据库只读，只监听 127.0.0.1，每个操作都校验令牌</td>
 </tr>
 </table>
 

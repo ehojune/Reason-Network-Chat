@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+import assignments
 from assignments import Registry, Conflict, paths
 
 
@@ -57,7 +59,7 @@ class AssignmentTests(unittest.TestCase):
         self.assertEqual(len(self.registry.read()['history']),3)
 
     def test_invalid_scope_and_corrupt_registry_fail_closed(self):
-        for path in ('../a','/tmp/a','C:/a','src//a','src/./a','src/*'):
+        for path in ('../a','/tmp/a','C:/a','src//a','src/./a','src/*','src.','src /file.py','src/file.py.'):
             with self.assertRaises(Conflict):paths([path])
         self.registry.path.write_text('{broken')
         with self.assertRaises(ValueError):self.apply('claim',revision=0)
@@ -67,3 +69,16 @@ class AssignmentTests(unittest.TestCase):
         self.registry.observe=unavailable
         with self.assertRaises(OSError):self.apply('claim',revision=0)
         self.assertFalse(self.registry.path.exists())
+
+    def test_observer_refreshes_native_status_and_refuses_remote_identity(self):
+        root=Path(self.tmp.name);(root/'ask-workers').mkdir()
+        (root/'ask-workers/w1.json').write_text('[]')
+        idle={'person':'me','machine':'local','sessions':[{'name':'w1','worker':True,'person':'me','machine':'local','status':'idle'}]}
+        busy=json.loads(json.dumps(idle));busy['sessions'][0]['status']='busy'
+        remote=json.loads(json.dumps(idle));remote['sessions'][0]['machine']='remote'
+        observer=assignments.live_observer(root)
+        with patch.object(assignments,'fresh_sessions',side_effect=[idle,busy,remote]) as fresh:
+            self.assertEqual(observer('w1')['status'],'idle')
+            self.assertEqual(observer('w1')['status'],'busy')
+            with self.assertRaises(Conflict):observer('w1')
+            self.assertEqual(fresh.call_count,3)

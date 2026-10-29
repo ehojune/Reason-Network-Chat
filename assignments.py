@@ -7,10 +7,11 @@ import argparse
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
-from urllib.request import urlopen
 
 from storage import atomic_json, file_lock
 
@@ -32,7 +33,7 @@ def paths(values):
     for value in values or ['.']:
         value=value.replace('\\','/').rstrip('/')
         parts=value.split('/')
-        if value!='.' and (not value or value.startswith('/') or any(p in ('','..','.') for p in parts)
+        if value!='.' and (not value or value.startswith('/') or any(p in ('','..','.') or p.endswith((' ','.')) for p in parts)
                            or re.search(r'[:*?\[\]\x00-\x1f]',value)):
             raise Conflict('scope must be a literal repository-relative path or .')
         out.append(value.casefold())
@@ -47,22 +48,37 @@ def overlap(a,b):
     return any(covers(x,y) or covers(y,x) for x in a for y in b)
 
 
-def live_observer(reason_home, base):
+def fresh_sessions():
+    from launcher import base_env
+    exe=os.environ.get('REASON_BIN')
+    if not exe and sys.platform=='win32':
+        candidate=Path(os.environ.get('LOCALAPPDATA',Path.home()/'AppData/Local'))/'Reason/bin/reason.exe'
+        if candidate.is_file():exe=str(candidate)
+    exe=exe or shutil.which('reason')
+    if not exe or (sys.platform=='win32' and not exe.lower().endswith('.exe')):
+        raise Conflict('native Reason executable unavailable')
+    result=subprocess.run([exe,'network','who','--all','--json'],stdin=subprocess.DEVNULL,
+        capture_output=True,timeout=20,env=base_env(),creationflags=0x08000000 if sys.platform=='win32' else 0)
+    if result.returncode:raise Conflict('fresh Reason worker status unavailable')
+    return json.loads(result.stdout.decode('utf-8'))
+
+
+def live_observer(reason_home):
     """Read evidence fresh under the assignment lock; unavailable is not idle."""
     def observe(owner):
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}',owner):
             raise Conflict('invalid worker name')
-        with urlopen(base+'/api/state',timeout=10) as response:
-            state=json.load(response)
-        if state.get('whoError'):
+        state=fresh_sessions()
+        if not state.get('person') or not state.get('machine'):
             raise Conflict('worker state unavailable')
-        matches=[s for s in state.get('sessions',[]) if s.get('name')==owner and s.get('worker')]
+        matches=[s for s in state.get('sessions',[]) if s.get('name')==owner and s.get('worker')
+                 and s.get('person')==state['person'] and s.get('machine')==state['machine']]
         if len(matches)!=1:
             raise Conflict('worker identity missing or ambiguous: '+owner)
         queue=json.loads((Path(reason_home)/'ask-workers'/(owner+'.json')).read_text(encoding='utf-8'))
         if not isinstance(queue,list) or any(not isinstance(x,dict) or not isinstance(x.get('request'),dict) for x in queue):
             raise Conflict('worker queue unavailable: '+owner)
-        return {'status':matches[0].get('status'), 'live':matches[0].get('live'),
+        return {'status':matches[0].get('status'), 'live':True,
                 'pending':[x['request'].get('id') for x in queue]}
     return observe
 
@@ -145,8 +161,7 @@ def main(argv=None):
     if a.action!='list' and (not a.task or not a.owner or a.revision is None):
         p.error('task URL, --owner and --revision are required')
     try:
-        base='http://127.0.0.1:'+str(int(os.environ.get('REASON_CHAT_PORT','8765')))
-        registry=Registry(a.chat_home/'assignments.json',live_observer(a.reason_home,base))
+        registry=Registry(a.chat_home/'assignments.json',live_observer(a.reason_home))
         out=registry.read() if a.action=='list' else registry.apply(a.action,a.task,a.owner,a.revision,a.paths,a.note)
         print(json.dumps(out,ensure_ascii=False,indent=2))
         return 0

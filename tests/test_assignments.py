@@ -41,7 +41,7 @@ class AssignmentTests(unittest.TestCase):
     def test_scope_overlap_across_worktrees_and_parallel_claims(self):
         self.apply('claim',revision=0,scope=['src/'])
         with self.assertRaises(Conflict):
-            self.registry.apply('claim','https://github.com/TEAM/REPO/issues/2','w2',0,['SRC/main.py'])
+            self.registry.apply('claim','https://github.com/TEAM/REPO/issues/2','w2',0,['src/main.py'])
         self.registry.apply('claim','https://github.com/team/repo/issues/3','w3',0,['tests'])
         self.apply('begin',scope=['src/main.py'])
         with self.assertRaises(Conflict):self.apply('check',scope=['README.md'])
@@ -77,8 +77,39 @@ class AssignmentTests(unittest.TestCase):
         busy=json.loads(json.dumps(idle));busy['sessions'][0]['status']='busy'
         remote=json.loads(json.dumps(idle));remote['sessions'][0]['machine']='remote'
         observer=assignments.live_observer(root)
-        with patch.object(assignments,'fresh_sessions',side_effect=[idle,busy,remote]) as fresh:
+        with patch.object(assignments,'fresh_sessions',side_effect=[idle,idle,busy,busy,remote]) as fresh:
             self.assertEqual(observer('w1')['status'],'idle')
             self.assertEqual(observer('w1')['status'],'busy')
             with self.assertRaises(Conflict):observer('w1')
-            self.assertEqual(fresh.call_count,3)
+            self.assertEqual(fresh.call_count,5)
+
+        with patch.object(assignments,'fresh_sessions',side_effect=[idle,busy]):
+            with self.assertRaises(Conflict):observer('w1')
+
+    def test_new_listener_requires_live_launcher_proof(self):
+        root=Path(self.tmp.name);(root/'ask-workers').mkdir()
+        (root/'ask-workers/w1.json').write_text('[]')
+        observer=assignments.live_observer(root,root)
+        with patch.object(assignments,'fresh_sessions',return_value={'person':'me','machine':'local','sessions':[]}), \
+             patch.object(assignments,'managed_idle',return_value=True) as proof:
+            self.assertEqual(observer('w1')['status'],'idle')
+            self.assertEqual(proof.call_count,2)
+            proof.return_value=False
+            with self.assertRaises(Conflict):observer('w1')
+
+    def test_case_sensitive_scope_cannot_authorize_distinct_file(self):
+        with patch.object(assignments.sys,'platform','linux'):
+            self.apply('claim',revision=0,scope=['src/Foo.py']);self.apply('begin')
+            with self.assertRaises(Conflict):self.apply('check',scope=['src/foo.py'])
+
+    def test_launcher_proof_rejects_reused_pid_and_running_child(self):
+        root=Path(self.tmp.name)
+        (root/'workers.json').write_text(json.dumps([{'name':'w1','pid':123,'started':'birth'}]))
+        procs=[(123,1,'reason',['reason','network','serve','codex','--name','w1'])]
+        with patch('launcher.started_at',return_value='birth') as born, \
+             patch('launcher.list_processes',return_value=procs) as processes:
+            self.assertTrue(assignments.managed_idle('w1',root))
+            processes.return_value=procs+[(124,123,'codex',['codex','exec'])]
+            self.assertFalse(assignments.managed_idle('w1',root))
+            processes.return_value=procs;born.return_value='reused'
+            self.assertFalse(assignments.managed_idle('w1',root))

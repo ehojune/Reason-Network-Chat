@@ -36,7 +36,7 @@ def paths(values):
         if value!='.' and (not value or value.startswith('/') or any(p in ('','..','.') or p.endswith((' ','.')) for p in parts)
                            or re.search(r'[:*?\[\]\x00-\x1f]',value)):
             raise Conflict('scope must be a literal repository-relative path or .')
-        out.append(value.casefold())
+        out.append(value.casefold() if sys.platform=='win32' else value)
     return sorted(set(out))
 
 
@@ -63,23 +63,47 @@ def fresh_sessions():
     return json.loads(result.stdout.decode('utf-8'))
 
 
-def live_observer(reason_home):
+def managed_idle(owner, chat_home):
+    """Read launcher PID/birth proof without constructing a mutating Launcher."""
+    from launcher import started_at, list_processes, descendants, parse_serve
+    rows=json.loads((Path(chat_home)/'workers.json').read_text(encoding='utf-8'))
+    found=[w for w in rows if w.get('name')==owner]
+    if len(found)!=1:return False
+    w=found[0]
+    if not w.get('started') or started_at(w['pid'])!=w['started']:return False
+    procs=list_processes()
+    if procs is None:return False
+    roots=[p for p in procs if p[0]==w['pid']]
+    if len(roots)!=1 or (parse_serve(roots[0][3]) or {}).get('name')!=owner:return False
+    return not descendants(procs,w['pid']) and started_at(w['pid'])==w['started']
+
+
+def live_observer(reason_home, chat_home=None):
     """Read evidence fresh under the assignment lock; unavailable is not idle."""
     def observe(owner):
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}',owner):
             raise Conflict('invalid worker name')
-        state=fresh_sessions()
-        if not state.get('person') or not state.get('machine'):
-            raise Conflict('worker state unavailable')
-        matches=[s for s in state.get('sessions',[]) if s.get('name')==owner and s.get('worker')
-                 and s.get('person')==state['person'] and s.get('machine')==state['machine']]
-        if len(matches)!=1:
+        def status():
+            state=fresh_sessions()
+            if not state.get('person') or not state.get('machine'):
+                raise Conflict('worker state unavailable')
+            named=[s for s in state.get('sessions',[]) if s.get('name')==owner]
+            matches=[s for s in named if s.get('worker') and s.get('person')==state['person']
+                     and s.get('machine')==state['machine']]
+            if len(matches)==1:return (state['person'],state['machine'],matches[0].get('status'))
+            # A newly launched listener has no native session until its first request.
+            if not named and chat_home and managed_idle(owner,chat_home):
+                return (state['person'],state['machine'],'idle')
             raise Conflict('worker identity missing or ambiguous: '+owner)
-        queue=json.loads((Path(reason_home)/'ask-workers'/(owner+'.json')).read_text(encoding='utf-8'))
-        if not isinstance(queue,list) or any(not isinstance(x,dict) or not isinstance(x.get('request'),dict) for x in queue):
-            raise Conflict('worker queue unavailable: '+owner)
-        return {'status':matches[0].get('status'), 'live':True,
-                'pending':[x['request'].get('id') for x in queue]}
+        def queue():
+            rows=json.loads((Path(reason_home)/'ask-workers'/(owner+'.json')).read_text(encoding='utf-8'))
+            if not isinstance(rows,list) or any(not isinstance(x,dict) or not isinstance(x.get('request'),dict) for x in rows):
+                raise Conflict('worker queue unavailable: '+owner)
+            return rows
+        before=status();first=queue();after=status();second=queue()
+        if before!=after or first!=second:
+            raise Conflict('worker status/queue changed during observation: '+owner)
+        return {'status':after[2], 'live':True, 'pending':[x['request'].get('id') for x in second]}
     return observe
 
 
@@ -161,11 +185,11 @@ def main(argv=None):
     if a.action!='list' and (not a.task or not a.owner or a.revision is None):
         p.error('task URL, --owner and --revision are required')
     try:
-        registry=Registry(a.chat_home/'assignments.json',live_observer(a.reason_home))
+        registry=Registry(a.chat_home/'assignments.json',live_observer(a.reason_home,a.chat_home))
         out=registry.read() if a.action=='list' else registry.apply(a.action,a.task,a.owner,a.revision,a.paths,a.note)
         print(json.dumps(out,ensure_ascii=False,indent=2))
         return 0
-    except (OSError,ValueError,KeyError,TypeError,TimeoutError) as exc:
+    except (OSError,ValueError,KeyError,TypeError,TimeoutError,subprocess.TimeoutExpired) as exc:
         print('Assignment refused: '+str(exc),file=sys.stderr)
         return 1
 

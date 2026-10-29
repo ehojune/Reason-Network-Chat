@@ -1,5 +1,7 @@
 import concurrent.futures
 import json
+import os
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -12,7 +14,10 @@ class AssignmentTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.state={'status':'idle','live':True,'pending':[]}
-        self.registry=Registry(Path(self.tmp.name)/'assignments.json',lambda _:self.state)
+        self.checkout=Path(self.tmp.name)/'checkout';self.checkout.mkdir()
+        subprocess.run(['git','init','-q',str(self.checkout)],check=True)
+        subprocess.run(['git','-C',str(self.checkout),'remote','add','origin','https://github.com/team/repo.git'],check=True)
+        self.registry=Registry(Path(self.tmp.name)/'assignments.json',lambda _:self.state,self.checkout)
         self.task='https://github.com/team/repo/issues/1'
 
     def apply(self,action,owner='w1',revision=1,**kwargs):
@@ -128,3 +133,24 @@ class AssignmentTests(unittest.TestCase):
             self.assertTrue(assignments.managed_proof('w1',root)['agentChildren'])
             processes.return_value=procs;born.return_value='reused'
             self.assertFalse(assignments.managed_proof('w1',root))
+
+    def test_scopes_require_matching_checkout_and_reject_links(self):
+        bare=Registry(Path(self.tmp.name)/'bare.json',lambda _:self.state)
+        with self.assertRaises(Conflict):bare.apply('claim',self.task,'w1',0,['src'])
+        with self.assertRaises(Conflict):
+            self.registry.apply('claim','https://github.com/other/repo/issues/1','w1',0,['src'])
+        src=self.checkout/'src';src.mkdir();(src/'file.py').write_text('original')
+        # A hard link exercises alias rejection even on Windows without symlink privilege.
+        os.link(src/'file.py',self.checkout/'alias.py')
+        with self.assertRaises(Conflict):self.apply('claim',revision=0,scope=['alias.py'])
+        (self.checkout/'alias.py').unlink()
+        self.apply('claim',revision=0,scope=['src']);self.apply('begin')
+        os.link(src/'file.py',self.checkout/'alias.py')
+        with self.assertRaises(Conflict):self.apply('check',scope=['src/file.py'])
+
+    def test_directory_symlink_claim_is_refused(self):
+        src=self.checkout/'src';src.mkdir()
+        alias=self.checkout/'alias'
+        try:alias.symlink_to(src,target_is_directory=True)
+        except OSError:self.skipTest('symlink privilege unavailable')
+        with self.assertRaises(Conflict):self.apply('claim',revision=0,scope=['alias/file.py'])

@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -49,6 +50,40 @@ def overlap(a,b):
     # Containment checks retain exact case off Windows; overlap may refuse a
     # harmless case-only parallel assignment, never grant an aliased writer.
     return any(covers(x.casefold(),y.casefold()) or covers(y.casefold(),x.casefold()) for x in a for y in b)
+
+
+def verify_tree(root, repo, scopes):
+    """Scoped parallel writes need a real checkout, not an unverifiable path label."""
+    if not root:
+        if scopes==['.']:return None
+        raise Conflict('scoped claims require --repo-root pointing to the worker checkout')
+    root=Path(root).resolve(strict=True)
+    def git(*args):
+        p=subprocess.run(['git','-C',str(root),*args],capture_output=True,timeout=10)
+        if p.returncode:raise Conflict('cannot verify assignment checkout')
+        return p.stdout.decode('utf-8').strip()
+    if Path(git('rev-parse','--show-toplevel')).resolve()!=root:
+        raise Conflict('--repo-root must be the checkout root')
+    remote=git('config','--get','remote.origin.url')
+    match=re.fullmatch(r'(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)([^/\s]+/[^/\s]+?)(?:\.git)?/?',remote)
+    if not match or match[1].casefold()!=repo:
+        raise Conflict('checkout origin does not match the task repository')
+    def plain(path):
+        try:info=path.lstat()
+        except FileNotFoundError:return
+        if stat.S_ISLNK(info.st_mode) or getattr(info,'st_file_attributes',0)&0x400 or (stat.S_ISREG(info.st_mode) and info.st_nlink>1):
+            raise Conflict('linked/reparse/hard-linked scope refused: '+str(path.relative_to(root)))
+    for scope in scopes:
+        current=root
+        for part in ([] if scope=='.' else scope.split('/')):
+            current=current/part;plain(current)
+        # Whole-repository reservation cannot overlap another task in this repo.
+        if scope=='.':continue
+        if not current.is_dir():continue  # a literal file or a not-yet-created path
+        def fail(exc):raise exc
+        for folder,dirs,files in os.walk(current,followlinks=False,onerror=fail):
+            for name in dirs+files:plain(Path(folder)/name)
+    return str(root)
 
 
 def fresh_sessions():
@@ -120,9 +155,10 @@ def live_observer(reason_home, chat_home=None):
 
 
 class Registry:
-    def __init__(self,path,observe):
+    def __init__(self,path,observe,repo_root=None):
         self.path=Path(path)
         self.observe=observe
+        self.repo_root=repo_root
 
     def read(self):
         if not self.path.exists():return {'version':1,'tasks':{}}
@@ -147,6 +183,7 @@ class Registry:
                 raise Conflict('stale assignment revision; read assignment list before retrying')
             if action=='claim':
                 chosen=paths(scope)
+                checkout=verify_tree(self.repo_root,repo,chosen)
                 if old:
                     if old['state']=='working':raise Conflict('active worker must finish before handoff')
                     if not note.strip():raise Conflict('handoff needs a result/preserved-work reference')
@@ -156,10 +193,14 @@ class Registry:
                     if other_key!=key and other['repo']==repo and other['state']!='done' and overlap(chosen,other['paths']):
                         raise Conflict('scope overlaps '+other['task']+' owned by '+other['owner'])
                 row={'task':task,'repo':repo,'owner':owner,'revision':revision+1,
-                     'paths':chosen,'state':'assigned','note':note,'updatedAt':int(time.time()*1000)}
+                     'paths':chosen,'repoRoot':checkout,'state':'assigned','note':note,'updatedAt':int(time.time()*1000)}
             else:
                 if not old or old['owner']!=owner:raise Conflict('not the current task owner')
                 row=dict(old)
+                if action in ('begin','check') and old.get('repoRoot'):
+                    if self.repo_root and str(Path(self.repo_root).resolve())!=old['repoRoot']:
+                        raise Conflict('use the checkout registered with this assignment')
+                    verify_tree(old['repoRoot'],repo,old['paths']+(paths(scope) if scope else []))
                 if action=='begin':
                     if old['state']!='assigned':raise Conflict('assignment already started or finished; do not replay it')
                     if scope and any(not any(covers(p,x) for p in old['paths']) for x in paths(scope)):
@@ -191,13 +232,14 @@ def main(argv=None):
     p.add_argument('--revision',type=int)
     p.add_argument('--path',action='append',dest='paths')
     p.add_argument('--note',default='')
+    p.add_argument('--repo-root',type=Path,help='worker checkout root; required for scoped parallel claims')
     p.add_argument('--chat-home',type=Path,default=Path(os.environ.get('REASON_CHAT_HOME',Path.home()/'.reason-network-chat')))
     p.add_argument('--reason-home',type=Path,default=Path.home()/'.reason')
     a=p.parse_args(argv)
     if a.action!='list' and (not a.task or not a.owner or a.revision is None):
         p.error('task URL, --owner and --revision are required')
     try:
-        registry=Registry(a.chat_home/'assignments.json',live_observer(a.reason_home,a.chat_home))
+        registry=Registry(a.chat_home/'assignments.json',live_observer(a.reason_home,a.chat_home),a.repo_root)
         out=registry.read() if a.action=='list' else registry.apply(a.action,a.task,a.owner,a.revision,a.paths,a.note)
         print(json.dumps(out,ensure_ascii=False,indent=2))
         return 0

@@ -3,14 +3,14 @@
 Use `python rnc.py assignment` for changes of implementation ownership. The local registry is shared by
 Claude and Codex; it neither sends messages nor edits Reason's database/queues. Keep it outside Git.
 
-1. Lead: `assignment list`, then `assignment claim ISSUE_URL --owner worker1 --revision 0 --path src`.
+1. Lead: `assignment list`, then `assignment claim ISSUE_URL --owner worker1 --revision 0 --path src --repo-root WORKTREE`.
    Use the current revision for an existing task. A claim returns a new revision. Default scope `.` reserves
    the repository; literal relative files/directories permit disjoint work in separate tasks. No globs.
 2. Dispatch once with the task URL, returned revision, owner and scope. A failed claim is not a new assignment.
 3. Worker: `assignment begin ISSUE_URL --owner worker1 --revision 1` **before editing**. Refusal means stop
    and report to the lead. A stale queued assignment or duplicate begin cannot acquire the task again.
-4. Before commit/push: `assignment check ISSUE_URL --owner worker1 --revision 1 --path src/file.py` for the
-   files being changed. Finish only after all writes/processes end:
+4. Before each file edit and before commit/push: `assignment check ISSUE_URL --owner worker1 --revision 1 --path src/file.py`
+   for the files being changed. Finish only after all writes/processes end:
    `assignment finish ISSUE_URL --owner worker1 --revision 1 --note "PR URL; preserved local changes"`.
 5. Lead: claim with the current revision and a handoff note. Handoff is refused while the previous assignment
    is working, either worker is busy/unavailable, or either queue contains any request (including cancellation).
@@ -25,6 +25,9 @@ on case-sensitive volumes. File containment retains exact case outside Windows. 
 launcher's verified PID/birth/serve identity, stable native status and empty queues. Persistent Claude agent
 processes and Windows console hosts are not themselves busy evidence. Before a listener has native status,
 only its console host may be present; an agent child makes that fallback unavailable.
+Scoped parallel claims require the worker's checkout root and a matching GitHub origin. Scope ancestors and
+contents must be free of symlinks, Windows reparse points and hard-linked files; begin/check revalidate them.
+The registered checkout is retained in the claim. A whole-repository `.` claim needs no checkout argument.
 
 This is a **cooperative coordination gate**, not an OS sandbox or authenticated user boundary. Plain chat,
 direct editor writes, and commands that omit the gate are not intercepted. Leads must use it for assignments

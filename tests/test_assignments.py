@@ -104,6 +104,8 @@ class AssignmentTests(unittest.TestCase):
         with patch.object(assignments,'managed_proof',return_value={'pid':1,'started':'birth','agentChildren':True}), \
              patch.object(assignments,'fresh_sessions',return_value=idle):
             self.assertEqual(observer('w1')['status'],'idle')  # persistent Claude listener
+            idle['sessions'][0].pop('machine')
+            self.assertEqual(observer('w1')['status'],'idle')  # local native session without machine tag
 
     def test_new_listener_requires_live_launcher_proof(self):
         root=Path(self.tmp.name)  # no queue file or directory before first request
@@ -180,3 +182,18 @@ class AssignmentTests(unittest.TestCase):
         try:alias.symlink_to(src,target_is_directory=True)
         except OSError:self.skipTest('symlink privilege unavailable')
         with self.assertRaises(Conflict):self.apply('claim',revision=0,scope=['alias/file.py'])
+
+    @unittest.skipUnless(os.name=='nt','NTFS 8.3 aliases are Windows-specific')
+    def test_windows_short_alias_reserves_long_scope(self):
+        import ctypes
+        long=self.checkout/'long-component-name-for-assignment';long.mkdir()
+        fn=ctypes.windll.kernel32.GetShortPathNameW
+        fn.argtypes=[ctypes.c_wchar_p,ctypes.c_wchar_p,ctypes.c_uint]
+        buf=ctypes.create_unicode_buffer(32768)
+        if not fn(str(long),buf,len(buf)):self.skipTest('short names unavailable')
+        short=Path(buf.value).name
+        if short.casefold()==long.name.casefold():self.skipTest('8.3 names disabled on this volume')
+        self.apply('claim',revision=0,scope=[short]);self.apply('begin')
+        self.apply('check',scope=[long.name+'/new.py'])
+        with self.assertRaises(Conflict):
+            self.registry.apply('claim','https://github.com/team/repo/issues/2','w2',0,[long.name])

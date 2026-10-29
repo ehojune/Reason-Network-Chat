@@ -46,6 +46,15 @@ def covers(parent, child):
     return parent=='.' or parent==child or child.startswith(parent+'/')
 
 
+def checkout_paths(values, root):
+    chosen=paths(values)
+    if not root:return chosen
+    base=Path(root)
+    # Path.resolve expands Win32 8.3 aliases, including an existing parent of
+    # a file that has not been created yet. Link rejection happens first.
+    return paths([(base/value).resolve().relative_to(base).as_posix() for value in chosen])
+
+
 def overlap(a,b):
     # Conservative across Windows/default macOS and case-sensitive volumes.
     # Containment checks retain exact case off Windows; overlap may refuse a
@@ -137,7 +146,7 @@ def live_observer(reason_home, chat_home=None):
                 raise Conflict('live launcher/process proof unavailable: '+owner)
             named=[s for s in state.get('sessions',[]) if s.get('name')==owner]
             matches=[s for s in named if s.get('person')==state['person']
-                     and s.get('machine')==state['machine']]
+                     and s.get('machine') in (None,state['machine'])]
             identity=(proof['pid'],proof['started'])
             if len(matches)==1:return (state['person'],state['machine'],matches[0].get('status'))+identity
             # A newly launched listener has no native session until its first request.
@@ -189,6 +198,7 @@ class Registry:
             if action=='claim':
                 chosen=paths(scope)
                 checkout=verify_tree(self.repo_root,repo,chosen)
+                chosen=checkout_paths(chosen,checkout)
                 if old:
                     if old['state']=='working':raise Conflict('active worker must finish before handoff')
                     if not note.strip():raise Conflict('handoff needs a result/preserved-work reference')
@@ -208,7 +218,7 @@ class Registry:
                     verify_tree(old['repoRoot'],repo,old['paths']+(paths(scope) if scope else []))
                 if action=='begin':
                     if old['state']!='assigned':raise Conflict('assignment already started or finished; do not replay it')
-                    if scope and any(not any(covers(p,x) for p in old['paths']) for x in paths(scope)):
+                    if scope and any(not any(covers(p,x) for p in old['paths']) for x in checkout_paths(scope,old.get('repoRoot'))):
                         raise Conflict('requested files are outside assigned scope')
                     row['state']='working'
                 elif action=='finish':
@@ -217,7 +227,7 @@ class Registry:
                     row.update(state='done',note=note)
                 elif action=='check':
                     if old['state']!='working':raise Conflict('task is not working; begin first')
-                    if scope and any(not any(covers(p,x) for p in old['paths']) for x in paths(scope)):
+                    if scope and any(not any(covers(p,x) for p in old['paths']) for x in checkout_paths(scope,old.get('repoRoot'))):
                         raise Conflict('requested files are outside assigned scope')
                     return row
                 else:raise Conflict('unknown action')

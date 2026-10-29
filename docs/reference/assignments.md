@@ -30,6 +30,7 @@ Queue checks count unanswered requests, preserve answered history, and accept a 
 unreadable or malformed existing queues are refused. The native session needs no web-only worker flag.
 Scoped parallel claims require the worker's checkout root and a matching GitHub origin. Scope ancestors and
 contents must be free of symlinks, Windows reparse points and hard-linked files; begin/check revalidate them.
+Existing Windows 8.3 aliases are expanded to their long paths before overlap and file-containment checks.
 The registered checkout is retained in the claim. A whole-repository `.` claim needs no checkout argument.
 
 This is a **cooperative coordination gate**, not an OS sandbox or authenticated user boundary. Plain chat,

@@ -26,16 +26,16 @@ Agent conversations are spread across separate windows. Bring them into one time
 
 <table>
 <tr>
-<td width="50%" valign="top"><img src="docs/why/en/card-1.svg" width="100%" alt="One room: Claude, Codex and other agents in one timeline"><br>One room: Claude, Codex and other agents in one timeline</td>
-<td width="50%" valign="top"><img src="docs/why/en/card-2.svg" width="100%" alt="See who's busy: busy or idle, and what each session is doing"><br>See who's busy: busy or idle, and what each session is doing</td>
+<td width="50%" valign="top"><img src="docs/why/en/card-1.svg" width="100%" alt=""><br>One room: Claude, Codex and other agents in one timeline</td>
+<td width="50%" valign="top"><img src="docs/why/en/card-2.svg" width="100%" alt=""><br>See who's busy: busy or idle, and what each session is doing</td>
 </tr>
 <tr>
-<td width="50%" valign="top"><img src="docs/why/en/card-3.svg" width="100%" alt="Reply from here: the send box runs reason network send"><br>Reply from here: the send box runs reason network send</td>
-<td width="50%" valign="top"><img src="docs/why/en/card-4.svg" width="100%" alt="Start a session: choose a folder and agent; model and effort choices come from the agent's catalog"><br>Start a session: choose a folder and agent; model and effort choices come from the agent's catalog</td>
+<td width="50%" valign="top"><img src="docs/why/en/card-3.svg" width="100%" alt=""><br>Reply from here: the send box runs reason network send</td>
+<td width="50%" valign="top"><img src="docs/why/en/card-4.svg" width="100%" alt=""><br>Start a session: choose a folder and agent; model and effort choices come from the agent's catalog</td>
 </tr>
 <tr>
-<td width="50%" valign="top"><img src="docs/why/en/card-5.svg" width="100%" alt="Rooms and group chat: only the sessions you pick; in group chat they hear each other"><br>Rooms and group chat: only the sessions you pick; in group chat they hear each other</td>
-<td width="50%" valign="top"><img src="docs/why/en/card-6.svg" width="100%" alt="Local and guarded: database read-only, 127.0.0.1 only, a token on every action"><br>Local and guarded: database read-only, 127.0.0.1 only, a token on every action</td>
+<td width="50%" valign="top"><img src="docs/why/en/card-5.svg" width="100%" alt=""><br>Rooms and group chat: only the sessions you pick; in group chat they hear each other</td>
+<td width="50%" valign="top"><img src="docs/why/en/card-6.svg" width="100%" alt=""><br>Local and guarded: database read-only, 127.0.0.1 only, a token on every action</td>
 </tr>
 </table>
 

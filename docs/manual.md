@@ -321,3 +321,5 @@ Codex leads can opt into [queued message batches](reference/inbox-batches.md): t
 
 - It reads the Reason Network daemon's database on your computer, read-only, and asks `reason network who` who is online.
 - Your messages go out through `reason network send`, the same command you would type yourself.
+
+For implementation handoffs, use the [task ownership gate](reference/assignments.md). It rejects overlapping claims, stale revisions and transfers while an old worker is active or still has queued requests. Leads and workers must use the CLI gate; ordinary chat alone does not reserve files.

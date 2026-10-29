@@ -292,3 +292,5 @@ Codex 负责人可启用[待处理消息批次](reference/inbox-batches.md)：�
 
 - 以只读方式读取本机 Reason Network 守护进程的数据库，并通过 `reason network who` 查询谁在线。
 - 你发的消息走 `reason network send`，和你自己在终端里敲的一样。
+
+交接实现任务时使用[任务所有权检查](reference/assignments.md)。它拒绝重叠范围、过期版本以及仍在工作或有排队请求的交接。负责人和 worker 必须使用 CLI 检查；普通聊天不会预留文件。

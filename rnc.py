@@ -183,6 +183,7 @@ def room_main(a, token):
 def parse(argv):
     p = argparse.ArgumentParser(prog="rnc.py", description="Manage Reason Network workers the way the page does.")
     sub = p.add_subparsers(dest="what", required=True)
+    sub.add_parser('assignment',help='claim/begin/check/finish task ownership; use assignment --help')
     tx = sub.add_parser("text", help="check a UTF-8 file before a message or an external post")
     tx.add_argument("action", choices=["check"])
     tx.add_argument("--file", required=True, help="UTF-8 text file; - reads UTF-8 bytes from stdin")
@@ -220,7 +221,11 @@ def parse(argv):
 
 
 def main(argv=None):
-    a = parse(sys.argv[1:] if argv is None else argv)
+    argv=sys.argv[1:] if argv is None else argv
+    if argv and argv[0]=='assignment':
+        from assignments import main as assignment_main
+        return assignment_main(argv[1:])
+    a = parse(argv)
     if a.what == "text":
         try:
             data = sys.stdin.buffer.read() if a.file == "-" else Path(a.file).read_bytes()

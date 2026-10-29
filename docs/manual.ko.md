@@ -303,3 +303,5 @@ Codex 총괄에는 [대기 메시지 묶음 처리](reference/inbox-batches.md)�
 
 - 내 PC에 있는 Reason Network 데몬의 DB를 읽기 전용으로 읽고, 누가 접속해 있는지는 `reason network who`에 묻는다.
 - 보내는 메시지는 직접 칠 때와 똑같이 `reason network send`로 나간다.
+
+구현 담당을 바꿀 때는 [작업 소유권 검사](reference/assignments.md)를 사용하세요. 파일 범위 중복·옛 배정 번호·작업 중이거나 대기 요청이 남은 담당자의 인계를 거부합니다. 총괄과 worker가 CLI 검사를 사용해야 하며 일반 채팅만으로 파일이 예약되지는 않습니다.

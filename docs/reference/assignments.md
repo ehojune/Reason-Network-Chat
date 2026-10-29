@@ -20,6 +20,9 @@ Claims use one file lock, durable atomic replacement, monotonic revisions and ov
 GitHub repository, regardless of worktree location. State is `assigned → working → done`; no timeout silently
 releases ownership. A crash leaves the claim held. Inspect saved work/processes before an authorized operator
 records finish; it is not evidence that the work succeeded. Prior transitions remain in `assignments.json`.
+Overlap checks conservatively ignore case on every platform, so case-only parallel scopes are refused even
+on case-sensitive volumes. File containment retains exact case outside Windows. Claims require a managed
+launcher's verified PID/birth/serve identity and no child processes, plus stable native status and empty queues.
 
 This is a **cooperative coordination gate**, not an OS sandbox or authenticated user boundary. Plain chat,
 direct editor writes, and commands that omit the gate are not intercepted. Leads must use it for assignments

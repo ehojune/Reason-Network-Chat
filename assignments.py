@@ -45,7 +45,10 @@ def covers(parent, child):
 
 
 def overlap(a,b):
-    return any(covers(x,y) or covers(y,x) for x in a for y in b)
+    # Conservative across Windows/default macOS and case-sensitive volumes.
+    # Containment checks retain exact case off Windows; overlap may refuse a
+    # harmless case-only parallel assignment, never grant an aliased writer.
+    return any(covers(x.casefold(),y.casefold()) or covers(y.casefold(),x.casefold()) for x in a for y in b)
 
 
 def fresh_sessions():
@@ -87,12 +90,15 @@ def live_observer(reason_home, chat_home=None):
             state=fresh_sessions()
             if not state.get('person') or not state.get('machine'):
                 raise Conflict('worker state unavailable')
+            # Native sessions can outlive an uncleanly terminated serve process.
+            if not chat_home or not managed_idle(owner,chat_home):
+                raise Conflict('live idle launcher/process proof unavailable: '+owner)
             named=[s for s in state.get('sessions',[]) if s.get('name')==owner]
             matches=[s for s in named if s.get('worker') and s.get('person')==state['person']
                      and s.get('machine')==state['machine']]
             if len(matches)==1:return (state['person'],state['machine'],matches[0].get('status'))
             # A newly launched listener has no native session until its first request.
-            if not named and chat_home and managed_idle(owner,chat_home):
+            if not named:
                 return (state['person'],state['machine'],'idle')
             raise Conflict('worker identity missing or ambiguous: '+owner)
         def queue():

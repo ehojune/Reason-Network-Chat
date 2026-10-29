@@ -76,14 +76,19 @@ class AssignmentTests(unittest.TestCase):
         idle={'person':'me','machine':'local','sessions':[{'name':'w1','worker':True,'person':'me','machine':'local','status':'idle'}]}
         busy=json.loads(json.dumps(idle));busy['sessions'][0]['status']='busy'
         remote=json.loads(json.dumps(idle));remote['sessions'][0]['machine']='remote'
-        observer=assignments.live_observer(root)
-        with patch.object(assignments,'fresh_sessions',side_effect=[idle,idle,busy,busy,remote]) as fresh:
+        observer=assignments.live_observer(root,root)
+        with patch.object(assignments,'managed_idle',return_value=True), \
+             patch.object(assignments,'fresh_sessions',side_effect=[idle,idle,busy,busy,remote]) as fresh:
             self.assertEqual(observer('w1')['status'],'idle')
             self.assertEqual(observer('w1')['status'],'busy')
             with self.assertRaises(Conflict):observer('w1')
             self.assertEqual(fresh.call_count,5)
 
-        with patch.object(assignments,'fresh_sessions',side_effect=[idle,busy]):
+        with patch.object(assignments,'managed_idle',return_value=True), \
+             patch.object(assignments,'fresh_sessions',side_effect=[idle,busy]):
+            with self.assertRaises(Conflict):observer('w1')
+        with patch.object(assignments,'managed_idle',return_value=False), \
+             patch.object(assignments,'fresh_sessions',return_value=idle):
             with self.assertRaises(Conflict):observer('w1')
 
     def test_new_listener_requires_live_launcher_proof(self):
@@ -101,6 +106,9 @@ class AssignmentTests(unittest.TestCase):
         with patch.object(assignments.sys,'platform','linux'):
             self.apply('claim',revision=0,scope=['src/Foo.py']);self.apply('begin')
             with self.assertRaises(Conflict):self.apply('check',scope=['src/foo.py'])
+        with patch.object(assignments.sys,'platform','darwin'):
+            with self.assertRaises(Conflict):
+                self.registry.apply('claim','https://github.com/team/repo/issues/2','w2',0,['src/foo.py'])
 
     def test_launcher_proof_rejects_reused_pid_and_running_child(self):
         root=Path(self.tmp.name)

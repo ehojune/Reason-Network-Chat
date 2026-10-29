@@ -77,28 +77,33 @@ class AssignmentTests(unittest.TestCase):
         busy=json.loads(json.dumps(idle));busy['sessions'][0]['status']='busy'
         remote=json.loads(json.dumps(idle));remote['sessions'][0]['machine']='remote'
         observer=assignments.live_observer(root,root)
-        with patch.object(assignments,'managed_idle',return_value=True), \
+        with patch.object(assignments,'managed_proof',return_value={'pid':1,'started':'birth','agentChildren':False}), \
              patch.object(assignments,'fresh_sessions',side_effect=[idle,idle,busy,busy,remote]) as fresh:
             self.assertEqual(observer('w1')['status'],'idle')
             self.assertEqual(observer('w1')['status'],'busy')
             with self.assertRaises(Conflict):observer('w1')
             self.assertEqual(fresh.call_count,5)
 
-        with patch.object(assignments,'managed_idle',return_value=True), \
+        with patch.object(assignments,'managed_proof',return_value={'pid':1,'started':'birth','agentChildren':False}), \
              patch.object(assignments,'fresh_sessions',side_effect=[idle,busy]):
             with self.assertRaises(Conflict):observer('w1')
-        with patch.object(assignments,'managed_idle',return_value=False), \
+        with patch.object(assignments,'managed_proof',return_value=False), \
              patch.object(assignments,'fresh_sessions',return_value=idle):
             with self.assertRaises(Conflict):observer('w1')
+        with patch.object(assignments,'managed_proof',return_value={'pid':1,'started':'birth','agentChildren':True}), \
+             patch.object(assignments,'fresh_sessions',return_value=idle):
+            self.assertEqual(observer('w1')['status'],'idle')  # persistent Claude listener
 
     def test_new_listener_requires_live_launcher_proof(self):
         root=Path(self.tmp.name);(root/'ask-workers').mkdir()
         (root/'ask-workers/w1.json').write_text('[]')
         observer=assignments.live_observer(root,root)
         with patch.object(assignments,'fresh_sessions',return_value={'person':'me','machine':'local','sessions':[]}), \
-             patch.object(assignments,'managed_idle',return_value=True) as proof:
+             patch.object(assignments,'managed_proof',return_value={'pid':1,'started':'birth','agentChildren':False}) as proof:
             self.assertEqual(observer('w1')['status'],'idle')
             self.assertEqual(proof.call_count,2)
+            proof.return_value={'pid':1,'started':'birth','agentChildren':True}
+            with self.assertRaises(Conflict):observer('w1')  # no native idle evidence
             proof.return_value=False
             with self.assertRaises(Conflict):observer('w1')
 
@@ -113,11 +118,13 @@ class AssignmentTests(unittest.TestCase):
     def test_launcher_proof_rejects_reused_pid_and_running_child(self):
         root=Path(self.tmp.name)
         (root/'workers.json').write_text(json.dumps([{'name':'w1','pid':123,'started':'birth'}]))
-        procs=[(123,1,'reason',['reason','network','serve','codex','--name','w1'])]
+        procs=[(123,1,'reason',['reason','network','serve','codex','--name','w1']),
+               (125,123,'conhost.exe',['conhost.exe'])]
         with patch('launcher.started_at',return_value='birth') as born, \
              patch('launcher.list_processes',return_value=procs) as processes:
-            self.assertTrue(assignments.managed_idle('w1',root))
+            self.assertTrue(assignments.managed_proof('w1',root))
+            self.assertFalse(assignments.managed_proof('w1',root)['agentChildren'])
             processes.return_value=procs+[(124,123,'codex',['codex','exec'])]
-            self.assertFalse(assignments.managed_idle('w1',root))
+            self.assertTrue(assignments.managed_proof('w1',root)['agentChildren'])
             processes.return_value=procs;born.return_value='reused'
-            self.assertFalse(assignments.managed_idle('w1',root))
+            self.assertFalse(assignments.managed_proof('w1',root))

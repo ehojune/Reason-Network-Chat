@@ -22,7 +22,9 @@ releases ownership. A crash leaves the claim held. Inspect saved work/processes 
 records finish; it is not evidence that the work succeeded. Prior transitions remain in `assignments.json`.
 Overlap checks conservatively ignore case on every platform, so case-only parallel scopes are refused even
 on case-sensitive volumes. File containment retains exact case outside Windows. Claims require a managed
-launcher's verified PID/birth/serve identity and no child processes, plus stable native status and empty queues.
+launcher's verified PID/birth/serve identity, stable native status and empty queues. Persistent Claude agent
+processes and Windows console hosts are not themselves busy evidence. Before a listener has native status,
+only its console host may be present; an agent child makes that fallback unavailable.
 
 This is a **cooperative coordination gate**, not an OS sandbox or authenticated user boundary. Plain chat,
 direct editor writes, and commands that omit the gate are not intercepted. Leads must use it for assignments

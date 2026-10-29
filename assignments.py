@@ -66,7 +66,7 @@ def fresh_sessions():
     return json.loads(result.stdout.decode('utf-8'))
 
 
-def managed_idle(owner, chat_home):
+def managed_proof(owner, chat_home):
     """Read launcher PID/birth proof without constructing a mutating Launcher."""
     from launcher import started_at, list_processes, descendants, parse_serve
     rows=json.loads((Path(chat_home)/'workers.json').read_text(encoding='utf-8'))
@@ -78,7 +78,11 @@ def managed_idle(owner, chat_home):
     if procs is None:return False
     roots=[p for p in procs if p[0]==w['pid']]
     if len(roots)!=1 or (parse_serve(roots[0][3]) or {}).get('name')!=owner:return False
-    return not descendants(procs,w['pid']) and started_at(w['pid'])==w['started']
+    if started_at(w['pid'])!=w['started']:return False
+    # conhost belongs to an idle Windows listener too. Claude can keep its
+    # stream-json agent alive across turns; native status determines its busy state.
+    children=[p for p in descendants(procs,w['pid']) if p[2].lower()!='conhost.exe']
+    return {'pid':w['pid'],'started':w['started'],'agentChildren':bool(children)}
 
 
 def live_observer(reason_home, chat_home=None):
@@ -91,15 +95,17 @@ def live_observer(reason_home, chat_home=None):
             if not state.get('person') or not state.get('machine'):
                 raise Conflict('worker state unavailable')
             # Native sessions can outlive an uncleanly terminated serve process.
-            if not chat_home or not managed_idle(owner,chat_home):
-                raise Conflict('live idle launcher/process proof unavailable: '+owner)
+            proof=managed_proof(owner,chat_home) if chat_home else None
+            if not proof:
+                raise Conflict('live launcher/process proof unavailable: '+owner)
             named=[s for s in state.get('sessions',[]) if s.get('name')==owner]
             matches=[s for s in named if s.get('worker') and s.get('person')==state['person']
                      and s.get('machine')==state['machine']]
-            if len(matches)==1:return (state['person'],state['machine'],matches[0].get('status'))
+            identity=(proof['pid'],proof['started'])
+            if len(matches)==1:return (state['person'],state['machine'],matches[0].get('status'))+identity
             # A newly launched listener has no native session until its first request.
-            if not named:
-                return (state['person'],state['machine'],'idle')
+            if not named and not proof['agentChildren']:
+                return (state['person'],state['machine'],'idle')+identity
             raise Conflict('worker identity missing or ambiguous: '+owner)
         def queue():
             rows=json.loads((Path(reason_home)/'ask-workers'/(owner+'.json')).read_text(encoding='utf-8'))

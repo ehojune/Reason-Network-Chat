@@ -213,8 +213,9 @@ class Registry:
                 if not old or old['owner']!=owner:raise Conflict('not the current task owner')
                 row=dict(old)
                 if action in ('begin','check') and old.get('repoRoot'):
-                    if self.repo_root and str(Path(self.repo_root).resolve())!=old['repoRoot']:
-                        raise Conflict('use the checkout registered with this assignment')
+                    if (not self.repo_root or str(Path(self.repo_root).resolve())!=old['repoRoot']
+                            or Path.cwd().resolve()!=Path(old['repoRoot'])):
+                        raise Conflict('run from the registered checkout and pass --repo-root for begin/check')
                     verify_tree(old['repoRoot'],repo,old['paths']+(paths(scope) if scope else []))
                 if action=='begin':
                     if old['state']!='assigned':raise Conflict('assignment already started or finished; do not replay it')

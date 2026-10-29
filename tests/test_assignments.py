@@ -21,7 +21,8 @@ class AssignmentTests(unittest.TestCase):
         self.task='https://github.com/team/repo/issues/1'
 
     def apply(self,action,owner='w1',revision=1,**kwargs):
-        return self.registry.apply(action,self.task,owner,revision,**kwargs)
+        with patch.object(assignments.Path,'cwd',return_value=self.checkout):
+            return self.registry.apply(action,self.task,owner,revision,**kwargs)
 
     def test_active_handoff_and_old_revision_cannot_run(self):
         self.apply('claim',revision=0)
@@ -175,6 +176,14 @@ class AssignmentTests(unittest.TestCase):
         self.apply('claim',revision=0,scope=['src']);self.apply('begin')
         os.link(src/'file.py',self.checkout/'alias.py')
         with self.assertRaises(Conflict):self.apply('check',scope=['src/file.py'])
+
+    def test_begin_and_check_require_explicit_actual_checkout(self):
+        self.apply('claim',revision=0,scope=['src'])
+        missing=Registry(self.registry.path,lambda _:self.state)
+        with self.assertRaises(Conflict):missing.apply('begin',self.task,'w1',1)
+        with self.assertRaises(Conflict):self.registry.apply('begin',self.task,'w1',1)  # wrong cwd
+        self.apply('begin')
+        with self.assertRaises(Conflict):missing.apply('check',self.task,'w1',1,['src/a.py'])
 
     def test_directory_symlink_claim_is_refused(self):
         src=self.checkout/'src';src.mkdir()

@@ -62,6 +62,12 @@ class AssignmentTests(unittest.TestCase):
         self.apply('claim',revision=0);self.apply('begin');self.apply('finish',note='done')
         with self.assertRaises(Conflict):self.apply('begin')
         self.assertEqual(len(self.registry.read()['history']),3)
+        def only_new_owner(name):
+            if name=='w1':raise Conflict('former worker was stopped')
+            return self.state
+        self.registry.observe=only_new_owner
+        self.apply('claim','w2',note='new follow-up after completed PR')
+        with self.assertRaises(Conflict):self.apply('begin')
 
     def test_invalid_scope_and_corrupt_registry_fail_closed(self):
         for path in ('../a','/tmp/a','C:/a','src//a','src/./a','src/*','src.','src /file.py','src/file.py.'):
@@ -119,6 +125,11 @@ class AssignmentTests(unittest.TestCase):
         with patch.object(assignments.sys,'platform','darwin'):
             with self.assertRaises(Conflict):
                 self.registry.apply('claim','https://github.com/team/repo/issues/2','w2',0,['src/foo.py'])
+
+    def test_normalization_aliases_cannot_get_two_owners(self):
+        self.apply('claim',revision=0,scope=['src/\u00e9.py'])
+        with self.assertRaises(Conflict):
+            self.registry.apply('claim','https://github.com/team/repo/issues/2','w2',0,['src/e\u0301.py'])
 
     def test_launcher_proof_rejects_reused_pid_and_running_child(self):
         root=Path(self.tmp.name)

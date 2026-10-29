@@ -13,14 +13,15 @@ Claude and Codex; it neither sends messages nor edits Reason's database/queues. 
    for the files being changed. Finish only after all writes/processes end:
    `assignment finish ISSUE_URL --owner worker1 --revision 1 --note "PR URL; preserved local changes"`.
 5. Lead: claim with the current revision and a handoff note. Handoff is refused while the previous assignment
-   is working, either worker is busy/unavailable, or either queue contains any request (including cancellation).
+   is working, an active former owner or the new owner is busy/unavailable, or their queues contain requests (including cancellation).
    Drain/reconcile those requests first; do not delete a queue or force a restart to pass the check.
+   A completed former owner need not still be running; its old revision cannot begin again.
 
 Claims use one file lock, durable atomic replacement, monotonic revisions and overlap checks across the same
 GitHub repository, regardless of worktree location. State is `assigned → working → done`; no timeout silently
 releases ownership. A crash leaves the claim held. Inspect saved work/processes before an authorized operator
 records finish; it is not evidence that the work succeeded. Prior transitions remain in `assignments.json`.
-Overlap checks conservatively ignore case on every platform, so case-only parallel scopes are refused even
+Overlap checks conservatively ignore case and Unicode composition on every platform, so aliased scopes are refused even
 on case-sensitive volumes. File containment retains exact case outside Windows. Claims require a managed
 launcher's verified PID/birth/serve identity, stable native status and empty queues. Persistent Claude agent
 processes and Windows console hosts are not themselves busy evidence. Before a listener has native status,

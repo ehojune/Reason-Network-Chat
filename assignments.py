@@ -12,6 +12,7 @@ import stat
 import subprocess
 import sys
 import time
+import unicodedata
 from pathlib import Path
 
 from storage import atomic_json, file_lock
@@ -49,7 +50,8 @@ def overlap(a,b):
     # Conservative across Windows/default macOS and case-sensitive volumes.
     # Containment checks retain exact case off Windows; overlap may refuse a
     # harmless case-only parallel assignment, never grant an aliased writer.
-    return any(covers(x.casefold(),y.casefold()) or covers(y.casefold(),x.casefold()) for x in a for y in b)
+    canonical=lambda p:unicodedata.normalize('NFC',p.casefold())
+    return any(covers(canonical(x),canonical(y)) or covers(canonical(y),canonical(x)) for x in a for y in b)
 
 
 def verify_tree(root, repo, scopes):
@@ -187,7 +189,7 @@ class Registry:
                 if old:
                     if old['state']=='working':raise Conflict('active worker must finish before handoff')
                     if not note.strip():raise Conflict('handoff needs a result/preserved-work reference')
-                    self.idle(old['owner'])
+                    if old['state']!='done':self.idle(old['owner'])
                 self.idle(owner)
                 for other_key,other in data['tasks'].items():
                     if other_key!=key and other['repo']==repo and other['state']!='done' and overlap(chosen,other['paths']):

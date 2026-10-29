@@ -315,12 +315,13 @@ class ConfigureTest(unittest.TestCase):
                     call()
                 except launcher.LaunchError as e:
                     seen.setdefault("refused", []).append(e.code)
-            self.l.workers.update({f"w{i}": dict(self.l.workers["live-codex"], name=f"w{i}") for i in range(5)})
-            try:  # 3 + 5 = 8 workers, one of them restarting: no room for a ninth
+            extra = launcher.MAX_WORKERS - len(self.l.workers)
+            self.l.workers.update({f"w{i}": dict(self.l.workers["live-codex"], name=f"w{i}") for i in range(extra)})
+            try:  # A restarting worker still consumes its slot at the capacity boundary.
                 self.l.launch({"agent": "codex", "mode": "worker", "folder": FOLDER, "name": "ninth"}, set())
             except launcher.LaunchError as e:
                 seen["ninth"] = e.code
-            for i in range(5):
+            for i in range(extra):
                 del self.l.workers[f"w{i}"]
         self.l.halt = halt
         self.assertTrue(self.conf(name="a-claude", fullAccess=True)["restarted"])

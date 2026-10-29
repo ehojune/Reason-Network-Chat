@@ -92,6 +92,8 @@ worker 已自动接收消息，因此菜单会显示说明，收藏中的 worker
 
 <a id="sessions"></a>
 
+最多可同时运行 12 个受管理的 worker，包括审查器。
+
 ## 启动新会话
 
 <p align="center">

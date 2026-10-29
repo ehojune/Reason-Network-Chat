@@ -9,6 +9,7 @@ Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（
 
 | 时间 | 变更 | 主要内容 |
 |---|---|---|
+| 13:35 | [PR pending](https://github.com/ehojune/Reason-Network-Chat/pulls) | 将受管理 worker 上限增至 12，可保留两位负责人和六个 worker 并启动审查器。 |
 | 05:05 | [#57](https://github.com/ehojune/Reason-Network-Chat/pull/57) | Gemini 审查器不再把仅引用其名字的通知当作请求，每次提示都带上运作规则，超时可配置，失败时报告原因和日志路径。 失败通知保留已发布审查的证据。 |
 
 ## 2026-10-27

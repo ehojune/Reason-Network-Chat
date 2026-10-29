@@ -321,3 +321,5 @@ Codex leads can opt into [queued message batches](reference/inbox-batches.md): t
 
 - It reads the Reason Network daemon's database on your computer, read-only, and asks `reason network who` who is online.
 - Your messages go out through `reason network send`, the same command you would type yourself.
+
+Batch answers cover every verified input. Saved answers without confirmed delivery appear in **Batch delivery history**; opening them sends nothing. Batch inputs cannot be resent. Other requests with no linked reply may include agent reports already handled elsewhere; inspect the original before sending again.

@@ -9,6 +9,7 @@ Reason Network Chat에서 바뀐 것을 최신순으로 적는다. 시간은 한
 
 | 시간 | 변경 | 주요 변경사항 |
 |---|---|---|
+| 14:55 | [#60](https://github.com/ehojune/Reason-Network-Chat/pull/60) | 저장된 일괄 답변과 공동 응답을 확인하고 옛 요청의 재실행을 막습니다. |
 | 13:35 | [#58](https://github.com/ehojune/Reason-Network-Chat/pull/58) | 총괄 2개와 worker 6개를 유지하면서 리뷰어도 켜도록 관리형 worker 상한을 12개로 늘렸습니다. |
 | 05:05 | [#57](https://github.com/ehojune/Reason-Network-Chat/pull/57) | Gemini 리뷰어가 이름만 인용한 안내문은 요청으로 받지 않고, 모든 프롬프트에 운영 규칙을 넣으며, 제한시간을 설정할 수 있고, 실패하면 원인과 로그 경로를 알립니다. 실패 안내에서도 이미 게시한 리뷰 근거를 보존합니다. |
 

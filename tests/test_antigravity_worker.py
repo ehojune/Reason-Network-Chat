@@ -262,6 +262,16 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(args[args.index('--print-timeout') + 1], '120s')
         self.assertEqual(self.run.call_args.kwargs['timeout'], 150)
 
+    def test_delivery_failure_preserves_published_review_evidence(self):
+        self.job('posted')
+        url = 'https://github.com/p/repo/pull/1#pullrequestreview-2'
+        self.worker.journal.update('posted', status='outbox', review_url=url)
+        error = aw.WorkerError('Room reply timed out')
+        self.assertIn(url, self.worker.failure_notice('posted', error))
+        self.job('uncertain')
+        self.assertIn('posting status is unconfirmed', self.worker.failure_notice('uncertain', error))
+        self.assertNotIn('no review was posted', self.worker.failure_notice('posted', error))
+
     def test_failure_report_names_cause_and_log_and_is_never_a_pass(self):
         logs = self.root / 'agylog'
         logs.mkdir()

@@ -467,6 +467,12 @@ class Worker:
         self.reply(mid, message['sender'], response)
         self.journal.update(mid, status='done', error=None)
 
+    def failure_notice(self, mid, error):
+        row = self.journal.db.execute('SELECT review_url FROM jobs WHERE id=?', (mid,)).fetchone()
+        posting = ('Published review: ' + row['review_url']) if row and row['review_url'] else 'GitHub posting status is unconfirmed; inspect the request marker before retrying.'
+        return ('Gemini reviewer paused (not a pass): ' + diagnose(error) + '\n' + posting
+                + '\nRequest retained; use /retry explicitly after resolving it.')
+
     def run(self):
         from launcher import file_lock
         with file_lock(self.root / 'receiver.lock'):
@@ -499,7 +505,7 @@ class Worker:
                         print(f'held {job["id"]}: {type(error).__name__}: {error}', flush=True)
                         try:
                             message = json.loads(job['payload'])
-                            self.reply(job['id'], message['sender'], 'Gemini reviewer paused (not a pass; no review was posted): ' + diagnose(error) + '\nRequest retained; use /retry explicitly after resolving it.')
+                            self.reply(job['id'], message['sender'], self.failure_notice(job['id'], error))
                         except Exception as reply_error:
                             print(f'Failure notice not delivered: {reply_error}', flush=True)
 

@@ -92,10 +92,10 @@ Reviewer behavior (adapter, not model memory):
   notice (`@lead ... call @gemini-reviewer later`) is journaled as `ignored`: no model call, no reply, no pause.
 - Every prompt starts with fixed operating rules: caller, reviewer role, report format, head to name, forbidden actions.
   Request text, PR text and diff stay untrusted data.
-- Model-call limit: `antigravity_worker.py --timeout 300 --timeout-max 900` (seconds; these are the defaults). `python rnc.py worker start` does not pass the flags yet, so a managed worker uses the defaults; set them by launching the script directly. The base grows 15 s per 10 KB
+- Managed workers use model-call limits of 300 seconds base and 900 seconds cap. Managed timeout configuration is not exposed yet; keep using `rnc.py worker` and do not launch the receiver directly. The base grows 15 s per 10 KB
   of prompt up to the cap; `agy --print-timeout` gets that value and the subprocess limit is 30 s more.
 - A failed call pauses and answers `cause=timeout|quota|auth|abnormal exit|unknown; log=<newest agy cli log>`. This is
-  never a pass; no review is posted. Resume with `/retry` after fixing the cause.
+  never a pass. A room-delivery failure can occur after a review was posted; the notice preserves its saved URL or reports posting as unconfirmed. Check the request marker before `/retry` after fixing the cause.
 
 ## Starting a message in a group room (agents read this)
 

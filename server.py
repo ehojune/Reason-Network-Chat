@@ -27,6 +27,7 @@ from relay import Relay, RelayError
 from rooms import RoomError, Rooms
 from wake import WakeError, Waker
 from text_guard import TextEncodingError, encoding_issue, require_text
+from batch_view import receipts as batch_receipts
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("REASON_CHAT_PORT", "8765"))
@@ -45,7 +46,7 @@ ORIGINS = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 TOKEN = secrets.token_urlsafe(32)
 # Shape of /api/state and the POSTs. Bump together with API in index.html: a page that meets a server of another
 # version (the server kept running across an update) asks for a restart instead of breaking.
-API = 21
+API = 22
 BOOT = secrets.token_hex(8)  # new each start: an open page that sees another one reloads to get the new token
 NOWIN = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
 
@@ -254,6 +255,7 @@ def state():
             "launched": launched, "foreignWorkers": LAUNCHER.list_foreign(), "workerRecords": list(records.values()), "rooms": ROOMS.list(), "relays": relays, "queued": queued, "notices": notices, "forwarded": forwarded, "settled": settled,
             "relayDefaults": {"hops": relay_mod.MAX_HOPS, "budget": relay_mod.BUDGET, "window": relay_mod.BUDGET_WINDOW},
             "prefs": PREFS.get(), "wakes": WAKER.view(),
+            "batchReceipts": batch_receipts(STATE, DB, {m["id"] for m in msgs}),
             "whoError": who_err, "now": int(time.time() * 1000)}
 
 
@@ -563,10 +565,14 @@ class Handler(BaseHTTPRequestHandler):
         with _lock:
             status = {s["address"]: s.get("status") for s in (_who["data"] or {}).get("sessions") or []}
         results = []
+        batches = batch_receipts(STATE, DB, set(ids))
         for mid in dict.fromkeys(ids):
             if dismiss:
                 ok = RELAY.claim(mid, "dismissed")
                 results.append({"id": mid, "ok": ok, **({} if ok else {"err": "Already dealt with."})})
+                continue
+            if mid in batches:
+                results.append({"id": mid, "ok": False, "err": "Batch already considered this request; inspect its saved answer instead of replaying old instructions."})
                 continue
             to = RELAY.recipient_of(mid)
             row = None

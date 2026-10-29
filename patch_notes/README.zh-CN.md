@@ -9,6 +9,7 @@ Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（
 
 | 时间 | 变更 | 主要内容 |
 |---|---|---|
+| 16:23 | [#61](https://github.com/ehojune/Reason-Network-Chat/pull/61) | 通过版本、文件范围和空闲队列检查协调任务交接。 |
 | 15:22 | [#62](https://github.com/ehojune/Reason-Network-Chat/pull/62) | 在三种语言的 README 标题中说明智能体聊天界面用途，并以文字显示功能摘要。 |
 | 14:55 | [#60](https://github.com/ehojune/Reason-Network-Chat/pull/60) | 显示已保存的批次回复及已验证的共同回复，防止重新执行旧请求。 |
 | 13:35 | [#58](https://github.com/ehojune/Reason-Network-Chat/pull/58) | 将受管理 worker 上限增至 12，可保留两位负责人和六个 worker 并启动审查器。 |

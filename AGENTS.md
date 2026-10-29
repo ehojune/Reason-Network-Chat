@@ -33,6 +33,10 @@ People start at [README.md](README.md); detailed controls are in the [user manua
   or put tokens into model input. Verify author, inspected head and posted text; preserve cached results and
   deduplication. An uncertain model call pauses until explicit retry. See the linked setup procedure.
 
+## Task ownership
+
+Use [assignment claim/begin/check/finish](docs/reference/assignments.md) before dispatch, edits, commit/push and handoff. Do not execute a stale revision, bypass a busy/queued-owner refusal, or clear the registry to reset ownership. This cooperative gate does not interrupt existing turns.
+
 ## Required implementation rules
 
 - Never write Reason's database; use SQLite `mode=ro`. Bind only to `127.0.0.1`, with one server per port.

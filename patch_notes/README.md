@@ -9,6 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 |---|---|---|
+| 16:23 | [#61](https://github.com/ehojune/Reason-Network-Chat/pull/61) | Coordinate task ownership with revision, file-scope and idle-queue checks before handoff. |
 | 15:22 | [#62](https://github.com/ehojune/Reason-Network-Chat/pull/62) | Clarify the agent chat UI title and show feature summaries as text in all three languages. |
 | 14:55 | [#60](https://github.com/ehojune/Reason-Network-Chat/pull/60) | Show saved batch answers and verified shared replies without replaying old requests. |
 | 13:35 | [#58](https://github.com/ehojune/Reason-Network-Chat/pull/58) | Allow reviewers alongside two leads and six workers, with capacity for 12 managed workers. |

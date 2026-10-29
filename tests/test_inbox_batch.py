@@ -16,6 +16,17 @@ import storage
 
 
 class InboxBatchTest(unittest.TestCase):
+    def test_publisher_rejects_text_and_non_executable_before_configuration(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'reason-network.exe';path.write_bytes(b'plain text')
+            with patch.object(batch.os,'access',return_value=True):
+                with self.assertRaises(batch.BatchError):batch.validate_publisher(path)
+            path.write_bytes(b'MZ00')
+            with patch.object(batch.os,'access',return_value=False):
+                with self.assertRaises(batch.BatchError):batch.validate_publisher(path)
+            with patch.object(batch.os,'access',return_value=True),patch.object(batch.subprocess,'run',return_value=subprocess.CompletedProcess([],0,b'--reply-to --from --fyi',b'')):
+                self.assertEqual(batch.validate_publisher(path),str(path.resolve()))
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

@@ -1465,10 +1465,10 @@ $("#trouble").addEventListener("click", e => {
 
 // Under your message: what came of each copy that got no answer, with "Send again" (off while its worker is stopped).
 function troubleHtml(m) {
-  const batch = (S.batchReceipts || {})[m.id];
-  if (batch) return `<span class="hint">${esc(t(batch.status === 'delivered' ? 'batchAnswered' : batch.status === 'held' ? 'batchHeld' : 'batchLocal'))}</span>`;
   return m.all.map(x => {
     const v = TR.get(x.id), st = (S.settled || {})[x.id], who = m.all.length > 1 ? ` ${short(x.recipient)}` : "";
+    const batch = (S.batchReceipts || {})[x.id];
+    if (batch) return `<span class="hint">${esc(t(batch.status === 'delivered' ? 'batchAnswered' : batch.status === 'held' ? 'batchHeld' : 'batchLocal'))}${esc(who)}</span>`;
     if (st) return `<span class="trouble" style="color:var(--muted)">${esc(t(st.how === "resent" ? "resent" : "dismissed"))}${esc(who)} · ${fmtT(st.at)}</span>`;
     if (!v) return "";
     const ok = running(x.recipient);

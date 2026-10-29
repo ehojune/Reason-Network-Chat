@@ -6,6 +6,7 @@ An interrupted/failed call is held in our journal, never automatically executed 
 import contextlib
 import argparse
 import json
+import os
 import re
 import sqlite3
 import subprocess
@@ -262,6 +263,22 @@ def publish_once(config, job, path, journal):
     atomic_json(path, journal, durable=True)
 
 
+def validate_publisher(path):
+    path=Path(path).resolve()
+    if not path.is_file() or not os.access(path,os.X_OK):
+        raise BatchError('publisher must be executable')
+    with path.open('rb') as handle: magic=handle.read(4)
+    if not (magic[:2]==b'MZ' or magic in (b'\x7fELF',b'\xcf\xfa\xed\xfe',b'\xfe\xed\xfa\xcf',b'\xca\xfe\xba\xbe',b'\xbe\xba\xfe\xca')):
+        raise BatchError('publisher must be a native executable, not a script or command shim')
+    try:
+        check=subprocess.run([str(path),'send','--help'],capture_output=True,timeout=10)
+    except (OSError,subprocess.TimeoutExpired) as exc:
+        raise BatchError('publisher help check failed') from exc
+    if check.returncode or not all(flag in check.stdout for flag in (b'--reply-to',b'--from',b'--fyi')):
+        raise BatchError('publisher must support native Reason send with reply-to/from/fyi')
+    return str(path)
+
+
 def run(config, real, extra, args, runner=invoke):
     """Return None for ordinary invocations; never silently bypass an existing journal."""
     if "exec" not in args or "--json" not in args or not args:
@@ -358,9 +375,8 @@ def main(argv=None):
             if config and any(config.get(k) != v for k, v in candidate.items() if k != "enabled"):
                 parser.error("existing batch identity/storage cannot be changed; retain its receipts")
             if a.publisher:
-                if not a.publisher.is_file():
-                    parser.error("publisher must be an installed native executable")
-                candidate['publisher'] = str(a.publisher.resolve())
+                try: candidate['publisher'] = validate_publisher(a.publisher)
+                except BatchError as exc: parser.error(str(exc))
             elif config and config.get('publisher'):
                 candidate['publisher'] = config['publisher']
             settings["inbox_batch"] = candidate

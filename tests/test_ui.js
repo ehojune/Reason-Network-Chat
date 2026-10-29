@@ -67,6 +67,11 @@ S.messages=[msg('batch-old','p/terminal','p/a','old instruction'),msg('batch-new
 S.batchReceipts={'batch-old':{batch:'b',status:'local_only',worker:'p/a',room:'r',at:85000000,answer:'<script>old @p/b</script>',error:'unconfirmed'},
  'batch-new':{batch:'b',status:'local_only',worker:'p/a',room:'r',at:85000000,answer:'<script>old @p/b</script>',error:'unconfirmed'}};
 assert.equal(troubles().size,0);
+S.messages.push(msg('failed-copy','p/terminal','p/b','old instruction'));
+TR=new Map([['failed-copy',{kind:'failed',to:'p/b'}]]);
+const mixed=troubleHtml({id:'batch-old',all:[S.messages[0],S.messages[2]]});
+assert.match(mixed,/batchLocal a/);assert.match(mixed,/tFailed b/);
+assert.match(mixed,/data-id="failed-copy"/);assert.doesNotMatch(mixed,/data-id="batch-old"/);
 renderBatchHistory();
 assert.equal(nodes['#batchSummary'].textContent,'batchHistory · 1');
 assert.match(nodes['#batchAnswers'].innerHTML,/&lt;script&gt;/);

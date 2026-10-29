@@ -37,7 +37,7 @@ MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:\[\]-]{0,79}$")
 EFFORT_RE = re.compile(r"^[a-z]{2,12}$")
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 EFFORT_ORDER = ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
-MAX_WORKERS = 8
+MAX_WORKERS = 12
 CATALOG_TTL = 600  # seconds
 # Variables an agent session sets for itself and its tools. A server started from inside one (the Claude desktop
 # preview, a Codex shell command) inherits them; a new agent must not, or it thinks it is nested in that session.

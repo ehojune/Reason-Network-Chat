@@ -97,6 +97,8 @@ Serve workers already handle incoming messages; their menu explains this, includ
 
 <a id="sessions"></a>
 
+Up to 12 managed workers can run together, including reviewers.
+
 ## Start a new session
 
 <p align="center">

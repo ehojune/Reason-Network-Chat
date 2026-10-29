@@ -257,6 +257,7 @@ dialog h2 { font-size: 16px; margin: 0 0 4px; }
   <form id="comp">
     <div id="paused"></div>
     <div id="trouble" hidden></div>
+    <details id="batchHistory" hidden><summary id="batchSummary"></summary><div id="batchAnswers"></div></details>
     <div id="nowake" hidden><span id="nowakeText"></span> <button type="button" id="wakeBtn" data-t="wake"></button>
       <button type="button" id="toWorker" data-t="toWorker"></button> <span id="wakeNote"></span></div>
     <div id="row">
@@ -423,7 +424,7 @@ const T = {
     wFailed: "워커가 이 메시지를 처리하지 못했습니다. 답이 아니라서 넘기지 않습니다.",
     tFailed: "처리 실패", tNoAnswer: "응답 없이 처리됨", resend: "다시 보내기", resent: "다시 보냄", dismissed: "덮어 둠",
     notRunning: "워커가 꺼져 있습니다. 먼저 다시 시작하세요.",
-    troubleBar: "답을 못 받은 내 메시지 {n}건 (실패 {f} · 응답 없음 {a})", resendAll: "모두 다시 보내기", dismissAll: "덮어 두기",
+    troubleBar: "응답 확인이 필요한 요청 {n}건 (실패 {f} · 개별 답변 없음 {a})", resendAll: "모두 다시 보내기", dismissAll: "덮어 두기",
     resendAsk: "{n}건을 다시 보냅니다: {names}. 받는 워커마다 한 턴씩 씁니다.", skipOff: "꺼진 워커에 간 {k}건은 빼고 보냅니다.",
     resendDone: "다시 보냄 {n}건", dismissAsk: "{n}건을 덮어 둡니다. 다시 보내지 않고 이 목록에서 뺍니다.", qWaiting: "대기 중 {n}건: 넘겨주기 한도에 걸려 순서대로 나갑니다.",
     qHeld: "멈춤 {n}건: @로 이어진 답이 한도를 넘었습니다. 계속하려면 누르세요.", flushAll: "지금 모두 보내기",
@@ -519,9 +520,9 @@ const T = {
     procsPending: "{n} messages taken but not answered: after a restart Reason runs them again. If one of them caused the hang, it can hang again.", rebootAsk: "Restart {name}? A turn in progress is lost.",
     rebooted: "Restarted: ",
     wFailed: "the worker could not run this message. It is not an answer, so it is not passed on.",
-    tFailed: "Failed", tNoAnswer: "Taken without an answer", resend: "Send again", resent: "Sent again", dismissed: "Put aside",
+    tFailed: "Failed", tNoAnswer: "No linked direct reply", resend: "Send again", resent: "Sent again", dismissed: "Put aside",
     notRunning: "The worker is not running; start it first.",
-    troubleBar: "{n} of your messages got no answer ({f} failed · {a} taken without an answer)", resendAll: "Send all again", dismissAll: "Put aside",
+    troubleBar: "{n} requests need checking ({f} failed · {a} without a direct reply)", resendAll: "Send all again", dismissAll: "Put aside",
     resendAsk: "Send {n} messages again to {names}? Each spends a turn of its worker.", skipOff: "{k} to stopped workers are left out.",
     resendDone: "Sent again: {n}", dismissAsk: "Put {n} messages aside? They are not sent again and leave this list.", qWaiting: "{n} waiting: over the hand-off limit, they go out in order.",
     qHeld: "{n} held: a chain of @mentions passed the hop limit. Press to continue.", flushAll: "Send all now",
@@ -615,9 +616,9 @@ const T = {
     procsPending: "已接收但未回答的消息 {n} 条：重新启动后 Reason 会再次处理它们。若卡住正是其中一条引起的，可能再次卡住。", rebootAsk: "重新启动 {name}？进行中的回合会丢失。",
     rebooted: "已重新启动：",
     wFailed: "worker 未能处理这条消息。这不是回答，所以不转发。",
-    tFailed: "处理失败", tNoAnswer: "已读但未回答", resend: "再次发送", resent: "已再次发送", dismissed: "已搁置",
+    tFailed: "处理失败", tNoAnswer: "无关联的直接回复", resend: "再次发送", resent: "已再次发送", dismissed: "已搁置",
     notRunning: "worker 未运行，请先重新启动。",
-    troubleBar: "你的 {n} 条消息没有得到回答（失败 {f} · 未回答 {a}）", resendAll: "全部再次发送", dismissAll: "搁置",
+    troubleBar: "{n} 条请求需要确认（失败 {f} · 无直接回复 {a}）", resendAll: "全部再次发送", dismissAll: "搁置",
     resendAsk: "将 {n} 条消息再次发送给 {names}？每条消耗其 worker 一次回合。", skipOff: "发给已停止 worker 的 {k} 条不发送。",
     resendDone: "已再次发送 {n} 条", dismissAsk: "搁置 {n} 条消息？它们不会再次发送，并从此列表中移除。", qWaiting: "{n} 条排队：超过转发上限，将按顺序发出。",
     qHeld: "{n} 条暂停：@ 接力超过跳数上限，点击继续。", flushAll: "全部立即发送",
@@ -631,13 +632,13 @@ const T = {
     noLimit: "不限",
     noLimitAsk: "取消上限后，智能体可能无休止地互相回复并持续消耗轮次（费用）。继续吗？" },
 };
-Object.assign(T.ko, {tNoAnswer: "읽었지만 답변 없음", viewTrouble: "보기", troubleTitle: "답을 못 받은 메시지", troubleHelp: "최근 24시간 안에 보낸 메시지입니다. 실패 답변을 받았거나, 읽은 지 10분이 지났고 worker가 작업 중이 아니면 표시합니다. 내용 확인만으로는 다시 보내지 않습니다.",
+Object.assign(T.ko, {tNoAnswer: "연결된 개별 답변 없음", viewTrouble: "보기", troubleTitle: "응답 연결 확인", troubleHelp: "최근 24시간 안에 보낸 메시지입니다. 실패 답변을 받았거나, 읽은 지 10분이 지났고 worker가 작업 중이 아니면 표시합니다. 내용 확인만으로는 다시 보내지 않습니다.",
   troubleEmpty: "이 화면에 남은 항목이 없습니다.", goOriginal: "원문으로 이동", missingOriginal: "원문이 현재 불러온 기록에 없습니다.", switchedAll: "전체 메시지에서 원문을 표시합니다.",
   ack: "✓ 확인(답 없음)", failureDetail: "실패 사유", dismissOne: "덮어 두기", deliveries: "전달 기록"});
-Object.assign(T.en, {viewTrouble: "View", troubleTitle: "Messages without an answer", troubleHelp: "Messages sent in the last 24 hours: a failure reply, or read over 10 minutes ago while the worker is not working. Viewing this list never resends a message.",
+Object.assign(T.en, {viewTrouble: "View", troubleTitle: "Check reply links", troubleHelp: "Messages sent in the last 24 hours: a failure reply, or read over 10 minutes ago while the worker is not working. Viewing this list never resends a message.",
   troubleEmpty: "No remaining items in this view.", goOriginal: "Go to the original", missingOriginal: "The original is not in the loaded history.", switchedAll: "Showing the original in All messages.",
   ack: "✓ Acknowledged (no answer)", failureDetail: "Failure details", dismissOne: "Put aside", deliveries: "Delivery records"});
-Object.assign(T.zh, {viewTrouble: "查看", troubleTitle: "没有得到回答的消息", troubleHelp: "最近 24 小时内发送的消息：收到失败回复，或已读超过 10 分钟且 worker 未在工作。查看列表不会再次发送消息。",
+Object.assign(T.zh, {viewTrouble: "查看", troubleTitle: "检查回复关联", troubleHelp: "最近 24 小时内发送的消息：收到失败回复，或已读超过 10 分钟且 worker 未在工作。查看列表不会再次发送消息。",
   troubleEmpty: "当前视图没有剩余项目。", goOriginal: "跳转到原文", missingOriginal: "已加载的记录中没有原文。", switchedAll: "已在全部消息中显示原文。",
   ack: "✓ 已确认（无回答）", failureDetail: "失败详情", dismissOne: "搁置", deliveries: "转发记录"});
 const LOCALE = {ko: "ko-KR", en: "en-US", zh: "zh-CN"};
@@ -659,7 +660,10 @@ Object.assign(T.en, {orderEdit: "Edit order", orderHelp: "Drag a handle or use �
 Object.assign(T.zh, {orderEdit: "调整顺序", orderHelp: "拖动手柄或使用 ↑/↓。仅可在此分类内移动。",
   orderUp: "上移", orderDown: "下移", orderPosition: "{name}：第 {n} 位"});
 
-const API = 21;  // must match API in server.py
+Object.assign(T.ko, {batchHistory:'배치 답변 전달 확인', batchLocal:'답변 저장됨 · 게시 확인 안 됨', batchHeld:'배치 확인 필요', batchAnswered:'배치로 답변됨', batchNoReplay:'보관된 답변입니다. 표시만 하며 옛 지시를 재전송하거나 worker를 깨우지 않습니다.'});
+Object.assign(T.en, {batchHistory:'Batch delivery checks', batchLocal:'Answer saved · delivery unconfirmed', batchHeld:'Batch needs inspection', batchAnswered:'Answered in a batch', batchNoReplay:'Archived answer only. Viewing never resends old instructions or wakes workers.'});
+Object.assign(T.zh, {batchHistory:'批量回复送达确认', batchLocal:'回复已保存 · 未确认送达', batchHeld:'批次需要检查', batchAnswered:'已在批次中回复', batchNoReplay:'仅显示保存的回复，不重发旧指令或唤醒工作会话。'});
+const API = 22;  // must match API in server.py
 const BOOT = document.querySelector('meta[name="reason-chat-boot"]').content;  // which server start served this page
 // Reload to pick up a restarted or newer server, at most once a minute so a broken setup cannot loop.
 function reloadOnce() {
@@ -1352,6 +1356,7 @@ function troubles() {
   for (const x of S.messages) if (x.reply_to) (replies[x.reply_to] ||= []).push(x);
   for (const m of S.messages) {
     if (m.sender !== S.me || S.now - m.sent_at > RECENT_MS || (S.settled || {})[m.id]) continue;
+    if ((S.batchReceipts || {})[m.id]) continue; // Separate delivery problems from unprocessed requests.
     const rel = S.relays[m.id];
     if (rel && rel.hop > 0 && isFailure(rel.core)) continue;  // a member's failure an older version passed on
     const s = ses.get(m.recipient);
@@ -1374,11 +1379,25 @@ function troublesInView() {
     : sel ? v.to === sel : true);
 }
 function renderTrouble() {
+  renderBatchHistory();
   const list = troublesInView(), f = list.filter(([, v]) => v.kind === "failed").length;
   $("#trouble").hidden = !list.length;
   if (!list.length) return;
   $("#trouble").innerHTML = esc(t("troubleBar").replace("{n}", list.length).replace("{f}", f).replace("{a}", list.length - f)) +
     `<button type="button" class="viewTrouble">${esc(t("viewTrouble"))}</button><button type="button" class="resendAll">${esc(t("resendAll"))}</button><button type="button" class="dismissAll">${esc(t("dismissAll"))}</button>`;
+}
+let batchHistoryHtml = null;
+function renderBatchHistory() {
+  const room = roomOf(sel), groups = new Map();
+  for (const entry of Object.values(S.batchReceipts || {})) {
+    if (room ? entry.room !== room.id : sel && entry.worker !== sel) continue;
+    if (entry.status === 'delivered') continue;
+    groups.set(entry.batch, entry);
+  }
+  $('#batchHistory').hidden = !groups.size;
+  $('#batchSummary').textContent = t('batchHistory') + ' · ' + groups.size;
+  const html = [...groups.values()].map(x => `<details><summary>${esc(x.worker)} · ${fmtD(x.at)} ${fmtT(x.at)} · ${esc(t(x.status === 'held' ? 'batchHeld' : 'batchLocal'))}</summary><p>${esc(t('batchNoReplay'))}</p>${x.error ? `<p>${esc(x.error)}</p>` : ''}<pre class="troubleText">${esc(x.answer || '')}</pre></details>`).join('');
+  if (html !== batchHistoryHtml) { $('#batchAnswers').innerHTML = html; batchHistoryHtml = html; }
 }
 function troubleListHtml(list) {
   return list.map(([id, v]) => {
@@ -1446,6 +1465,8 @@ $("#trouble").addEventListener("click", e => {
 
 // Under your message: what came of each copy that got no answer, with "Send again" (off while its worker is stopped).
 function troubleHtml(m) {
+  const batch = (S.batchReceipts || {})[m.id];
+  if (batch) return `<span class="hint">${esc(t(batch.status === 'delivered' ? 'batchAnswered' : batch.status === 'held' ? 'batchHeld' : 'batchLocal'))}</span>`;
   return m.all.map(x => {
     const v = TR.get(x.id), st = (S.settled || {})[x.id], who = m.all.length > 1 ? ` ${short(x.recipient)}` : "";
     if (st) return `<span class="trouble" style="color:var(--muted)">${esc(t(st.how === "resent" ? "resent" : "dismissed"))}${esc(who)} · ${fmtT(st.at)}</span>`;

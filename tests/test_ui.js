@@ -62,6 +62,22 @@ vm.runInContext(part('const MENTION_RE', '// A message to one session'), c);
 vm.runInContext(part('function memberMentions', 'async function forwardToRoom'), c);
 vm.runInContext(part('const rawIds', 'function render(force)'), c);
 vm.runInContext(String.raw`
+S=base(); sel='';
+S.messages=[msg('batch-old','p/terminal','p/a','old instruction'),msg('batch-new','p/terminal','p/a','new instruction')];
+S.batchReceipts={'batch-old':{batch:'b',status:'local_only',worker:'p/a',room:'r',at:85000000,answer:'<script>old @p/b</script>',error:'unconfirmed'},
+ 'batch-new':{batch:'b',status:'local_only',worker:'p/a',room:'r',at:85000000,answer:'<script>old @p/b</script>',error:'unconfirmed'}};
+assert.equal(troubles().size,0);
+renderBatchHistory();
+assert.equal(nodes['#batchSummary'].textContent,'batchHistory · 1');
+assert.match(nodes['#batchAnswers'].innerHTML,/&lt;script&gt;/);
+assert.doesNotMatch(nodes['#batchAnswers'].innerHTML,/resendBtn|<script>/);
+nodes['#batchAnswers'].innerHTML=nodes['#batchAnswers'].innerHTML.replace('<details>','<details open>');
+renderBatchHistory(); assert.match(nodes['#batchAnswers'].innerHTML,/<details open>/);
+sel='p/b';renderBatchHistory();assert.equal(nodes['#batchHistory'].hidden,true);
+sel='';S.batchReceipts['batch-old'].status='delivered';S.batchReceipts['batch-new'].status='delivered';
+renderBatchHistory();assert.equal(nodes['#batchHistory'].hidden,true);
+`,c);
+vm.runInContext(String.raw`
 assert.match(md('[**API docs**](https://example.com/page_(v2))'), /href="https:\/\/example.com\/page_\(v2\)"[^>]*><strong>API docs<\/strong>/);
 assert.match(md('(https://example.com/page_(v2)).'), /href="https:\/\/example.com\/page_\(v2\)"/);
 assert.match(md('[*docs*](https://example.com/a)'), /<em>docs<\/em>/);

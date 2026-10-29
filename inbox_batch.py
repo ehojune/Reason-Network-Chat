@@ -11,6 +11,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
@@ -235,6 +236,32 @@ def published(config, job):
     return False
 
 
+def publish_once(config, job, path, journal):
+    """Native stdin transport; persist intent before sending, never replay uncertainty."""
+    if published(config, job):
+        return
+    if job.get("publication_attempted"):
+        return
+    job["publication_attempted"] = True
+    atomic_json(path, journal, durable=True)
+    try:
+        result = subprocess.run([config["publisher"], "send", config["person"], "-",
+                                 "--from", config["recipient"].split("/", 1)[1],
+                                 "--reply-to", job["primary"], "--fyi"],
+                                input=job["answer"].encode("utf-8"), capture_output=True, timeout=30)
+        # A successful CLI exit alone is not a delivery receipt.
+        for _ in range(10):
+            if published(config, job):
+                job["publication_verified"] = True
+                break
+            time.sleep(0.2)
+        if not job.get("publication_verified"):
+            job["publication_error"] = "Delivery unconfirmed (exit %s); cached answer retained; no automatic retry" % result.returncode
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        job["publication_error"] = "Delivery unconfirmed: " + type(exc).__name__
+    atomic_json(path, journal, durable=True)
+
+
 def run(config, real, extra, args, runner=invoke):
     """Return None for ordinary invocations; never silently bypass an existing journal."""
     if "exec" not in args or "--json" not in args or not args:
@@ -256,13 +283,9 @@ def run(config, real, extra, args, runner=invoke):
                 job["status"] = "held"
                 atomic_json(path, journal, durable=True)
                 raise BatchError("Batch " + job["id"] + " is held; inspect its saved originals/result before explicit recovery")
-            delivered = published(config, job)
-            if not delivered:
-                ids = job.setdefault("publication_ids", [job["primary"]])
-                if current not in ids:
-                    ids.append(current)
-                atomic_json(path, journal, durable=True)
-            emit("-" if delivered else job["answer"], None if delivered else job.get("thread"))
+            # A later delivery can contain an obsolete instruction. Never republish
+            # old decisions or run the model; the viewer exposes the saved answer.
+            emit("-")
             return 0
         if not config.get("enabled", False):
             return None  # existing receipts still work when new batching is disabled
@@ -293,7 +316,11 @@ def run(config, real, extra, args, runner=invoke):
             job.update(status="held", error=str(exc))
             atomic_json(path, journal, durable=True)
             raise
-        emit(job["answer"], job.get("thread"), job.get("usage"))
+        if config.get("publisher"):
+            publish_once(config, job, path, journal)
+            emit("-", job.get("thread"), job.get("usage"))
+        else:
+            emit(job["answer"], job.get("thread"), job.get("usage"))
         return 0
 
 
@@ -309,6 +336,7 @@ def main(argv=None):
     parser.add_argument("--chat-home", type=Path, default=Path.home() / ".reason-network-chat")
     parser.add_argument("--reason-home", type=Path, default=Path.home() / ".reason")
     parser.add_argument("--batch", help="batch ID for export (includes private original messages)")
+    parser.add_argument("--publisher", type=Path, help="native reason-network executable for verified stdin delivery")
     a = parser.parse_args(argv)
     with file_lock(a.settings.with_suffix(".lock")):
         settings = read(a.settings)  # never create or replace a worker
@@ -329,6 +357,12 @@ def main(argv=None):
                 parser.error("recipient must currently belong to every selected room")
             if config and any(config.get(k) != v for k, v in candidate.items() if k != "enabled"):
                 parser.error("existing batch identity/storage cannot be changed; retain its receipts")
+            if a.publisher:
+                if not a.publisher.is_file():
+                    parser.error("publisher must be an installed native executable")
+                candidate['publisher'] = str(a.publisher.resolve())
+            elif config and config.get('publisher'):
+                candidate['publisher'] = config['publisher']
             settings["inbox_batch"] = candidate
             atomic_json(a.settings, settings)
             print("Enabled for the next Codex turn; no worker restarted or message sent.")

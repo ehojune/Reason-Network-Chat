@@ -148,14 +148,38 @@ class InboxBatchTest(unittest.TestCase):
             self.assertEqual(json.loads(out.splitlines()[0])["item"]["text"], "-")
         self.assertEqual(len(self.calls), 1)
 
-    def test_cached_result_is_republished_if_process_died_before_delivery(self):
+    def test_cached_result_never_replays_obsolete_decisions(self):
         self.run_batch()
         _, out = self.run_batch("agent")
-        self.assertIn("All reports considered", out)
+        self.assertNotIn("All reports considered", out)
         self.assertEqual(len(self.calls), 1)
         self.publish("agent")
         _, out = self.run_batch("human")
         self.assertNotIn("All reports considered", out)
+
+    def test_native_publication_verified_once_and_timeout_never_retried(self):
+        self.config['publisher'] = 'native.exe'
+        with patch.object(batch.subprocess, 'run', side_effect=subprocess.TimeoutExpired('native', 30)) as run:
+            self.run_batch()
+            self.assertEqual(run.call_count, 1)
+            self.assertTrue(self.job()['publication_attempted'])
+            self.assertIn('unconfirmed', self.job()['publication_error'])
+            self.run_batch('agent')
+            self.assertEqual(run.call_count, 1)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_native_publication_uses_stdin_and_database_receipt(self):
+        self.config['publisher'] = 'native.exe'
+        def deliver(*args, **kwargs):
+            self.assertEqual(kwargs['input'], self.job()['answer'].encode('utf8'))
+            self.assertIn('--reply-to', args[0])
+            self.assertTrue(self.job()['publication_attempted'])
+            self.publish()
+            return subprocess.CompletedProcess(args[0], 0)
+        with patch.object(batch.subprocess, 'run', side_effect=deliver):
+            _, output=self.run_batch()
+        self.assertTrue(self.job()['publication_verified'])
+        self.assertNotIn('All reports considered', output)
 
     def test_failure_held_never_reexecuted(self):
         def failure(*args):

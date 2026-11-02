@@ -1,5 +1,6 @@
 """Durable fail-closed journal for native single-message Codex executions."""
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -30,33 +31,34 @@ def failure_message(events):
     return 'Codex did not produce a verifiable completed answer; held without retry'
 
 
-def journal_path(settings_path):
+def journal_dir(settings_path):
     settings = Path(settings_path)
-    return settings.parent / 'single-requests' / settings.stem / 'requests.json'
+    return settings.parent / 'single-requests' / settings.stem
+
+
+def journal_path(settings_path, mid):
+    return journal_dir(settings_path) / (hashlib.sha256(mid.encode('utf-8')).hexdigest() + '.json')
 
 
 def run(settings_path, real, extra, args):
     mid = request_id(args)
     if mid is None:
         return None
-    path = journal_path(settings_path)
-    home = path.parent
+    path = journal_path(settings_path, mid)
+    home = journal_dir(settings_path)
     with file_lock(home / 'worker.lock', timeout=2):
-        journal = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {'requests': {}}
-        requests = journal['requests']
-        previous = requests.get(mid)
+        previous = json.loads(path.read_text(encoding='utf-8')) if path.exists() else None
         if previous:
-            if previous['original'] != args[-1]:
+            if previous['id'] != mid or previous['original'] != args[-1]:
                 raise RuntimeError('Request ID conflicts with saved original; held for inspection')
             if previous['status'] != 'completed':
                 previous['status'] = 'held'
-                atomic_json(path, journal, durable=True)
+                atomic_json(path, previous, durable=True)
                 raise RuntimeError('Request ' + mid + ' held; inspect saved original and side effects')
             # The previous emission may already have reached Reason. Do not republish.
             raise RuntimeError('Request ' + mid + ' has a cached result; inspect publication before recovery')
         job = {'id': mid, 'original': args[-1], 'status': 'running'}
-        requests[mid] = job
-        atomic_json(path, journal, durable=True)
+        atomic_json(path, job, durable=True)
         try:
             lines, deferred, events, malformed = [], [], [], False
             with subprocess.Popen([real] + extra + args, stdout=subprocess.PIPE,
@@ -91,15 +93,22 @@ def run(settings_path, real, extra, args):
                                and isinstance(e['item'].get('text'), str) and e['item']['text'].strip() for e in events))
             if not success:
                 raise RuntimeError(failure_message(events))
-            job.update(status='completed', output=output)
+            job.update(status='publication_pending', output=output)
             job.pop('partial_output', None)
-            atomic_json(path, journal, durable=True)
+            atomic_json(path, job, durable=True)
         except BaseException as exc:
             job.update(status='held', error=type(exc).__name__ + ': ' + str(exc))
-            atomic_json(path, journal, durable=True)
+            atomic_json(path, job, durable=True)
             raise
-        sys.stdout.write(''.join(deferred))
-        sys.stdout.flush()
+        try:
+            sys.stdout.write(''.join(deferred))
+            sys.stdout.flush()
+        except BaseException as exc:
+            job.update(status='held', error='Publication unconfirmed: ' + type(exc).__name__)
+            atomic_json(path, job, durable=True)
+            raise
+        job['status'] = 'completed'
+        atomic_json(path, job, durable=True)
         return 0
 
 
@@ -109,14 +118,19 @@ def main():
     parser.add_argument('--settings', type=Path, required=True)
     parser.add_argument('--id')
     args = parser.parse_args()
-    path = journal_path(args.settings)
-    requests = json.loads(path.read_text(encoding='utf-8'))['requests'] if path.exists() else {}
+    home = journal_dir(args.settings)
     if args.action == 'export':
-        if not args.id or args.id not in requests:
+        path = journal_path(args.settings, args.id) if args.id else None
+        if not path or not path.is_file():
             parser.error('export requires an existing --id')
-        result = requests[args.id]
+        result = json.loads(path.read_text(encoding='utf-8'))
+        if result.get('id') != args.id:
+            parser.error('journal identity mismatch')
     else:
-        result = [{'id': key, 'status': value['status'], 'error': value.get('error')} for key, value in requests.items()]
+        result = []
+        for path in home.glob('*.json'):
+            value = json.loads(path.read_text(encoding='utf-8'))
+            result.append({'id': value['id'], 'status': value['status'], 'error': value.get('error')})
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 

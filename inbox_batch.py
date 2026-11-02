@@ -281,7 +281,7 @@ def validate_publisher(path):
     return str(path)
 
 
-def run(config, real, extra, args, runner=invoke, single_ids=None):
+def run(config, real, extra, args, runner=invoke, single_ids=None, single_exists=None):
     """Return None for ordinary invocations; never silently bypass an existing journal."""
     if "exec" not in args or "--json" not in args or not args:
         return None
@@ -291,7 +291,7 @@ def run(config, real, extra, args, runner=invoke, single_ids=None):
         return None
     current = match.group(1)
     single_ids = single_ids or set()
-    if current in single_ids:
+    if current in single_ids or (single_exists and single_exists(current)):
         return None  # the single-request journal owns this ID
     home = Path(config["journal"])
     with file_lock(home / "worker.lock", timeout=2):
@@ -317,6 +317,8 @@ def run(config, real, extra, args, runner=invoke, single_ids=None):
             print("Inbox snapshot unavailable; processing only the original request: " + type(exc).__name__, file=sys.stderr)
             return None  # unavailable snapshot: execute just the original request normally
         excluded = {r["id"] for j in jobs for r in j["messages"]} | single_ids
+        if single_exists:
+            excluded.update(r['id'] for r in rows if single_exists(r['id']))
         chosen = select(rows, current, excluded, config.get("max_messages", 24), config.get("max_bytes", 160000))
         if len(chosen) < 2:
             return None

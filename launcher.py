@@ -308,15 +308,15 @@ if env.get("REASON_CHAT_SHIM_SETTINGS"):
         sys.stdout.reconfigure(encoding="utf-8")
         from pathlib import Path
         from storage import file_lock
-        from recovery import run as recover_single, request_id, journal_path
+        from recovery import run as recover_single, request_id, journal_path, journal_dir
         args = sys.argv[1:]
         if request_id(args):
-            path = journal_path(env["REASON_CHAT_SHIM_SETTINGS"])
-            with file_lock(path.parent / "coordination.lock", timeout=2):
-                singles = json.loads(path.read_text(encoding="utf-8"))["requests"] if path.exists() else {}
+            settings_path = env["REASON_CHAT_SHIM_SETTINGS"]
+            with file_lock(journal_dir(settings_path) / "coordination.lock", timeout=2):
                 if settings.get("inbox_batch"):
                     from inbox_batch import run
-                    result = run(settings["inbox_batch"], real, [str(a) for a in extra], args, single_ids=set(singles))
+                    result = run(settings["inbox_batch"], real, [str(a) for a in extra], args,
+                                 single_exists=lambda mid: journal_path(settings_path, mid).exists())
                     if result is not None:
                         sys.exit(result)
                 result = recover_single(env["REASON_CHAT_SHIM_SETTINGS"], real, [str(a) for a in extra], args)

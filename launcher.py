@@ -382,7 +382,7 @@ def shim_current(kind):
         try:
             return target.read_bytes() == SHIM_MAIN and all(
                 (target.parent / name).read_bytes() == Path(__file__).with_name(name).read_bytes()
-                for name in ("inbox_batch.py", "storage.py", "recovery.py"))
+                for name in ("inbox_batch.py", "storage.py", "recovery.py", "capacity_probe.py"))
         except OSError:
             return False
     try:
@@ -410,7 +410,7 @@ def shim_dir(kind="codex"):
         q = lambda b: b"'" + b.replace(b"'", b"'\\''") + b"'"
         main = d / f"{kind}_shim.py"
         extra.append((main, SHIM_MAIN))
-        for name in ("inbox_batch.py", "storage.py", "recovery.py"):
+        for name in ("inbox_batch.py", "storage.py", "recovery.py", "capacity_probe.py"):
             extra.append((d / name, Path(__file__).with_name(name).read_bytes()))
         data = b"#!/bin/sh\nexec " + q(exe) + b" " + q(str(main).encode("utf-8")) + b' "$@"\n'
     try:

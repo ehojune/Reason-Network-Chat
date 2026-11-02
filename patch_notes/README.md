@@ -9,6 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 |---|---|---|
+| 23:44 | [#65](https://github.com/ehojune/Reason-Network-Chat/pull/65) | Flag direct questions answered only by an acknowledgment for review. |
 | 18:13 | [#64](https://github.com/ehojune/Reason-Network-Chat/pull/64) | Hold uncertain single Codex requests with saved originals and answers for inspection. |
 
 ## 2026-10-29

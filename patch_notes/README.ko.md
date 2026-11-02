@@ -9,6 +9,7 @@ Reason Network Chat에서 바뀐 것을 최신순으로 적는다. 시간은 한
 
 | 시간 | 변경 | 주요 변경사항 |
 |---|---|---|
+| 23:44 | [#65](https://github.com/ehojune/Reason-Network-Chat/pull/65) | 직접 질문에 확인만 돌아오면 미응답으로 표시한다. |
 | 18:13 | [#64](https://github.com/ehojune/Reason-Network-Chat/pull/64) | 결과가 불확실한 단일 Codex 요청을 보류하고 원문과 답변을 보관합니다. |
 
 ## 2026-10-29

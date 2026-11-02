@@ -45,6 +45,27 @@ class ProbeTest(unittest.TestCase):
             raise subprocess.TimeoutExpired(command, 1)
         self.assertEqual(cp.probe('codex', VERSION, 'model', 'high', runner=runner), 'unknown')
 
+    def test_reasoning_lifecycle_and_unsafe_events(self):
+        item = {'id': 'item_0', 'type': 'reasoning', 'text': 'Thinking'}
+        lifecycle = [{'type': 'item.' + stage, 'item': item}
+                     for stage in ('started', 'updated', 'completed')]
+        message = {'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'OK'}}
+        done = {'type': 'turn.completed'}
+        for events in (lifecycle, [lifecycle[-1]]):
+            self.assertEqual(cp.classify(VERSION, 0, lines(*events, message, done)), 'ok')
+        for kind in ('command_execution', 'file_change', 'mcp_tool_call', 'web_search', 'unknown'):
+            for stage in ('started', 'updated', 'completed'):
+                unsafe = {'type': 'item.' + stage, 'item': {'id': 'x', 'type': kind, 'text': ''}}
+                self.assertEqual(cp.classify(VERSION, 0, lines(*lifecycle, unsafe, message, done)), 'unknown')
+        for malformed in ({'type': 'reasoning', 'text': ''},
+                          {'id': 'x', 'type': 'reasoning'},
+                          {'id': 'x', 'type': 'reasoning', 'text': None}):
+            self.assertEqual(cp.classify(VERSION, 0, lines(
+                {'type': 'item.completed', 'item': malformed}, message, done)), 'unknown')
+        failure = {'type': 'turn.failed', 'error': {'message':
+                   'Selected model is at capacity. Please try a different model.'}}
+        self.assertEqual(cp.classify(VERSION, 1, lines(*lifecycle, failure)), 'unknown')
+
     def test_bounded_capacity_then_fallback(self):
         states = iter(('capacity', 'capacity', 'ok'))
         records, calls = [], []

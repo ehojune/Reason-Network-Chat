@@ -29,7 +29,7 @@ def classify(version, code, stdout):
             return 'unknown'
     except (TypeError, ValueError):
         return 'unknown'
-    answers, errors, done = [], [], 0
+    answers, errors, done, reasoning = [], [], 0, False
     for event in events:
         kind = event.get('type')
         if kind in ('thread.started', 'turn.started'):
@@ -39,6 +39,12 @@ def classify(version, code, stdout):
         elif kind in ('error', 'turn.failed'):
             error = event.get('error', event)
             errors.append(error.get('message', '') if isinstance(error, dict) else '')
+        elif (kind in ('item.started', 'item.updated', 'item.completed')
+              and isinstance(event.get('item'), dict)
+              and event['item'].get('type') == 'reasoning'
+              and isinstance(event['item'].get('id'), str)
+              and isinstance(event['item'].get('text'), str)):
+            reasoning = True
         elif kind == 'item.completed' and isinstance(event.get('item'), dict):
             item = event['item']
             if item.get('type') == 'agent_message':
@@ -50,7 +56,7 @@ def classify(version, code, stdout):
     if code == 0 and done == 1 and answers == ['OK'] and not errors:
         return 'ok'
     allowed = CAPACITY.get(version, set())
-    if code != 0 and not done and not answers and errors and all(
+    if code != 0 and not done and not answers and not reasoning and errors and all(
             isinstance(s, str) and s.strip().lower() in allowed for s in errors):
         return 'capacity'
     return 'unknown'

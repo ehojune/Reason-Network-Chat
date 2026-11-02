@@ -9,7 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 |---|---|---|
-| 00:25 | [PR-TBD](https://github.com/ehojune/Reason-Network-Chat/pull/0) | Optionally probe capacity before dispatch and hold uncertain requests without replaying work. |
+| 00:25 | [#66](https://github.com/ehojune/Reason-Network-Chat/pull/66) | Optionally probe capacity before dispatch and hold uncertain requests without replaying work. |
 
 ## 2026-11-02
 

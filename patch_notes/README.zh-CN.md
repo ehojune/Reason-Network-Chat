@@ -9,7 +9,7 @@ Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（
 
 | 时间 | 变更 | 主要内容 |
 |---|---|---|
-| 00:25 | [PR-TBD](https://github.com/ehojune/Reason-Network-Chat/pull/0) | 可在发送前探测容量，并暂停结果不确定的请求而不重放任务。 |
+| 00:25 | [#66](https://github.com/ehojune/Reason-Network-Chat/pull/66) | 可在发送前探测容量，并暂停结果不确定的请求而不重放任务。 |
 
 ## 2026-11-02
 

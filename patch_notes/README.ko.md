@@ -9,7 +9,7 @@ Reason Network Chat에서 바뀐 것을 최신순으로 적는다. 시간은 한
 
 | 시간 | 변경 | 주요 변경사항 |
 |---|---|---|
-| 00:25 | [PR-TBD](https://github.com/ehojune/Reason-Network-Chat/pull/0) | 요청 전에 capacity를 확인하고 불확실한 요청은 재실행 없이 보류한다. |
+| 00:25 | [#66](https://github.com/ehojune/Reason-Network-Chat/pull/66) | 요청 전에 capacity를 확인하고 불확실한 요청은 재실행 없이 보류한다. |
 
 ## 2026-11-02
 

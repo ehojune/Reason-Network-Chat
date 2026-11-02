@@ -159,6 +159,11 @@ S.messages[0].body=String.fromCharCode(96)+'why?'+String.fromCharCode(96)+'\nYes
 S.messages[0].body='> agent: Deploy now?\nWhen?'; assert.equal(troubles().get('q').kind,'question');
 S.messages[0].body='envelope'; S.relays={q:{hop:1,speaker:'p/b',core:'Need a decision?'}};
 assert.equal(troubles().size,0);
+S=base();
+S.messages=[msg('root','p/terminal','p/a','[Group room "test"] envelope?'),
+  msg('alias','p/terminal','p/a','[Group room "test"] envelope?'), msg('ack','p/a','p/terminal','-','alias')];
+S.relays={root:{hop:1,speaker:'p/b',core:'Need a decision?'}};
+assert.equal(troubles().has('alias'),false);
 for (const example of routingCases) {
   const room={members:['p/a','p/b','p/c']};
   assert.equal(JSON.stringify(roomTargets(room,example.text).to),JSON.stringify(example.to),example.text);

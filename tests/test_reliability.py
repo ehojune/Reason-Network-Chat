@@ -68,6 +68,37 @@ class RegistryTest(unittest.TestCase):
                 self.fail(f"Writers did not become ready; process states: {[p.poll() for p in children]}")
             time.sleep(.02)
 
+    def test_empty_lock_file_serializes_concurrent_initializers(self):
+        with tempfile.TemporaryDirectory() as home:
+            code = '''import sys,time
+from pathlib import Path
+from storage import file_lock
+home=Path(sys.argv[1]); name=sys.argv[2]
+(home/(name+'.ready')).touch()
+while not (home/'go').exists(): time.sleep(.01)
+with file_lock(home/'new.lock'):
+ assert (home/'new.lock').stat().st_size == 0
+ (home/'inside').mkdir()  # fails if both processes enter together
+ time.sleep(.2)
+ (home/'inside').rmdir()
+(home/(name+'.done')).touch()
+'''
+            children = [subprocess.Popen([sys.executable, '-c', code, home, name],
+                        cwd=Path(__file__).resolve().parents[1], stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE) for name in ('one', 'two')]
+            try:
+                self.wait_ready(children, [Path(home, name+'.ready') for name in ('one', 'two')])
+                Path(home, 'go').touch()
+                for child in children:
+                    out, err = child.communicate(timeout=20)
+                    self.assertEqual(child.returncode, 0, err.decode('utf-8', 'replace'))
+                self.assertTrue(all(Path(home, name+'.done').exists() for name in ('one', 'two')))
+            finally:
+                for child in children:
+                    if child.poll() is None:
+                        child.kill()
+                        child.communicate()
+
     def test_two_servers_reserve_the_same_worker_name_before_spawning(self):
         with tempfile.TemporaryDirectory() as home:
             code = '''import json,sys,time

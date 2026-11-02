@@ -62,13 +62,13 @@ def classify(version, code, stdout):
     return 'unknown'
 
 
-def probe(real, version, model, effort, timeout=45, runner=subprocess.run):
+def probe(real, version, model, effort, tier_args=(), timeout=45, runner=subprocess.run):
     env = {k: v for k, v in os.environ.items()
            if k not in ('CLAUDECODE', 'CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'CODEX_TOOL_CALL_ID')
            and not k.startswith(('CODEX_SANDBOX', 'CODEX_NETWORK_', 'CODEX_INTERNAL_',
                                  'REASON_NETWORK_', 'TINCAN_'))}
     with tempfile.TemporaryDirectory(prefix='rnc-capacity-') as folder:
-        command = [real, '-a', 'never', '-c', 'model_reasoning_effort=' + effort,
+        command = [real, '-a', 'never', '-c', 'model_reasoning_effort=' + effort, *tier_args,
                    'exec', '--ephemeral', '--skip-git-repo-check', '--sandbox', 'read-only',
                    '-C', folder, '-m', model, '--json', PROMPT]
         try:
@@ -80,14 +80,14 @@ def probe(real, version, model, effort, timeout=45, runner=subprocess.run):
         return classify(version, result.returncode, result.stdout)
 
 
-def choose(real, version, primary, effort, fallback, record, probe_fn=probe, sleep=time.sleep):
+def choose(real, version, primary, effort, fallback, record, probe_fn=probe, sleep=time.sleep, tier_args=()):
     """Record intent before each probe; only capacity permits another attempt."""
     for index, (model, level) in enumerate(((primary, effort), (primary, effort), fallback)):
         if index == 1:
             sleep(2)
         attempt = {'model': model, 'effort': level, 'state': 'running'}
         record(attempt.copy())
-        state = probe_fn(real, version, model, level)
+        state = probe_fn(real, version, model, level, tier_args)
         attempt['state'] = state
         record(attempt.copy())
         if state == 'ok':
@@ -117,18 +117,23 @@ def route(settings_path, config, real, extra, args, probe_fn=probe, now=time.tim
         raise RuntimeError('Codex configuration unreadable') from exc
     model, effort = defaults.get('model'), defaults.get('model_reasoning_effort')
     options = list(extra) + list(args[:-1])
+    tier_args = []
     for i, arg in enumerate(options):
         value = options[i + 1] if i + 1 < len(options) else ''
         if arg in ('-m', '--model'):
             model = value
         elif arg.startswith('--model='):
             model = arg.split('=', 1)[1]
-        elif arg in ('-c', '--config'):
+        elif arg in ('-c', '--config') or arg.startswith('--config='):
+            if arg.startswith('--config='):
+                value = arg.split('=', 1)[1]
             key, sep, val = value.partition('=')
             if sep and key.strip() == 'model':
                 model = val.strip().strip('"\'')
             if sep and key.strip() == 'model_reasoning_effort':
                 effort = val.strip().strip('"\'')
+            if sep and key.strip() in ('service_tier', 'features.fast_mode'):
+                tier_args.extend(['-c', value])
     fallback = (config.get('fallback_model'), config.get('fallback_effort'))
     try:
         catalog = json.loads((home / 'models_cache.json').read_text(encoding='utf-8'))
@@ -148,7 +153,11 @@ def route(settings_path, config, real, extra, args, probe_fn=probe, now=time.tim
             raise ValueError('empty version')
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         raise RuntimeError('Codex version unavailable') from exc
-    key = [str(Path(real).resolve()), version, model, effort, *fallback]
+    features = defaults.get('features', {})
+    if not isinstance(features, dict):
+        raise RuntimeError('Codex features configuration invalid')
+    key = [str(Path(real).resolve()), version, model, effort, *fallback,
+           defaults.get('service_tier'), features.get('fast_mode'), tier_args]
     digest = hashlib.sha256(json.dumps(key, ensure_ascii=True).encode()).hexdigest()
     directory = Path(settings_path).parent / 'capacity-probes' / Path(settings_path).stem
     path = directory / (digest + '.json')
@@ -174,7 +183,8 @@ def route(settings_path, config, real, extra, args, probe_fn=probe, now=time.tim
                 else:
                     data['attempts'][-1] = attempt
                 atomic_json(path, data, durable=True)
-            selected = choose(real, version, model, effort, fallback, record, probe_fn=probe_fn)
+            selected = choose(real, version, model, effort, fallback, record, probe_fn=probe_fn,
+                              tier_args=tier_args)
             data.update(selected=list(selected), selected_at=now())
             atomic_json(path, data, durable=True)
         # These final overrides precede only the original prompt, which is untouched.

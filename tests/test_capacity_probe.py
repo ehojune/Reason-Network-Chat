@@ -45,6 +45,15 @@ class ProbeTest(unittest.TestCase):
             raise subprocess.TimeoutExpired(command, 1)
         self.assertEqual(cp.probe('codex', VERSION, 'model', 'high', runner=runner), 'unknown')
 
+    def test_probe_forwards_tier_overrides(self):
+        tier = ['-c', 'service_tier=fast', '-c', 'features.fast_mode=true']
+        def runner(command, **kwargs):
+            self.assertEqual(command[5:9], tier)
+            return SimpleNamespace(returncode=0, stdout=lines(
+                {'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'OK'}},
+                {'type': 'turn.completed'}))
+        self.assertEqual(cp.probe('codex', VERSION, 'model', 'high', tier, runner=runner), 'ok')
+
     def test_reasoning_lifecycle_and_unsafe_events(self):
         item = {'id': 'item_0', 'type': 'reasoning', 'text': 'Thinking'}
         lifecycle = [{'type': 'item.' + stage, 'item': item}
@@ -69,7 +78,7 @@ class ProbeTest(unittest.TestCase):
     def test_bounded_capacity_then_fallback(self):
         states = iter(('capacity', 'capacity', 'ok'))
         records, calls = [], []
-        def fake(real, version, model, effort):
+        def fake(real, version, model, effort, tier):
             calls.append((model, effort))
             return next(states)
         result = cp.choose('codex', VERSION, 'primary', 'ultra', ('sol', 'high'),
@@ -135,6 +144,27 @@ class ProbeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'CODEX_HOME': directory}):
             with self.assertRaises(RuntimeError):
                 cp.route(Path(directory) / 'worker.json', {'enabled': True}, 'codex', [], ['exec', '--json', 'secret'])
+
+    @unittest.skipIf(sys.version_info < (3, 11), 'enabled probe requires Python 3.11')
+    def test_tier_changes_use_distinct_cache_and_probe_overrides(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'CODEX_HOME': directory}):
+            home = Path(directory)
+            (home / 'config.toml').write_text('model="primary"\nmodel_reasoning_effort="high"\n', encoding='utf-8')
+            (home / 'models_cache.json').write_text(json.dumps({'models': [
+                {'slug': m, 'visibility': 'list', 'supported_reasoning_levels': [{'effort': 'high'}]}
+                for m in ('primary', 'fallback')]}), encoding='utf-8')
+            cfg = {'enabled': True, 'fallback_model': 'fallback', 'fallback_effort': 'high'}
+            calls = []
+            def fake(*args):
+                calls.append(args)
+                return 'ok'
+            with patch.object(cp.subprocess, 'run', return_value=SimpleNamespace(stdout=VERSION)):
+                for tier in ('fast', 'default', 'fast'):
+                    extra = ['-c', 'service_tier='+tier, '-c', 'features.fast_mode=true']
+                    cp.route(home / 'worker.json', cfg, 'codex', extra, ['exec', 'prompt'], fake, now=lambda: 100)
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(calls[0][-1], ['-c', 'service_tier=fast', '-c', 'features.fast_mode=true'])
+            self.assertEqual(calls[1][-1][1], 'service_tier=default')
 
 
 if __name__ == '__main__':

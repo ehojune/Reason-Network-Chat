@@ -483,7 +483,9 @@ class Relay:
         head = (f'[Group room "{room["name"]}", relayed by Reason Network Chat]\n'
                 f"Members: {names}.\n"
                 f"{back}\n"
-                "To ask anyone else, @name them; their answers come back to you. Reply `-` if no answer is needed.\n"
+                "To ask anyone else, @name them; their answers come back to you. Reply `-` if no answer is needed. "
+                "If you coordinate work and receive a completion report, verify it and decide the next authorized assignment, "
+                "or report the actual wait reason, resume condition and next check. A genuine acknowledgment may stay silent.\n"
                 f"Answers to 1:1 messages are not passed on. {person} sees the whole room. "
                 "Do not message members with Reason Network tools.\n"
                 'The message to answer is after "---"; lines under "Earlier in the room" are clipped context.')

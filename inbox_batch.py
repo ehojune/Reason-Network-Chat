@@ -17,6 +17,7 @@ import uuid
 from pathlib import Path
 
 from storage import atomic_json, file_lock
+from recovery import failure_message
 
 
 class BatchError(Exception):
@@ -198,7 +199,7 @@ def emit(text, thread=None, usage=None):
 
 def invoke(command, text):
     """Publish no partial answer before its durable receipt is saved."""
-    messages, completed, thread, failed = [], None, None, False
+    messages, completed, thread, failed, events = [], None, None, False, []
     # Turn-scoped child, not a detached service. A file avoids pipe backpressure while
     # handing a large prompt to stdin; progress still reaches the worker's log live.
     with tempfile.TemporaryFile() as source:
@@ -210,6 +211,7 @@ def invoke(command, text):
                     event = json.loads(line)
                 except ValueError:
                     continue
+                events.append(event)
                 kind = event.get("type")
                 if kind == "thread.started":
                     thread = event.get("thread_id")
@@ -223,7 +225,7 @@ def invoke(command, text):
                     print(line.rstrip(), flush=True)
             code = child.wait()
     if code or failed or completed is None or not messages:
-        raise BatchError("Codex did not complete a verifiable batch answer")
+        raise BatchError(failure_message(events))
     return messages[-1], thread, completed.get("usage")
 
 
@@ -279,7 +281,7 @@ def validate_publisher(path):
     return str(path)
 
 
-def run(config, real, extra, args, runner=invoke):
+def run(config, real, extra, args, runner=invoke, single_ids=None):
     """Return None for ordinary invocations; never silently bypass an existing journal."""
     if "exec" not in args or "--json" not in args or not args:
         return None
@@ -288,6 +290,9 @@ def run(config, real, extra, args, runner=invoke):
     if not match:
         return None
     current = match.group(1)
+    single_ids = single_ids or set()
+    if current in single_ids:
+        return None  # the single-request journal owns this ID
     home = Path(config["journal"])
     with file_lock(home / "worker.lock", timeout=2):
         path = home / "batches.json"
@@ -311,7 +316,7 @@ def run(config, real, extra, args, runner=invoke):
         except (OSError, ValueError, KeyError, TypeError, AttributeError, sqlite3.Error) as exc:
             print("Inbox snapshot unavailable; processing only the original request: " + type(exc).__name__, file=sys.stderr)
             return None  # unavailable snapshot: execute just the original request normally
-        excluded = {r["id"] for j in jobs for r in j["messages"]}
+        excluded = {r["id"] for j in jobs for r in j["messages"]} | single_ids
         chosen = select(rows, current, excluded, config.get("max_messages", 24), config.get("max_bytes", 160000))
         if len(chosen) < 2:
             return None

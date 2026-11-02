@@ -302,6 +302,8 @@ when it starts again.
 
 Codex leads can opt into [queued message batches](reference/inbox-batches.md): the next turn reads pending messages from one room together, with verified user instructions first. Other workers keep their settings. Active turns are not interrupted; uncertain results are held with their original messages for inspection.
 
+The updated Codex shim also holds uncertain single requests and saves completed answers before publication. Inspect them using the [recovery commands](reference/internals.md#pitfalls). Automatic retry and model fallback are unavailable until a safe retry boundary is verified.
+
 | Symptom | Fix |
 |---|---|
 | Only execution logs arrived | No actual answer was received. Logs stay collapsed for inspection and are excluded from relays and room context. Inspect the worker before choosing **Send again**; there is no automatic retry. |

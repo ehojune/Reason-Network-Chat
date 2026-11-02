@@ -5,6 +5,12 @@
 What changed in Reason Network Chat, newest first. Times are KST.
 Each row links to its pull request; the first two commits went straight to `main`.
 
+## 2026-11-02
+
+| Time | Change | What changed |
+|---|---|---|
+| 18:13 | [#64](https://github.com/ehojune/Reason-Network-Chat/pull/64) | Hold uncertain single Codex requests with saved originals and answers for inspection. |
+
 ## 2026-10-29
 
 | Time | Change | What changed |

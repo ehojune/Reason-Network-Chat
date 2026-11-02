@@ -94,6 +94,16 @@ class InboxBatchTest(unittest.TestCase):
         for key, value in before.items():
             self.assertEqual(Path(self.config[key]).read_bytes(), value)
 
+    def test_single_journal_ids_never_enter_batch(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            result = batch.run(self.config, 'real', [], self.args('old'), self.runner, single_ids={'old'})
+        self.assertIsNone(result)
+        self.assertEqual(self.calls, [])
+        with contextlib.redirect_stdout(io.StringIO()):
+            result = batch.run(self.config, 'real', [], self.args('old'), self.runner, single_ids={'agent'})
+        self.assertEqual(result, 0)
+        self.assertNotIn('agent', [record['id'] for record in self.job()['messages']])
+
     def test_reason_queue_without_optional_to_field_batches(self):
         queue = batch.read(self.config["queue"])
         for entry in queue:
@@ -203,6 +213,30 @@ class InboxBatchTest(unittest.TestCase):
             self.run_batch("agent")
         self.assertEqual(len(self.calls), 0)
         self.assertEqual(len(self.job()["messages"]), 3)
+
+    def test_interrupted_native_events_hold_without_reexecution(self):
+        # A started command or an incomplete patch can have effects even when
+        # no corresponding completed event or final answer was emitted.
+        for event in (
+            {"type": "item.started", "item": {"id": "x", "type": "command_execution", "command": "write"}},
+            {"type": "item.started", "item": {"id": "x", "type": "file_change"}},
+            {"type": "turn.failed", "error": {"message": "capacity exhausted"}},
+        ):
+            with self.subTest(event=event):
+                journal = Path(self.config["journal"]) / "batches.json"
+                if journal.exists():
+                    journal.unlink()
+                script = "import json; print(json.dumps(" + repr(event) + ")); raise SystemExit(1)"
+
+                def interrupted(command, text):
+                    return batch.invoke([sys.executable, "-c", script], text)
+
+                with self.assertRaises(batch.BatchError):
+                    self.run_batch(runner=interrupted)
+                self.assertEqual(self.job()["status"], "held")
+                with self.assertRaisesRegex(batch.BatchError, "held"):
+                    self.run_batch("agent")
+                self.assertEqual(self.calls, [])
 
     def test_journal_uses_durable_write_before_model(self):
         with patch.object(batch, "atomic_json", wraps=batch.atomic_json) as save:

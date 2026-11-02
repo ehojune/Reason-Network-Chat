@@ -40,6 +40,7 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
 
 ## Pitfalls
 
+- **Single-request recovery.** The updated shim journals recognized Reason Codex JSON requests in separate files under `single-requests/<worker>/` inside the settings directory. It saves the original before execution and the complete JSON output before publication. Inspect with `python recovery.py status --settings PATH` or `export --settings PATH --id ID`; journals contain private content. A running/failed request or uncertain publication is held, never replayed. Capacity text and missing tool events do not prove a safe admission boundary, so automatic retry and model fallback are unsupported. Existing workers without a settings-aware updated shim are not covered; refreshing a live shim requires separate operational approval.
 - **Never write the database** or open it without `mode=ro`. The daemon owns it.
 - **One server per port.** On Windows `SO_REUSEADDR` (set by `HTTPServer`) lets a second server bind a port in use,
   and one of them then silently gets every request: on 2026-10-23 a stray preview from a working tree served the

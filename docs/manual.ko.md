@@ -284,6 +284,8 @@ Reason 에이전트는 자기에게 보낸 쪽에만 답하므로 이 페이지�
 
 Codex 총괄에는 [대기 메시지 묶음 처리](reference/inbox-batches.md)를 켤 수 있다. 다음 턴에 같은 방의 메시지를 모아 사용자 지시부터 확인한다. 다른 worker 설정은 유지한다. 진행 중인 턴은 끊지 않으며 결과가 불확실하면 원문과 함께 보류해 확인한다.
 
+업데이트된 Codex shim은 단일 요청도 결과가 불확실하면 보류하고, 완료된 답변은 전달 전에 저장한다. [복구 명령](reference/internals.md#pitfalls)으로 확인한다. 안전한 재시도 경계가 검증되기 전까지 자동 재시도와 model fallback은 지원하지 않는다.
+
 | 증상 | 해결 |
 |---|---|
 | 시작할 때 `database not found` | Reason Network가 없거나 한 번도 안 돌았다. `reason network`를 한 번 실행한다. |

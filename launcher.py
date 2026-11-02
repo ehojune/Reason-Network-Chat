@@ -303,15 +303,27 @@ if env.get("REASON_CHAT_SHIM_SETTINGS"):
         settings = {}
 if not isinstance(extra, list):
     extra = json.loads(env.get("REASON_CHAT_SHIM_ARGS") or env.get("REASON_CHAT_CODEX_ARGS") or "[]")
-if settings.get("inbox_batch"):
+if env.get("REASON_CHAT_SHIM_SETTINGS"):
     try:
         sys.stdout.reconfigure(encoding="utf-8")
-        from inbox_batch import run
-        result = run(settings["inbox_batch"], real, [str(a) for a in extra], sys.argv[1:])
-        if result is not None:
-            sys.exit(result)
+        from pathlib import Path
+        from storage import file_lock
+        from recovery import run as recover_single, request_id, journal_path, journal_dir
+        args = sys.argv[1:]
+        if request_id(args):
+            settings_path = env["REASON_CHAT_SHIM_SETTINGS"]
+            with file_lock(journal_dir(settings_path) / "coordination.lock", timeout=2):
+                if settings.get("inbox_batch"):
+                    from inbox_batch import run
+                    result = run(settings["inbox_batch"], real, [str(a) for a in extra], args,
+                                 single_exists=lambda mid: journal_path(settings_path, mid).exists())
+                    if result is not None:
+                        sys.exit(result)
+                result = recover_single(env["REASON_CHAT_SHIM_SETTINGS"], real, [str(a) for a in extra], args)
+                if result is not None:
+                    sys.exit(result)
     except Exception as exc:
-        print("Inbox batch held: " + str(exc), file=sys.stderr)
+        print("Request held: " + str(exc), file=sys.stderr)
         sys.exit(1)
 sys.exit(subprocess.call([real] + [str(a) for a in extra] + sys.argv[1:]))
 '''
@@ -322,7 +334,7 @@ def _shim_zip():
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:  # fixed timestamp: the same Python gives the same bytes
         z.writestr(zipfile.ZipInfo("__main__.py", date_time=(1980, 1, 1, 0, 0, 0)), SHIM_MAIN)
-        for name in ("inbox_batch.py", "storage.py"):
+        for name in ("inbox_batch.py", "storage.py", "recovery.py"):
             z.writestr(zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0)), Path(__file__).with_name(name).read_bytes())
     return buf.getvalue()
 
@@ -368,7 +380,7 @@ def shim_current(kind):
         try:
             return target.read_bytes() == SHIM_MAIN and all(
                 (target.parent / name).read_bytes() == Path(__file__).with_name(name).read_bytes()
-                for name in ("inbox_batch.py", "storage.py"))
+                for name in ("inbox_batch.py", "storage.py", "recovery.py"))
         except OSError:
             return False
     try:
@@ -396,7 +408,7 @@ def shim_dir(kind="codex"):
         q = lambda b: b"'" + b.replace(b"'", b"'\\''") + b"'"
         main = d / f"{kind}_shim.py"
         extra.append((main, SHIM_MAIN))
-        for name in ("inbox_batch.py", "storage.py"):
+        for name in ("inbox_batch.py", "storage.py", "recovery.py"):
             extra.append((d / name, Path(__file__).with_name(name).read_bytes()))
         data = b"#!/bin/sh\nexec " + q(exe) + b" " + q(str(main).encode("utf-8")) + b' "$@"\n'
     try:
@@ -1656,6 +1668,8 @@ class Launcher:
 
     def start_worker(self, fam, cwd, model, effort, name, full=False, fast=None):
         env = base_env()
+        # A server launched from a worker must not inherit that worker's journal identity.
+        env.pop("REASON_CHAT_SHIM_SETTINGS", None)
         fid = fam["id"]
         check_fast(fid, fast)
         if fid == 'antigravity':

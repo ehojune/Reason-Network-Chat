@@ -1367,7 +1367,7 @@ function troubles() {
     const rs = (replies[m.id] || []).filter(x => x.sender === m.recipient);
     if (rs.length) {
       if (rs.every(x => isFailure(x.body))) out.set(m.id, {kind: "failed", to: m.recipient});
-      else if ((!rel || rel.speaker === S.me) && /[?？]/.test(rel ? rel.core : m.body) &&
+      else if ((!rel || rel.speaker === S.me) && /[?？]/.test(routingText(rel ? rel.core : m.body)) &&
                rs.every(x => isFailure(x.body) || noAnswer(x.body)))
         out.set(m.id, {kind: "question", to: m.recipient});
     } else if (m.read_at && S.now - m.read_at > NOANS_MS && (s.status !== "busy" || s.stale || s.stuck)) {

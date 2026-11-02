@@ -154,6 +154,9 @@ assert.equal(troubles().get('q').kind,'question');
 S.messages[1].body='(해당 없음)'; assert.equal(troubles().get('q').kind,'question');
 S.messages[1].body='4'; assert.equal(troubles().size,0);
 S.messages[1].body='-'; S.messages[0].body='Thanks'; assert.equal(troubles().size,0);
+S.messages[0].body='> agent: Deploy now?\nYes'; assert.equal(troubles().size,0);
+S.messages[0].body=String.fromCharCode(96)+'why?'+String.fromCharCode(96)+'\nYes'; assert.equal(troubles().size,0);
+S.messages[0].body='> agent: Deploy now?\nWhen?'; assert.equal(troubles().get('q').kind,'question');
 S.messages[0].body='envelope'; S.relays={q:{hop:1,speaker:'p/b',core:'Need a decision?'}};
 assert.equal(troubles().size,0);
 for (const example of routingCases) {

@@ -101,6 +101,9 @@ def route(settings_path, config, real, extra, args, probe_fn=probe, now=time.tim
     home = Path(os.environ.get('CODEX_HOME') or Path.home() / '.codex')
     try:
         import tomllib
+    except ImportError as exc:
+        raise RuntimeError('Enabled capacity probe requires Python 3.11 or later') from exc
+    try:
         defaults = tomllib.loads((home / 'config.toml').read_text(encoding='utf-8'))
     except FileNotFoundError:
         defaults = {}
@@ -151,6 +154,11 @@ def route(settings_path, config, real, extra, args, probe_fn=probe, now=time.tim
             raise RuntimeError('Interrupted probe held for inspection')
         selected = data.get('selected')
         timestamp = data.get('selected_at', 0)
+        if selected is not None and (not isinstance(selected, list) or len(selected) != 2 or
+                not all(isinstance(x, str) for x in selected) or
+                tuple(selected) not in ((model, effort), fallback) or
+                selected[1] not in available.get(selected[0], set())):
+            raise RuntimeError('Probe cache selection invalid')
         if not (isinstance(selected, list) and len(selected) == 2 and
                 isinstance(timestamp, (int, float)) and 0 <= now() - timestamp < ttl):
             data.pop('selected', None)

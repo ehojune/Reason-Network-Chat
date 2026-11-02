@@ -286,7 +286,9 @@ Reason 에이전트는 자기에게 보낸 쪽에만 답하므로 이 페이지�
 
 Codex 총괄에는 [대기 메시지 묶음 처리](reference/inbox-batches.md)를 켤 수 있다. 다음 턴에 같은 방의 메시지를 모아 사용자 지시부터 확인한다. 다른 worker 설정은 유지한다. 진행 중인 턴은 끊지 않으며 결과가 불확실하면 원문과 함께 보류해 확인한다.
 
-업데이트된 Codex shim은 단일 요청도 결과가 불확실하면 보류하고, 완료된 답변은 전달 전에 저장한다. [복구 명령](reference/internals.md#pitfalls)으로 확인한다. 안전한 재시도 경계가 검증되기 전까지 자동 재시도와 model fallback은 지원하지 않는다.
+Codex shim은 결과가 불확실한 요청을 보류하고 완료된 답변을 전달 전에 저장한다. [복구 명령](reference/internals.md#pitfalls)으로 확인한다. 작업을 자동 재실행하지 않는다.
+
+선택 기능인 capacity probe는 별도의 일회성 질문으로 요청 전달 전에 모델을 고른다. worker shim 설정 JSON의 `capacity_probe`에 `{"enabled": true, "fallback_model": "MODEL", "fallback_effort": "EFFORT"}`를 넣는다. 모델과 effort는 Codex runtime catalog에 있어야 하며 Python 3.11 이상이 필요하다. 결과는 최대 1시간 캐시한다. probe 결과가 불확실하거나 중단되면 요청을 보류한다.
 
 | 증상 | 해결 |
 |---|---|

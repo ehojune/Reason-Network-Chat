@@ -3,6 +3,7 @@ import subprocess
 import unittest
 import tempfile
 import os
+import sys
 from pathlib import Path
 from unittest.mock import patch
 from types import SimpleNamespace
@@ -67,6 +68,7 @@ class ProbeTest(unittest.TestCase):
                       lambda _: None, probe_fn=fake, sleep=lambda _: None)
         self.assertEqual(len(calls), 1)
 
+    @unittest.skipIf(sys.version_info < (3, 11), 'enabled probe requires Python 3.11')
     def test_cache_fallback_and_expiry(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'CODEX_HOME': directory}):
             home = Path(directory)
@@ -93,7 +95,21 @@ class ProbeTest(unittest.TestCase):
                 self.assertTrue(all('secret prompt' not in repr(call) for call in calls))
                 data = json.loads(next((home / 'capacity-probes').rglob('*.json')).read_text(encoding='utf-8'))
                 self.assertEqual([a['state'] for a in data['attempts']], ['capacity', 'capacity', 'ok', 'ok'])
+                cache = next((home / 'capacity-probes').rglob('*.json'))
+                for invalid in (['other', 'high'], ['primary', 'low'], ['primary', []]):
+                    data['selected'] = invalid
+                    cache.write_text(json.dumps(data), encoding='utf-8')
+                    with self.assertRaisesRegex(RuntimeError, 'cache selection invalid'):
+                        cp.route(home / 'worker.json', cfg, 'codex', [], args, fake, now=lambda: 3702)
 
+    def test_disabled_probe_works_without_tomllib(self):
+        args = ['exec', 'prompt']
+        with patch.dict(sys.modules, {'tomllib': None}):
+            self.assertEqual(cp.route('worker.json', {}, 'codex', [], args), args)
+            with self.assertRaisesRegex(RuntimeError, 'requires Python 3.11'):
+                cp.route('worker.json', {'enabled': True}, 'codex', [], args)
+
+    @unittest.skipIf(sys.version_info < (3, 11), 'enabled probe requires Python 3.11')
     def test_catalog_failure_does_not_dispatch(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'CODEX_HOME': directory}):
             with self.assertRaises(RuntimeError):

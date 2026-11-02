@@ -5,6 +5,12 @@
 What changed in Reason Network Chat, newest first. Times are KST.
 Each row links to its pull request; the first two commits went straight to `main`.
 
+## 2026-11-03
+
+| Time | Change | What changed |
+|---|---|---|
+| 00:25 | [PR-TBD](https://github.com/ehojune/Reason-Network-Chat/pull/0) | Optionally probe capacity before dispatch and hold uncertain requests without replaying work. |
+
 ## 2026-11-02
 
 | Time | Change | What changed |

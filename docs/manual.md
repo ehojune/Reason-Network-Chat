@@ -304,7 +304,9 @@ A direct question containing `?` or `？` is marked unanswered if the only repli
 
 Codex leads can opt into [queued message batches](reference/inbox-batches.md): the next turn reads pending messages from one room together, with verified user instructions first. Other workers keep their settings. Active turns are not interrupted; uncertain results are held with their original messages for inspection.
 
-The updated Codex shim also holds uncertain single requests and saves completed answers before publication. Inspect them using the [recovery commands](reference/internals.md#pitfalls). Automatic retry and model fallback are unavailable until a safe retry boundary is verified.
+The Codex shim holds uncertain requests and saves completed answers before publication. Inspect them using the [recovery commands](reference/internals.md#pitfalls); it does not replay work.
+
+An optional capacity probe selects a model before dispatch, using a separate disposable prompt. In the worker's shim settings JSON, set `capacity_probe` to `{"enabled": true, "fallback_model": "MODEL", "fallback_effort": "EFFORT"}` using values from the Codex runtime catalog. Python 3.11 or later is required when enabled. Results are cached for up to one hour; uncertainty or an interrupted probe holds the request. This is not a retry of the user's task.
 
 | Symptom | Fix |
 |---|---|

@@ -309,17 +309,19 @@ if env.get("REASON_CHAT_SHIM_SETTINGS"):
         from pathlib import Path
         from storage import file_lock
         from recovery import run as recover_single, request_id, journal_path, journal_dir
+        from capacity_probe import route
         args = sys.argv[1:]
         if request_id(args):
             settings_path = env["REASON_CHAT_SHIM_SETTINGS"]
+            select = lambda a: route(settings_path, settings.get("capacity_probe"), real, [str(x) for x in extra], a)
             with file_lock(journal_dir(settings_path) / "coordination.lock", timeout=2):
                 if settings.get("inbox_batch"):
                     from inbox_batch import run
                     result = run(settings["inbox_batch"], real, [str(a) for a in extra], args,
-                                 single_exists=lambda mid: journal_path(settings_path, mid).exists())
+                                 single_exists=lambda mid: journal_path(settings_path, mid).exists(), route=select)
                     if result is not None:
                         sys.exit(result)
-                result = recover_single(env["REASON_CHAT_SHIM_SETTINGS"], real, [str(a) for a in extra], args)
+                result = recover_single(env["REASON_CHAT_SHIM_SETTINGS"], real, [str(a) for a in extra], args, route=select)
                 if result is not None:
                     sys.exit(result)
     except Exception as exc:
@@ -334,7 +336,7 @@ def _shim_zip():
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:  # fixed timestamp: the same Python gives the same bytes
         z.writestr(zipfile.ZipInfo("__main__.py", date_time=(1980, 1, 1, 0, 0, 0)), SHIM_MAIN)
-        for name in ("inbox_batch.py", "storage.py", "recovery.py"):
+        for name in ("inbox_batch.py", "storage.py", "recovery.py", "capacity_probe.py"):
             z.writestr(zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0)), Path(__file__).with_name(name).read_bytes())
     return buf.getvalue()
 

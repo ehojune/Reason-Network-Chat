@@ -78,6 +78,27 @@ class InboxBatchTest(unittest.TestCase):
     def job(self):
         return batch.read(Path(self.config["journal"]) / "batches.json")["batches"][0]
 
+    def test_routing_failure_holds_batch_before_call(self):
+        def fail(args):
+            self.assertEqual(self.job()['status'], 'running')
+            raise RuntimeError('probe uncertain')
+        with self.assertRaisesRegex(RuntimeError, 'probe uncertain'):
+            batch.run(self.config, 'real.exe', [], self.args(), self.runner, route=fail)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.job()['status'], 'held')
+
+    def test_routing_is_used_once_and_receipt_still_checked(self):
+        routes = []
+        def route(args):
+            routes.append(args)
+            return args[:-1] + ['-m', 'fallback', args[-1]]
+        with contextlib.redirect_stdout(io.StringIO()):
+            batch.run(self.config, 'real.exe', [], self.args(), self.runner, route=route)
+        self.assertEqual(len(routes), 1)
+        self.assertEqual(len(self.calls), 1)
+        self.assertIn('fallback', self.calls[0][0])
+        self.assertEqual(self.job()['status'], 'completed')
+
     def publish(self, mid="old"):
         with contextlib.closing(sqlite3.connect(self.config["database"])) as db:
             db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?)", ("reply-" + mid, "me/lead", "me/terminal", self.job()["answer"], 10, mid))

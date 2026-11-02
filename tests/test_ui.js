@@ -148,6 +148,22 @@ assert.ok(html.includes('data-target="m"')); assert.ok(html.includes('ack8'));
 S.messages.push(msg('missing','p/a','p/terminal','answer','unloaded')); renderTl();
 assert.ok(nodes['#tl'].innerHTML.includes('missingOriginal'));
 assert.ok(!noAnswer('4')); assert.ok(!noAnswer('no')); assert.ok(noAnswer('—'));
+S=base();
+S.messages=[msg('q','p/terminal','p/a','Need a decision?'), msg('ackq','p/a','p/terminal','-','q')];
+assert.equal(troubles().get('q').kind,'question');
+S.messages[1].body='(해당 없음)'; assert.equal(troubles().get('q').kind,'question');
+S.messages[1].body='4'; assert.equal(troubles().size,0);
+S.messages[1].body='-'; S.messages[0].body='Thanks'; assert.equal(troubles().size,0);
+S.messages[0].body='> agent: Deploy now?\nYes'; assert.equal(troubles().size,0);
+S.messages[0].body=String.fromCharCode(96)+'why?'+String.fromCharCode(96)+'\nYes'; assert.equal(troubles().size,0);
+S.messages[0].body='> agent: Deploy now?\nWhen?'; assert.equal(troubles().get('q').kind,'question');
+S.messages[0].body='envelope'; S.relays={q:{hop:1,speaker:'p/b',core:'Need a decision?'}};
+assert.equal(troubles().size,0);
+S=base();
+S.messages=[msg('root','p/terminal','p/a','[Group room "test"] envelope?'),
+  msg('alias','p/terminal','p/a','[Group room "test"] envelope?'), msg('ack','p/a','p/terminal','-','alias')];
+S.relays={root:{hop:1,speaker:'p/b',core:'Need a decision?'}};
+assert.equal(troubles().has('alias'),false);
 for (const example of routingCases) {
   const room={members:['p/a','p/b','p/c']};
   assert.equal(JSON.stringify(roomTargets(room,example.text).to),JSON.stringify(example.to),example.text);

@@ -9,6 +9,7 @@ Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（
 
 | 时间 | 变更 | 主要内容 |
 |---|---|---|
+| 23:44 | [#65](https://github.com/ehojune/Reason-Network-Chat/pull/65) | 直接提问仅收到确认时标记为未回答。 |
 | 18:13 | [#64](https://github.com/ehojune/Reason-Network-Chat/pull/64) | 暂停结果不确定的单条 Codex 请求，保存原文和回复供检查。 |
 
 ## 2026-10-29

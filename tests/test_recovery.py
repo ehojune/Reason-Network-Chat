@@ -107,3 +107,29 @@ class RecoveryTest(unittest.TestCase):
         self.assertNotEqual(again.returncode, 0)
         self.assertIn('cached result', again.stderr)
         self.assertNotIn('done', again.stdout)
+
+    def test_packaged_shim_holds_failed_child_and_never_replays(self):
+        self.settings.parent.mkdir(parents=True)
+        marker = Path(self.tmp.name) / 'child-runs'
+        script = ('from pathlib import Path; import json; '
+                  'p=Path(' + repr(str(marker)) + '); '
+                  'p.write_text(p.read_text()+"x" if p.exists() else "x"); '
+                  'print(json.dumps({"type":"turn.failed","error":{"message":"capacity"}})); '
+                  'raise SystemExit(1)')
+        self.settings.write_text(json.dumps({'args': ['-c', script]}), encoding='utf-8')
+        with patch.object(launcher, 'STATE', Path(self.tmp.name) / 'isolated-state'):
+            directory = launcher.shim_dir('codex')
+            if not directory:
+                self.skipTest('packaged shim unavailable')
+            shim = Path(directory) / ('codex.exe' if launcher.WIN else 'codex')
+            env = dict(os.environ, REASON_CHAT_SHIM_SETTINGS=str(self.settings),
+                       REASON_CHAT_SHIM_REAL=sys.executable)
+            first = subprocess.run([str(shim)] + self.args, env=env, capture_output=True, text=True, encoding='utf-8')
+            again = subprocess.run([str(shim)] + self.args, env=env, capture_output=True, text=True, encoding='utf-8')
+        self.assertNotEqual(first.returncode, 0)
+        self.assertNotEqual(again.returncode, 0)
+        self.assertEqual(marker.read_text(), 'x')
+        saved = json.loads(self.path.read_text(encoding='utf-8'))
+        self.assertEqual(saved['status'], 'held')
+        self.assertEqual(saved['original'], self.args[-1])
+        self.assertIn('held', again.stderr.lower())

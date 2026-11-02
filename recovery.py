@@ -40,7 +40,7 @@ def journal_path(settings_path, mid):
     return journal_dir(settings_path) / (hashlib.sha256(mid.encode('utf-8')).hexdigest() + '.json')
 
 
-def run(settings_path, real, extra, args):
+def run(settings_path, real, extra, args, route=None):
     mid = request_id(args)
     if mid is None:
         return None
@@ -60,6 +60,8 @@ def run(settings_path, real, extra, args):
         job = {'id': mid, 'original': args[-1], 'status': 'running'}
         atomic_json(path, job, durable=True)
         try:
+            if route:
+                args = route(args)
             lines, deferred, events, malformed = [], [], [], False
             with subprocess.Popen([real] + extra + args, stdout=subprocess.PIPE,
                                   text=True, encoding='utf-8', errors='replace') as child:

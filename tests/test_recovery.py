@@ -25,6 +25,16 @@ class RecoveryTest(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             return recovery.run(self.settings, sys.executable, ['-c', script], self.args)
 
+    def test_route_failure_is_held_before_actual_call(self):
+        def fail(args):
+            self.assertEqual(json.loads(self.path.read_text(encoding='utf-8'))['status'], 'running')
+            raise RuntimeError('probe uncertain')
+        with patch.object(recovery.subprocess, 'Popen') as call:
+            with self.assertRaisesRegex(RuntimeError, 'probe uncertain'):
+                recovery.run(self.settings, 'codex', [], self.args, route=fail)
+        call.assert_not_called()
+        self.assertEqual(json.loads(self.path.read_text(encoding='utf-8'))['status'], 'held')
+
     def test_success_cached_before_emission_and_never_reexecuted(self):
         events = [{'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'answer'}},
                   {'type': 'turn.completed'}]

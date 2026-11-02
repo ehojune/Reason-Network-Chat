@@ -12,9 +12,8 @@ def file_lock(path, timeout=10):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+b") as handle:
-        if handle.seek(0, 2) == 0:
-            handle.write(b"\0")
-            handle.flush()
+        # Windows CRT locking supports a byte beyond EOF; no initialization write
+        # is needed, and writing before the lock races with another process.
         deadline = time.monotonic() + timeout
         while True:
             handle.seek(0)

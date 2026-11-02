@@ -281,7 +281,7 @@ def validate_publisher(path):
     return str(path)
 
 
-def run(config, real, extra, args, runner=invoke, single_ids=None, single_exists=None):
+def run(config, real, extra, args, runner=invoke, single_ids=None, single_exists=None, route=None):
     """Return None for ordinary invocations; never silently bypass an existing journal."""
     if "exec" not in args or "--json" not in args or not args:
         return None
@@ -326,6 +326,8 @@ def run(config, real, extra, args, runner=invoke, single_ids=None, single_exists
         jobs.append(job)
         atomic_json(path, journal, durable=True)  # persist directory entries BEFORE work
         try:
+            if route:
+                args = route(args)
             answer, thread, usage = runner([real] + extra + args[:-1] + ["-"], prompt(original, job))
             job.update(raw_answer=answer, thread=thread, usage=usage)
             expected = receipt(job)

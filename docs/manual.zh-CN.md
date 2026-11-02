@@ -275,7 +275,9 @@ worker 的回复总是如此。群聊在本页面的服务器运行期间工作�
 
 Codex 负责人可启用[待处理消息批次](reference/inbox-batches.md)：下一轮合并同一聊天室的待处理消息，先读已验证的用户指令。其他 worker 的设置不变，不中断正在运行的轮次。结果不确定时保留原文并暂停，供检查。
 
-更新后的 Codex shim 也会暂停结果不确定的单条请求，并在发送前保存完整回复。使用[恢复命令](reference/internals.md#pitfalls)检查。在验证安全的重试边界之前，不支持自动重试和模型回退。
+Codex shim 会暂停结果不确定的请求，并在发送前保存完整回复。使用[恢复命令](reference/internals.md#pitfalls)检查；它不会自动重放任务。
+
+可选的 capacity probe 在发送请求前用独立的一次性提示选择模型。在 worker shim 设置 JSON 中将 `capacity_probe` 设为 `{"enabled": true, "fallback_model": "MODEL", "fallback_effort": "EFFORT"}`，值须来自 Codex runtime catalog。启用时需要 Python 3.11 或更高版本。结果最多缓存一小时；probe 中断或结果不确定时会暂停请求。
 
 | 现象 | 解决办法 |
 |---|---|

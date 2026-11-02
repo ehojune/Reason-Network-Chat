@@ -148,6 +148,14 @@ assert.ok(html.includes('data-target="m"')); assert.ok(html.includes('ack8'));
 S.messages.push(msg('missing','p/a','p/terminal','answer','unloaded')); renderTl();
 assert.ok(nodes['#tl'].innerHTML.includes('missingOriginal'));
 assert.ok(!noAnswer('4')); assert.ok(!noAnswer('no')); assert.ok(noAnswer('—'));
+S=base();
+S.messages=[msg('q','p/terminal','p/a','Need a decision?'), msg('ackq','p/a','p/terminal','-','q')];
+assert.equal(troubles().get('q').kind,'question');
+S.messages[1].body='(해당 없음)'; assert.equal(troubles().get('q').kind,'question');
+S.messages[1].body='4'; assert.equal(troubles().size,0);
+S.messages[1].body='-'; S.messages[0].body='Thanks'; assert.equal(troubles().size,0);
+S.messages[0].body='envelope'; S.relays={q:{hop:1,speaker:'p/b',core:'Need a decision?'}};
+assert.equal(troubles().size,0);
 for (const example of routingCases) {
   const room={members:['p/a','p/b','p/c']};
   assert.equal(JSON.stringify(roomTargets(room,example.text).to),JSON.stringify(example.to),example.text);

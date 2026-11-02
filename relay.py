@@ -484,6 +484,7 @@ class Relay:
                 f"Members: {names}.\n"
                 f"{back}\n"
                 "To ask anyone else, @name them; their answers come back to you. Reply `-` if no answer is needed. "
+                "When the person directly asks you a question, answer it or explicitly say what decision or information is needed; `-` and `(해당 없음)` are not answers. "
                 "If you coordinate work and receive a completion report, verify it and decide the next authorized assignment, "
                 "or report the actual wait reason, resume condition and next check. A genuine acknowledgment may stay silent.\n"
                 f"Answers to 1:1 messages are not passed on. {person} sees the whole room. "

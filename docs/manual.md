@@ -272,6 +272,8 @@ when it starts again.
 
 ## Good to know
 
+A direct question containing `?` or `？` is marked unanswered if the only replies are acknowledgments such as `-`; choose whether to ask again or put it aside. No automatic resend occurs.
+
 - **Damaged text is stopped before sending or relaying.** Repeated `?` replacements or invalid Unicode produce
   a warning; the original received message stays in history. Code examples, quoted evidence and ordinary questions
   are allowed. This is a heuristic, not a repair tool. For an external post, check its UTF-8 file with

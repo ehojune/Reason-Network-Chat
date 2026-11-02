@@ -641,6 +641,9 @@ Object.assign(T.en, {viewTrouble: "View", troubleTitle: "Check reply links", tro
 Object.assign(T.zh, {viewTrouble: "查看", troubleTitle: "检查回复关联", troubleHelp: "最近 24 小时内发送的消息：收到失败回复，或已读超过 10 分钟且 worker 未在工作。查看列表不会再次发送消息。",
   troubleEmpty: "当前视图没有剩余项目。", goOriginal: "跳转到原文", missingOriginal: "已加载的记录中没有原文。", switchedAll: "已在全部消息中显示原文。",
   ack: "✓ 已确认（无回答）", failureDetail: "失败详情", dismissOne: "搁置", deliveries: "转发记录"});
+Object.assign(T.ko, {questionUnanswered: "질문에 답이 없습니다. 답변을 요청하거나 덮어 둘지 정하세요."});
+Object.assign(T.en, {questionUnanswered: "The question has no answer. Decide whether to ask again or put it aside."});
+Object.assign(T.zh, {questionUnanswered: "问题尚未回答。请决定再次询问还是搁置。"});
 const LOCALE = {ko: "ko-KR", en: "en-US", zh: "zh-CN"};
 Object.assign(T.ko, {logOnlyReply: "실제 답변 없이 실행 로그만 도착했습니다. 다른 멤버에게 중계하지 않습니다.", executionLog: "실행 로그 보기"});
 Object.assign(T.en, {logOnlyReply: "Only execution logs arrived, without an answer. They are not relayed to other members.", executionLog: "View execution logs"});
@@ -1364,6 +1367,9 @@ function troubles() {
     const rs = (replies[m.id] || []).filter(x => x.sender === m.recipient);
     if (rs.length) {
       if (rs.every(x => isFailure(x.body))) out.set(m.id, {kind: "failed", to: m.recipient});
+      else if ((!rel || rel.speaker === S.me) && /[?？]/.test(rel ? rel.core : m.body) &&
+               rs.every(x => isFailure(x.body) || noAnswer(x.body)))
+        out.set(m.id, {kind: "question", to: m.recipient});
     } else if (m.read_at && S.now - m.read_at > NOANS_MS && (s.status !== "busy" || s.stale || s.stuck)) {
       out.set(m.id, {kind: "noanswer", to: m.recipient});
     }
@@ -1405,7 +1411,7 @@ function troubleListHtml(list) {
     if (!m) return "";
     const rel = relayOf(m), body = (rel ? rel.core : m.body).split(DM_MARK)[0];
     const failures = S.messages.filter(x => x.reply_to === id && x.sender === m.recipient && isFailure(x.body));
-    return `<article class="troubleItem" data-id="${esc(id)}"><strong>${esc(t(v.kind === "failed" ? "tFailed" : "tNoAnswer"))}</strong> · ${esc(rel ? rel.speaker : m.sender)} → ${esc(m.recipient)}
+    return `<article class="troubleItem" data-id="${esc(id)}"><strong>${esc(t(v.kind === "failed" ? "tFailed" : v.kind === "question" ? "questionUnanswered" : "tNoAnswer"))}</strong> · ${esc(rel ? rel.speaker : m.sender)} → ${esc(m.recipient)}
       <div>${esc(fmtD(m.sent_at))} ${fmtT(m.sent_at)}${rel ? ` · # ${esc((S.rooms.find(r => r.id === rel.room) || {}).name || rel.room)}` : ""}</div>
       <pre class="troubleText">${esc(body)}</pre>${failures.length ? `<details><summary>${esc(t("failureDetail"))}</summary>${failures.map(x => `<pre class="troubleText">${esc(x.body)}</pre>`).join("")}</details>` : ""}
       <div class="dbtn"><button type="button" data-action="jump">${esc(t("goOriginal"))}</button><button type="button" data-action="resend"${running(v.to) ? "" : ` disabled title="${esc(t("notRunning"))}"`}>${esc(t("resend"))}</button><button type="button" data-action="dismiss">${esc(t("dismissOne"))}</button></div></article>`;
@@ -1472,7 +1478,7 @@ function troubleHtml(m) {
     if (st) return `<span class="trouble" style="color:var(--muted)">${esc(t(st.how === "resent" ? "resent" : "dismissed"))}${esc(who)} · ${fmtT(st.at)}</span>`;
     if (!v) return "";
     const ok = running(x.recipient);
-    return `<span class="trouble">⚠ ${esc(t(v.kind === "failed" ? "tFailed" : "tNoAnswer"))}${esc(who)}</span><button type="button" class="resendBtn" data-id="${
+    return `<span class="trouble">⚠ ${esc(t(v.kind === "failed" ? "tFailed" : v.kind === "question" ? "questionUnanswered" : "tNoAnswer"))}${esc(who)}</span><button type="button" class="resendBtn" data-id="${
       esc(x.id)}"${ok ? "" : ` disabled title="${esc(t("notRunning"))}"`}>${esc(t("resend"))}</button>`;
   }).join("");
 }

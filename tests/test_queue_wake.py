@@ -313,6 +313,23 @@ class QueueWakeTest(unittest.TestCase):
                 self.assertEqual(error.exception.code, 429)
         self.assertEqual(self.calls, [])
 
+    def test_completed_unread_id_with_new_id_blocks_every_queue_and_exec_path(self):
+        self.w.wake(ADDRESS, self.who)
+        self.read()
+        self.assertEqual(self.w.view()[ADDRESS]["status"], "done")
+        self.connection.execute("update messages set read_at=null where id='m1'")
+        self.connection.commit()
+        self.message("new")
+        for w in (self.w, self.waker()):
+            for is_held in (True, False):
+                with mock.patch("wake.held", return_value=is_held), mock.patch("wake.AUTO_GAP", 0):
+                    with self.assertRaises(wake.WakeError) as error:
+                        w.wake(ADDRESS, self.who)
+                    self.assertEqual(error.exception.code, 409)
+                    w.auto([ADDRESS], self.who)
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(len(self.journal()["batches"]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

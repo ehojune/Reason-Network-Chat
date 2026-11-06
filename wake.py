@@ -216,6 +216,9 @@ class Waker:
             used = {i for b in data["batches"] if b["address"] == address for i in b["ids"]}
             rows = self.db_rows("select id, wake, held from messages where recipient = ? and read_at is null",
                                 (address,))
+            if any(r["id"] in used for r in rows):
+                # The fixed prompt reads the entire inbox, not just the fresh journal batch.
+                raise WakeError("Previously queued message IDs remain unread; no second wake was sent.", 409)
             fresh = [r for r in rows if r["id"] not in used]
             if not fresh or (auto and not any(r["wake"] and not r["held"] for r in fresh)):
                 raise WakeError("No new eligible message IDs; previous wakes will not be repeated.", 409)

@@ -28,6 +28,7 @@ AUTO_RETRY = 600  # seconds before an auto-wake that failed is tried again
 HELD_TTL = 10  # seconds a lock check is reused
 QUEUE_TIMEOUT = 20
 QUEUE_PENDING = {"intent", "queued", "held"}
+QUEUE_ACTIVE = {"intent", "queued"}  # uncertain holds block their address, not unrelated wake capacity
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
@@ -222,7 +223,7 @@ class Waker:
             starts = [t for t in self.auto_starts.get(address, []) if now - t < AUTO_WINDOW]
             if auto and (len(starts) >= AUTO_BUDGET or starts and now - starts[-1] < AUTO_GAP):
                 raise WakeError("Auto-wake limit reached; wait for the next window.", 429)
-            outstanding = sum(v.get("status") in QUEUE_PENDING | {"running"} for v in self.state.values())
+            outstanding = sum(v.get("status") in QUEUE_ACTIVE | {"running"} for v in self.state.values())
             if outstanding >= MAX_RUNNING:
                 raise WakeError(f"Already waking {MAX_RUNNING} sessions; wait for one to finish.", 429)
             b = {"address": address, "thread": uuid, "ids": [r["id"] for r in fresh], "status": "intent",
@@ -396,7 +397,7 @@ class Waker:
         with self.lock:
             if self.state.get(address, {}).get("status") == "running":
                 raise WakeError("Already waking it.", 409)
-            if sum(v["status"] in QUEUE_PENDING | {"running"} for v in self.state.values()) >= MAX_RUNNING:
+            if sum(v["status"] in QUEUE_ACTIVE | {"running"} for v in self.state.values()) >= MAX_RUNNING:
                 raise WakeError(f"Already waking {MAX_RUNNING} sessions; wait for one to finish.", 429)
             self.state[address] = {"status": "running", "at": int(time.time() * 1000), "error": "", "auto": auto}
             if auto:

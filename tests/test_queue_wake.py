@@ -26,7 +26,8 @@ class QueueWakeTest(unittest.TestCase):
         self.addCleanup(self.connection.close)
         self.connection.executescript("""
             create table sessions (name text, key text, agent text, cwd text);
-            create table messages (id text primary key, recipient text, wake int, held int, read_at int);
+            create table messages (id text primary key, recipient text, wake int, held int, read_at int,
+                                   sent_at int default 1);
         """)
         self.connection.execute("insert into sessions values (?, ?, ?, ?)",
                                 ("app", "codex:" + UUID, "codex", str(self.home)))
@@ -35,6 +36,7 @@ class QueueWakeTest(unittest.TestCase):
         self.who = {"person": "pat", "machine": "local", "sessions": [
             {"address": ADDRESS, "machine": "local", "status": "idle"}]}
         self.calls = []
+        self.enterContext(mock.patch("wake.STATE", self.home))
         self.stack = self.enterContext(mock.patch("wake.held", return_value=True))
         self.enterContext(mock.patch("wake.find_codex", return_value=sys.executable))
         self.enterContext(mock.patch("wake.spawn", side_effect=AssertionError("no second writer")))
@@ -50,7 +52,8 @@ class QueueWakeTest(unittest.TestCase):
             return [dict(r) for r in db.execute(sql, params)]
 
     def message(self, id, wake_=1, held=0):
-        self.connection.execute("insert into messages values (?, ?, ?, ?, null)", (id, ADDRESS, wake_, held))
+        self.connection.execute("insert into messages (id, recipient, wake, held, read_at) values (?, ?, ?, ?, null)",
+                                (id, ADDRESS, wake_, held))
         self.connection.commit()
 
     def read(self):
@@ -277,6 +280,37 @@ class QueueWakeTest(unittest.TestCase):
             with self.assertRaises(wake.WakeError):
                 self.w.wake(ADDRESS, self.who)
         self.assertFalse(self.w.queue_path.exists())
+        self.assertEqual(self.calls, [])
+
+    def seed_other_batches(self, status):
+        import time
+        data = {"version": 1, "batches": [
+            {"address": "pat/other" + str(i), "thread": UUID, "ids": ["other-id" + str(i)],
+             "status": status, "at": int(time.time() * 1000), "auto": False}
+            for i in range(wake.MAX_RUNNING)]}
+        wake.atomic_json(self.w.queue_path, data, durable=True)
+        self.w = self.waker()  # reproduce persisted holds/slots after server restart
+
+    def test_held_batches_block_only_their_addresses_not_global_capacity(self):
+        self.seed_other_batches("held")
+        self.assertEqual(self.w.wake(ADDRESS, self.who)["status"], "queued")
+        self.assertEqual(len(self.calls), 1)
+        self.read()
+        self.w.view()
+        self.message("new")
+        with mock.patch("wake.held", return_value=False), mock.patch("wake.spawn", return_value=1) as spawn, \
+                mock.patch("wake.started_at", return_value=None), mock.patch("wake.threading.Thread"):
+            self.assertEqual(self.w.wake(ADDRESS, self.who)["status"], "running")
+            self.assertIn("exec", spawn.call_args.args[0])
+        self.assertEqual(len([s for s in self.w.view().values() if s["status"] == "held"]), wake.MAX_RUNNING)
+
+    def test_active_queued_batches_still_limit_global_capacity(self):
+        self.seed_other_batches("queued")
+        for is_held in (True, False):
+            with mock.patch("wake.held", return_value=is_held):
+                with self.assertRaises(wake.WakeError) as error:
+                    self.w.wake(ADDRESS, self.who)
+                self.assertEqual(error.exception.code, 429)
         self.assertEqual(self.calls, [])
 
 

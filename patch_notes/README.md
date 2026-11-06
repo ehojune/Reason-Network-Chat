@@ -5,6 +5,12 @@
 What changed in Reason Network Chat, newest first. Times are KST.
 Each row links to its pull request; the first two commits went straight to `main`.
 
+## 2026-11-06
+
+| Time | Change | What changed |
+|---|---|---|
+| 14:02 | [#68](https://github.com/ehojune/Reason-Network-Chat/pull/68) | Wake idle Codex conversations held by an app or CLI through their native queue, with durable duplicate protection and separate read confirmation. |
+
 ## 2026-11-03
 
 | Time | Change | What changed |

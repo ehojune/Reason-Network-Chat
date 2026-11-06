@@ -46,7 +46,7 @@ ORIGINS = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 TOKEN = secrets.token_urlsafe(32)
 # Shape of /api/state and the POSTs. Bump together with API in index.html: a page that meets a server of another
 # version (the server kept running across an update) asks for a restart instead of breaking.
-API = 22
+API = 23
 BOOT = secrets.token_hex(8)  # new each start: an open page that sees another one reloads to get the new token
 NOWIN = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
 
@@ -246,7 +246,7 @@ def state():
             now_ = int(time.time() * 1000)
             s["quietSince"] = quiet_since(act, LAUNCHER.log_activity(s["name"]), now_)
             s["stuck"] = now_ - s["quietSince"] > STUCK_MS
-        # The Codex app keeps the conversations it opened locked: then nothing outside the app can wake them.
+        # Historical appOpen field means writer-held (app or CLI); idle holders accept native queue wakes.
         s["appOpen"] = bool(s["resumable"]) and WAKER.is_held(Waker.resumable(known[s["name"]]["key"]), s["address"])
     relays, queued, notices = RELAY.view({m["id"] for m in msgs})
     forwarded = RELAY.forwarded_view({m["id"] for m in msgs})

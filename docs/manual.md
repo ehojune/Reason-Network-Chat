@@ -47,7 +47,7 @@ Each session says how a message reaches it: on its row, in **To**, and under an 
 | busy, reads after this turn | it is working; it reads the message when the turn ends |
 | woken automatically on a message | a Codex session with auto-wake on ([below](#auto-wake)) |
 | reads when someone talks to it | a Codex app or CLI session: a message does not wake it |
-| open in the Codex app · reads when you talk to it there | the Codex app has this conversation open; nothing outside the app can start a turn in it |
+| existing Codex conversation held · queue available | an app or CLI holds the conversation; Wake can deliver to its queue while idle |
 | reads only when it checks | it reads only when it checks its own inbox |
 | offline | its app or process is gone; it reads nothing until it comes back |
 
@@ -61,39 +61,23 @@ Sending to an offline session asks first. The setting is saved by the server (`~
 
 ## Wake a sleeping Codex session
 
-A Codex app or CLI session reads a message only when it takes a turn. **Wake** (above the message box, or in the
-header of the selected session) gives it one: the server runs `codex exec resume <thread> "<fixed prompt>"` in that
-session's folder, so the same conversation reads its unread messages with `check_inbox` and answers with
-`send_message`. Tick **Wake after sending** to do it right after a send.
+**Wake** asks the same Codex conversation to check its inbox and reply. **Wake after sending** does it after a send.
 
-- Only your Codex sessions on this computer that have unread messages and are not busy. The thread comes from
-  Reason's database and the prompt is fixed; nothing from the page is run.
-- **Not while the Codex app has the conversation open.** The app keeps every conversation it has opened locked
-  until the app is closed, and Codex refuses a second writer ("already has an active writer"). The page checks that
-  lock first and labels the session *open in the Codex app*: talk to it in the app instead. (Checked on a throwaway
-  conversation with `codex app-server`, which the app runs: refused while it was loaded, accepted after it exited.)
-- The turn is added to the same conversation (its `~/.codex/sessions/…/rollout-…-<thread>.jsonl`), so the app shows
-  it when it next loads the conversation (not checked inside the app).
-- A wake takes about half a minute. One per session at a time, cut off after 10 minutes.
-- Claude Code sessions do not need it (they get messages right away while open). Other agents cannot be woken here.
+- Only your local Codex conversations with unread messages qualify. Busy sessions wait.
+- An idle conversation held by an app or CLI receives one native queue delivery. A free conversation uses the existing headless wake.
+- **Queue accepted** is a receipt; **Original messages confirmed read** requires the original messages' read marks.
+- A queued wake that remains unread for 10 minutes, or an uncertain delivery after a crash or timeout, is held without resend. Later messages wait behind it until the original batch is confirmed read.
+- Completed message IDs are retained across restarts and manual wakes. Missing queue support produces an explicit error.
 
 ### Auto-wake
 
-Right-click a resumable Codex conversation → **Turn on auto-wake**. The server wakes it when unread messages arrive.
-Serve workers already handle incoming messages; their menu explains this, including in Favorites.
+Right-click a resumable Codex conversation → **Turn on auto-wake**, including conversations held open in an app or CLI.
+Serve workers already handle messages; they need no extra toggle.
 
-- **It spends Codex turns automatically, without asking you each time.** Every wake is one turn in that
-  conversation, paid like any other. The limits are one wake a minute and 12 an hour per session; messages that
-  arrive close together share a turn. Watching for messages only reads the database and costs nothing.
-- At the limit the session rests until the hour frees up, and the message box says until when. A failed wake is
-  retried after 10 minutes. These limits survive a server restart.
-- **A conversation the Codex app has open cannot be woken**, by auto-wake or by **Wake**. The page only flags it
-  (*open in the Codex app*); talk to it in the app. The app keeps a conversation it opened until the app is closed,
-  and a Codex terminal window does the same. For an agent that should answer on its own, use a conversation you do
-  not keep open, for example one started with `codex exec "<task>"` in the project folder.
-- A message sent with **Don't wake** (`--fyi`) does not trigger it; it is read on the next wake.
-- Works only while this server runs.
-- The list is saved by the server (`prefs.json`, `autoWake`).
+- Each wake spends a Codex turn. Message checks only read the database and spend no tokens.
+- Limits remain one per minute and 12 per hour per session, across restarts. Nearby messages share a batch.
+- **Don't wake** (`--fyi`) messages do not trigger it. Uncertain queue deliveries are never automatically retried.
+- Works while the server runs; the opt-in list is saved in `prefs.json` (`autoWake`).
 
 <a id="sessions"></a>
 

@@ -92,7 +92,7 @@ Claude 桌面应用用户可在 Code 标签打开此文件夹，再让 Claude �
 
 ## 使用前须知
 
-- **需要持续回复时使用 worker。** 空闲的应用或 CLI 会话可能到下一轮才读消息；Codex 应用打开的对话不能从外部唤醒。[接收方式](docs/manual.zh-CN.md#delivery)
+- **需要持续回复时使用 worker。** 空闲的应用或 CLI 会话可能到下一轮才读消息；应用或 CLI 占用的空闲对话可开启队列唤醒。[接收方式](docs/manual.zh-CN.md#delivery)
 - **自动唤醒和群聊会消耗额度。** 每个接收方可能启动一轮。Fast 也会消耗更多额度，速度取决于模型和账号。[唤醒](docs/manual.zh-CN.md#wake) · [Fast](docs/manual.zh-CN.md#codex-fast)
 - **完全权限会直接执行命令。** 包括删除文件、安装软件和访问网络，不再逐次询问。[权限与重启](docs/manual.zh-CN.md#权限)
 - **关闭服务器不会停止 worker。** 请用 **停止 worker** 结束它。群聊转发和自动唤醒需要服务器运行。

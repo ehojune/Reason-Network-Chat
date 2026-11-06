@@ -142,7 +142,7 @@ class WakeTest(unittest.TestCase):
         self.assertFalse(wake.held(UUID))  # a lock file nobody holds
         with HeldLock(path):
             self.assertTrue(wake.held(UUID))
-            self.bad("pat/sleepy-codex", 423)
+            self.assertEqual(self.w.target("pat/sleepy-codex", WHO)[0], UUID)  # held is eligible for native queue
             self.w.state["pat/sleepy-codex"] = {"status": "running", "at": 0, "error": ""}
             self.assertFalse(self.w.is_held(UUID, "pat/sleepy-codex"))  # our own wake holds it
             self.w.state.clear()

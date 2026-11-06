@@ -10,7 +10,7 @@ Agent-only reference (English). Look up fields when changing a request or integr
 | `REASON_CHAT_DB` | `~/.reason/network/network.db` | Daemon database path. |
 | `REASON_BIN` | `%LOCALAPPDATA%\Reason\bin\reason.exe` on Windows, else `reason` on PATH | The Reason CLI. |
 | `NODE_EXTRA_CA_CERTS` | unset | Root CA file for TLS-inspecting corporate networks. The CLI (Bun) needs it there. On Windows, children get it from the stored user environment even if the server started before it was set. |
-| `REASON_CHAT_HOME` | `~/.reason-network-chat` | Rooms (`rooms.json`), relayed-message records (`relay.json`), settings (`prefs.json`), running wakes (`wakes.json`), auto-wake limits (`autowake.json`), worker registry (`workers.json`), last settings of every worker started here (`worker-records.json`, kept after the process dies), start proofs (`spawned.jsonl`), worker logs (`logs/`), the model shims (`codex-shim/`, `claude-shim/`) and each worker's shim arguments (`worker-settings/<name>.json`). |
+| `REASON_CHAT_HOME` | `~/.reason-network-chat` | Rooms (`rooms.json`), relayed-message records (`relay.json`), settings (`prefs.json`), running wakes (`wakes.json`), durable queue dispatch IDs (`queue-wakes.json`), auto-wake limits (`autowake.json`), worker registry (`workers.json`), last settings of every worker started here (`worker-records.json`, kept after the process dies), start proofs (`spawned.jsonl`), worker logs (`logs/`), the model shims (`codex-shim/`, `claude-shim/`) and each worker's shim arguments (`worker-settings/<name>.json`). |
 | `REASON_CHAT_CLAUDE`, `REASON_CHAT_CODEX`, `REASON_CHAT_AGY` | found automatically | Full path to an agent CLI. On Windows it must be an `.exe`. |
 | `REASON_CHAT_STUCK_MIN` | `30` | Minutes a worker may be busy with no new step and no new log line before it shows as possibly stuck. |
 | `REASON_CHAT_MAX_HOPS`, `REASON_CHAT_BUDGET`, `REASON_CHAT_BUDGET_WINDOW` | `100`, `300`, `600` | Default group-room limits: hops in one hand-off chain, hand-offs per window (seconds). A room's own setting wins. |
@@ -30,8 +30,8 @@ get the new token, and a newer server also triggers a reload.
 - `GET /api/state` →
   `{api, boot, team, me, sessions[], messages[], launched[], rooms[], relays{}, queued{}, notices{}, forwarded{}, settled{}, relayDefaults{}, prefs{}, wakes{}, whoError, now}`.
   Each session also has `resumable` (a Codex session of yours on this computer) and `appOpen` (another Codex process,
-  usually the desktop app, holds the thread's writer lock, so it cannot be woken); `wakes{}` = address →
-  `{status: running|done|failed, at, error, auto, limitUntil?}` (`limitUntil`: auto-wake rests until then).
+  app or CLI, holds the thread's writer lock); `wakes{}` = address →
+  `{status: running|done|failed|queued|held, at, error, auto, mode?: queue, limitUntil?}` (`limitUntil`: auto-wake rests until then).
   `me` is the address the page sends as (`<person>/terminal`).
   `sessions[]` = live entries from `who --all --json` (`address, name, agent, status, doing, cwd, tier, live: true`)
   plus addresses seen only in history (`status: "gone"`, `live: false`).
@@ -130,12 +130,14 @@ get the new token, and a newer server also triggers a reload.
   `collapsedSections` lists any of `favorites`, `rooms`, `now`, `later`, `offline`, `history`; omitted settings inherit
   the old `hideOffline` visibility until a section is changed.
 - `POST /api/wake` `{address}` → wakes a Codex session (`wake.py`): yours, on this computer, not busy, with unread
-  messages, not open in the Codex app (HTTP 423 if it is). The thread id comes from `sessions.key` (`codex:<uuid>`),
+  messages. Idle writer-held threads use native queue with durable message-ID deduplication; unsupported queue fails explicitly.
+  Returns `{ok, status: running|queued|held, mode?: queue}`. `queued` is acceptance, `held` forbids resend, and `done` requires original read marks.
+  See [queue contract](queue-wakes.md). The thread id comes from `sessions.key` (`codex:<uuid>`),
   the folder from `sessions.cwd`, the prompt is `WAKE_PROMPT`; nothing from the request is run. Answers at once;
   progress shows in `wakes{}`. Auto-wake runs the same `wake()` from a server loop every 10 s for the `autoWake` list,
   limited by `AUTO_GAP` (60 s), `AUTO_BUDGET`/`AUTO_WINDOW` (12 per hour) and `AUTO_RETRY` (600 s after a failure),
   kept in `autowake.json` across restarts. Only an unread message with `wake = 1` and `held = 0` triggers it (not `--fyi`).
-  The wake starts detached (like a worker, log in `logs/wake-<name>.log`) and is judged from the database: `done`
+  For an unlocked thread, the wake starts detached (log in `logs/wake-<name>.log`) and is judged from the database: `done`
   when the messages unread at its start are read, else `failed` with the log's last lines. `wakes.json` lets a
   restarted server watch running wakes to the end and judge those that ended while it was down.
 - `POST /api/stop` `{name}` → stops a worker this server started: Ctrl+C first (so the network shows it as stopped),

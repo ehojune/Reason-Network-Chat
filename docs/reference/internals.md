@@ -12,7 +12,7 @@ and starts new agent sessions.
 | `server.py` | Python standard library HTTP server on `127.0.0.1:8765`. No dependencies. |
 | `launcher.py` | New sessions: model catalogs, `reason network serve` workers, terminal windows, the model shims, permissions, changing a running worker. |
 | `inbox_batch.py` | Opt-in same-room Codex inbox snapshots, user-first input, durable receipts and held-result inspection. See [batch contract](inbox-batches.md). |
-| `wake.py` | Wake a sleeping Codex session: `codex exec resume <thread> <fixed prompt>` in its folder; auto-wake with limits. |
+| `wake.py` | Fixed inbox prompt through native queue for idle writer-held threads, detached exec-resume for free threads; [queue contract](queue-wakes.md). |
 | `prefs.py` | Viewer settings in `REASON_CHAT_HOME/prefs.json` (whitelisted keys), so they survive a lost localStorage. |
 | `rooms.py` | Rooms: named sets of session addresses in `REASON_CHAT_HOME/rooms.json`. |
 | `relay.py` | Group rooms: sends your message to the members it `@mentions` (or the room's default recipient) with their missed lines, passes on `@name` replies and returns a member's answer to the member who asked (one level), forwards a member's 1:1 answer into the room when you ask, queues hand-offs over the room's limits. |
@@ -53,9 +53,7 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
   targets to http(s) and ending at a quote. Any agent on the network can put text in front of the user here.
 - **Do not parse CLI text output.** On Korean/Chinese Windows the console code page (CP949, GBK) garbles it. Use `--json` or the database. Decode subprocess output as UTF-8.
 - **Windows batch shims.** If `REASON_BIN` points at a `.cmd`/`.bat`, cmd.exe would re-parse message text (`&`, `|`, `%`). `server.py` refuses to start; point it at `reason.exe`.
-- **Idle Codex app sessions** leave a message unread until their next turn: nothing outside the Codex app can start one.
-  Not a Reason Network Chat bug. The page marks non-worker, non-Claude sessions *reads next turn* and offers a worker
-  in the same folder (`openLaunch({folder, agent})`). Workers from `reason network serve` answer at once.
+- **Idle writer-held Codex sessions** can receive a native queue wake when opted in. Queue acceptance is not reading; original IDs must be confirmed read. Preserve durable deduplication and uncertain holds; see [queue contract](queue-wakes.md).
 - **`reason network serve codex` on Windows** can fail with "contains a cmd.exe special character" when a `codex.cmd` shim comes first on PATH. Start workers with `rnc.py` (or the page), which puts the shim and the real `codex.exe` first.
 - **A stuck worker.** `serve` keeps a worker busy while a turn runs; a turn that hangs (an agent process waiting on a
   child that holds its handles) keeps it busy forever, and messages to it are read and queued, never answered. The
@@ -124,7 +122,7 @@ If a Reason update changes the schema, `/api/state` returns HTTP 500 with the SQ
   `CODEX_HOME/thread-writer-locks/<thread>.lock` locked until that process exits, even after `thread/unsubscribe`;
   `codex exec resume` then fails with "already has an active writer". `wake.held()` checks the lock by taking it for
   an instant (LockFileEx via `msvcrt.locking` on Windows, `flock` elsewhere). Measured with `codex app-server`
-  (the desktop app's own binary, 0.163 alpha). Writing the app's automations from outside is unsupported; do not.
+  (the desktop app's own binary, 0.163 alpha). The lock identifies an existing writer, not app ownership. Native queue forwards to that writer without a second exec. Writing app automations from outside remains unsupported.
 - **Auto-wake costs turns.** A Claude Code (push) session answers at once, so a Codex session on auto-wake and a
   Claude session can keep answering each other. The auto-wake limits in `wake.py` are what stops that; keep them.
 - **Starting sessions is too.** A worker takes work on the network as the user and keeps running after the page

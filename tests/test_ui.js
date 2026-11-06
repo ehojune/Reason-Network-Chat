@@ -324,3 +324,38 @@ vm.runInContext(String.raw`
   console.log('Section order regression checks passed');
 })()
 `, side).catch(error => { console.error(error); process.exitCode=1; });
+
+// Held app/CLI conversations keep opt-in and manual wake controls; queue receipts are never read marks.
+const queueUi = vm.createContext({assert});
+vm.runInContext(`
+let S={sessions:[{address:'p/app',agent:'codex',resumable:true,appOpen:true,status:'idle',live:true,unread:2}],
+  wakes:{},prefs:{autoWake:[]},foreignWorkers:[]};
+const nodes={'#to':{value:'p/app'}}, $=key=>nodes[key] ||= {};
+const t=key=>key, autoOn=a=>S.prefs.autoWake.includes(a), autoLimited=()=>false;
+`, queueUi);
+vm.runInContext(part('function reach(s)', 'const reachLabel'), queueUi);
+vm.runInContext(part('const sleepy =', 'const autoList ='), queueUi);
+vm.runInContext(part('const autoTrouble =', 'let sideSelection'), queueUi);
+vm.runInContext(part('const unreadTo =', 'async function wake('), queueUi);
+vm.runInContext(`
+renderNoWake();
+assert.equal(nodes['#wakeBtn'].hidden,false);
+assert.equal(nodes['#wakeAfterLabel'].hidden,false);
+assert.equal(nodes['#wakeBtn'].disabled,false);
+S.prefs.autoWake=['p/app']; assert.equal(reach(S.sessions[0]),'auto');
+S.wakes['p/app']={mode:'queue',status:'queued'}; renderNoWake();
+assert.equal(nodes['#nowake'].hidden,false);
+assert.equal(nodes['#wakeBtn'].disabled,true);
+assert.equal(nodes['#wakeNote'].textContent,'wakeQueued');
+S.wakes['p/app'].status='held'; renderNoWake();
+assert.equal(nodes['#wakeNote'].textContent,'wakeHeld');
+assert.equal(nodes['#wakeBtn'].disabled,true);
+S.wakes['p/app'].status='done'; renderNoWake();
+assert.equal(nodes['#wakeNote'].textContent,'wakeRead');
+assert.equal(nodes['#wakeBtn'].disabled,false);
+S.sessions[0].status='busy'; assert.equal(reach(S.sessions[0]),'afterTurn');
+S.wakeError='journal denied'; renderNoWake();
+assert.equal(nodes['#nowake'].hidden,false);
+assert.equal(nodes['#wakeBtn'].disabled,true);
+assert.equal(nodes['#wakeNote'].textContent,'wakeQueueErrorjournal denied');
+`, queueUi);

@@ -92,7 +92,7 @@ See the [room manual](docs/manual.md#rooms) for routing, limits and **May post f
 
 ## Before you use it
 
-- **Use a worker for persistent replies.** An idle app or CLI session may wait until its next turn to read. A conversation open in the Codex app cannot be woken from outside it. [Delivery](docs/manual.md#delivery)
+- **Use a worker for persistent replies.** An idle app or CLI session may wait until its next turn to read. Idle conversations held by an app or CLI can opt into queue wakes. [Delivery](docs/manual.md#delivery)
 - **Auto-wake and group chat spend agent turns.** Each recipient may run a turn. Fast uses more quota, with speed depending on the model and account. [Wake](docs/manual.md#wake) · [Fast](docs/manual.md#codex-fast)
 - **Full access runs commands without asking.** This includes deletion, installation and network access. [Permissions and restarts](docs/manual.md#permissions)
 - **Workers keep running after the server stops.** Use **Stop worker** to end one. Group-room relay and auto-wake need the server running.

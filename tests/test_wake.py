@@ -263,7 +263,7 @@ class AutoWakeTest(unittest.TestCase):
         self.run_pass()
         self.assertEqual(len(self.spawned), 1)
 
-    def test_skips_busy_and_app_open(self):
+    def test_skips_busy_and_reports_unsupported_app_queue(self):
         busy = {**AUTO_WHO, "sessions": [{"address": "pat/auto-codex", "machine": "box", "status": "busy"}]}
         self.run_pass(busy)
         locks = Path(os.environ["CODEX_HOME"]) / "thread-writer-locks"
@@ -276,6 +276,9 @@ class AutoWakeTest(unittest.TestCase):
         finally:
             path.unlink()
         self.assertEqual(self.spawned, [])
+        self.assertEqual(self.w.view()["pat/auto-codex"]["status"], "failed")
+        self.assertIn("queue", self.w.view()["pat/auto-codex"]["error"])
+        self.w.state.clear()  # explicit test reset: resume the existing unlocked wake case
         self.run_pass()
         self.assertEqual(len(self.spawned), 1)
 

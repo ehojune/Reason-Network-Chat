@@ -233,6 +233,22 @@ class QueueWakeTest(unittest.TestCase):
         self.assertEqual(self.w.view()[ADDRESS]["status"], "done")
         self.assertEqual(len(self.journal()["batches"][0]["ids"]), 1002)
 
+    def test_unsupported_auto_queue_is_visible_and_does_not_poll_models(self):
+        with mock.patch("wake.subprocess.run", return_value=subprocess.CompletedProcess([], 2, b"", b"")) as run:
+            self.w.auto([ADDRESS], self.who)
+            self.w.auto([ADDRESS], self.who)
+        self.assertEqual(run.call_count, 1)  # only the non-model capability probe
+        self.assertEqual(self.w.view()[ADDRESS]["status"], "failed")
+        self.assertIn("does not support native queue", self.w.view()[ADDRESS]["error"])
+        self.assertFalse(self.w.queue_path.exists())
+
+    def test_completed_queue_history_cannot_hide_running_legacy_wake(self):
+        self.w.wake(ADDRESS, self.who)
+        self.read()
+        at = self.journal()["batches"][0]["at"]
+        self.w.state[ADDRESS] = {"status": "running", "at": at}
+        self.assertEqual(self.w.view()[ADDRESS]["status"], "running")
+
 
 if __name__ == "__main__":
     unittest.main()

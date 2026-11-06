@@ -149,7 +149,8 @@ class Waker:
                         and time.time() * 1000 - b["at"] > TIMEOUT * 1000):
                     b.update(status="held", error="Delivery uncertain or still unread; automatic resend is blocked.")
                     changed = True
-            if self.state.get(b["address"], {}).get("at", -1) <= b["at"]:
+            current = self.state.get(b["address"], {})
+            if current.get("status") != "running" and current.get("at", -1) <= b["at"]:
                 self.state[b["address"]] = {"status": b["status"], "at": b["at"], "mode": "queue",
                                             "error": b.get("error", ""), "auto": bool(b.get("auto"))}
             if b.get("auto") and 0 <= time.time() - b["at"] / 1000 < AUTO_WINDOW:
@@ -357,7 +358,12 @@ class Waker:
                 continue
             try:
                 self.wake(address, who, auto=True)
-            except WakeError:
+            except WakeError as e:
+                if e.code == 503:  # unsupported queue must also be visible for unattended auto-wake
+                    with self.lock:
+                        self.state[address] = {"status": "failed", "at": int(time.time() * 1000),
+                                               "error": str(e)[:300], "auto": True}
+                        self.save_auto()
                 continue  # busy, unavailable or no new eligible IDs: no dispatch on this pass
 
     def wake(self, address, who, auto=False):

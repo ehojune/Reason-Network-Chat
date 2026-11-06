@@ -354,4 +354,8 @@ S.wakes['p/app'].status='done'; renderNoWake();
 assert.equal(nodes['#wakeNote'].textContent,'wakeRead');
 assert.equal(nodes['#wakeBtn'].disabled,false);
 S.sessions[0].status='busy'; assert.equal(reach(S.sessions[0]),'afterTurn');
+S.wakeError='journal denied'; renderNoWake();
+assert.equal(nodes['#nowake'].hidden,false);
+assert.equal(nodes['#wakeBtn'].disabled,true);
+assert.equal(nodes['#wakeNote'].textContent,'wakeQueueErrorjournal denied');
 `, queueUi);

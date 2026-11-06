@@ -28,7 +28,8 @@ written into the page) tells an open page that the server restarted: it reloads 
 get the new token, and a newer server also triggers a reload.
 
 - `GET /api/state` →
-  `{api, boot, team, me, sessions[], messages[], launched[], rooms[], relays{}, queued{}, notices{}, forwarded{}, settled{}, relayDefaults{}, prefs{}, wakes{}, whoError, now}`.
+  `{api, boot, team, me, sessions[], messages[], launched[], rooms[], relays{}, queued{}, notices{}, forwarded{}, settled{}, relayDefaults{}, prefs{}, wakes{}, wakeError, whoError, now}`.
+  `wakeError` is a queue-history availability error; dispatch is blocked while chats and unrelated controls remain usable. Preserve the journal during recovery.
   Each session also has `resumable` (a Codex session of yours on this computer) and `appOpen` (another Codex process,
   app or CLI, holds the thread's writer lock); `wakes{}` = address →
   `{status: running|done|failed|queued|held, at, error, auto, mode?: queue, limitUntil?}` (`limitUntil`: auto-wake rests until then).

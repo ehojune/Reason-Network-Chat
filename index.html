@@ -385,6 +385,7 @@ const T = {
     fav: "★ 즐겨찾기", unfav: "☆ 즐겨찾기 해제", favs: "즐겨찾기", favFull: "즐겨찾기는 100개까지입니다.", split: "목록 너비 (←/→, 두 번 누르면 원래대로)",
     wake: "깨우기", waking: "깨우는 중…", wakeAfter: "보낸 뒤 깨우기", woke: "깨움: ", wakeFailed: "깨우기 실패: ",
     wakeQueued: "대기열 접수 · 아직 읽음 확인 전", wakeHeld: "전달 불확실 · 재전송 보류", wakeRead: "원문 메시지 읽음 확인",
+    wakeQueueError: "깨우기 기록 확인 실패 · 기록을 보존한 채 복구하세요: ",
     wakeNo: "이 에이전트는 깨우기 미지원", wakeNoUnread: "안 읽은 메시지가 없어 깨울 일이 없습니다.",
     wakeAsk: "{name}의 Codex 대화에서 한 차례를 돌려 안 읽은 메시지를 읽고 답하게 합니다. 그 차례는 대화 기록에 남습니다. 계속할까요?",
     sectionFold: "접기", sectionExpand: "펼치기",
@@ -482,6 +483,7 @@ const T = {
     fav: "★ Favorite", unfav: "☆ Remove from favorites", favs: "Favorites", favFull: "Up to 100 favorites.", split: "List width (←/→, double-click to reset)",
     wake: "Wake", waking: "Waking…", wakeAfter: "Wake after sending", woke: "Woke: ", wakeFailed: "Wake failed: ",
     wakeQueued: "Queue accepted · reading not yet confirmed", wakeHeld: "Delivery uncertain · resend held", wakeRead: "Original messages confirmed read",
+    wakeQueueError: "Wake history unavailable · recover without deleting the journal: ",
     wakeNo: "this agent cannot be woken", wakeNoUnread: "It has no unread messages, so there is nothing to wake it for.",
     wakeAsk: "Run one turn in {name}'s Codex conversation so it reads its unread messages and replies. The turn stays in that conversation's history. Continue?",
     sectionFold: "Collapse", sectionExpand: "Expand",
@@ -581,6 +583,7 @@ const T = {
     fav: "★ 收藏", unfav: "☆ 取消收藏", favs: "收藏", favFull: "最多收藏 100 个。", split: "列表宽度（←/→，双击恢复）",
     wake: "唤醒", waking: "唤醒中…", wakeAfter: "发送后唤醒", woke: "已唤醒：", wakeFailed: "唤醒失败：",
     wakeQueued: "队列已接收 · 尚未确认已读", wakeHeld: "投递不确定 · 暂停重发", wakeRead: "已确认原始消息已读",
+    wakeQueueError: "无法读取唤醒记录 · 请保留日志并恢复：",
     wakeNo: "此智能体不支持唤醒", wakeNoUnread: "没有未读消息，无需唤醒。",
     wakeAsk: "将在 {name} 的 Codex 对话中运行一轮，让它读取未读消息并回复。这一轮会保留在该对话记录中。继续吗？",
     sectionFold: "收起", sectionExpand: "展开",
@@ -1507,7 +1510,7 @@ function render(force) {
   $("#stop").hidden = !(sel && launchedHere(sel));
   const ss = sel && S.sessions.find(x => x.address === sel);
   $("#wakeHead").hidden = !(ss && ss.resumable && sleepy(ss) && unreadTo(sel));
-  $("#wakeHead").disabled = !!(ss && waking(sel));
+  $("#wakeHead").disabled = !!(ss && (waking(sel) || S.wakeError));
   $("#wakeHead").textContent = t(ss && waking(sel) ? "waking" : "wake");
   TR = troubles();
   renderTrouble();
@@ -1523,20 +1526,21 @@ const unreadTo = a => (S.sessions.find(x => x.address === a) || {}).unread > 0; 
 const waking = a => ["running", "queued", "held"].includes((S.wakes[a] || {}).status);
 function renderNoWake() {
   const s = S.sessions.find(x => x.address === $("#to").value);
-  const show = sleepy(s) || autoTrouble(s);
+  const show = sleepy(s) || autoTrouble(s) || !!(s && s.resumable && S.wakeError);
   $("#nowake").hidden = !show;
   $("#wakeAfterLabel").hidden = !(sleepy(s) && s.resumable);
   if (!show) return;
   $("#nowakeText").textContent = t({offline: "nwOffline", stale: "nwOffline", gone: "nwOffline", appOpen: "nwAppOpen", pull: "nwPull",
     nextTurn: "nowake", auto: "nwAuto"}[reach(s)] || "nowake");
   $("#wakeBtn").hidden = !s.resumable;
-  $("#wakeBtn").disabled = waking(s.address) || !unreadTo(s.address);
+  $("#wakeBtn").disabled = waking(s.address) || !!S.wakeError || !unreadTo(s.address);
   $("#wakeBtn").title = unreadTo(s.address) ? "" : t("wakeNoUnread");
   $("#wakeBtn").textContent = t(waking(s.address) ? "waking" : "wake");
   const w = S.wakes[s.address];
   const until = w && w.limitUntil > Date.now()
     ? new Date(w.limitUntil).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}) : null;
   $("#wakeNote").textContent = !s.resumable ? `(${t("wakeNo")})`
+    : S.wakeError ? t("wakeQueueError") + S.wakeError
     : w && w.mode === "queue" && ["queued", "held", "done"].includes(w.status) ? t({queued: "wakeQueued", held: "wakeHeld", done: "wakeRead"}[w.status])
     : until && autoOn(s.address) ? t("autoLimit").replace("{time}", until)
     : w && w.status === "failed" ? t("wakeFailed") + w.error : "";
@@ -1572,7 +1576,7 @@ async function poll() {
     if ((j.boot && j.boot !== BOOT) || j.api > API) { if (reloadOnce()) return; }
     if (j.api !== API) return say(t(j.api > API ? "reloadPage" : "restart").replace("{p}", API).replace("{s}", j.api ?? 1), true);
     if (j.boot !== BOOT) return say(t("reloadPage"), true);
-    S = {sessions: [], messages: [], launched: [], foreignWorkers: [], workerRecords: [], rooms: [], relays: {}, queued: {}, notices: {}, prefs: {}, wakes: {},
+    S = {sessions: [], messages: [], launched: [], foreignWorkers: [], workerRecords: [], rooms: [], relays: {}, queued: {}, notices: {}, prefs: {}, wakes: {}, wakeError: "",
       relayDefaults: {hops: 100, budget: 300, window: 600}, ...j};
     render();
     say(j.whoError ? t("whoErr") + j.whoError : `${t("updated")} ${fmtT(j.now)}`, !!j.whoError);

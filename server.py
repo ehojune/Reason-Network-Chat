@@ -254,7 +254,7 @@ def state():
     return {"api": API, "boot": BOOT, "team": who.get("team"), "me": me, "sessions": sessions, "messages": msgs,
             "launched": launched, "foreignWorkers": LAUNCHER.list_foreign(), "workerRecords": list(records.values()), "rooms": ROOMS.list(), "relays": relays, "queued": queued, "notices": notices, "forwarded": forwarded, "settled": settled,
             "relayDefaults": {"hops": relay_mod.MAX_HOPS, "budget": relay_mod.BUDGET, "window": relay_mod.BUDGET_WINDOW},
-            "prefs": PREFS.get(), "wakes": WAKER.view(),
+            "prefs": PREFS.get(), "wakes": WAKER.view(), "wakeError": WAKER.queue_error,
             "batchReceipts": batch_receipts(STATE, DB, {m["id"] for m in msgs}),
             "whoError": who_err, "now": int(time.time() * 1000)}
 

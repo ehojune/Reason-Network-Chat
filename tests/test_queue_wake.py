@@ -249,6 +249,36 @@ class QueueWakeTest(unittest.TestCase):
         self.w.state[ADDRESS] = {"status": "running", "at": at}
         self.assertEqual(self.w.view()[ADDRESS]["status"], "running")
 
+    def test_corrupt_journal_preserves_history_and_leaves_views_available(self):
+        self.w.wake(ADDRESS, self.who)
+        original = self.w.queue_path.read_bytes()
+        damaged = original[:-5]
+        self.w.queue_path.write_bytes(damaged)
+        again = self.waker()  # server construction must still succeed
+        self.assertIsInstance(again.view(), dict)
+        self.assertIn("Cannot read queue dispatch history", again.queue_error)
+        again.auto([ADDRESS], self.who)
+        with self.assertRaises(wake.WakeError):
+            again.wake(ADDRESS, self.who)
+        self.assertEqual(again.queue_path.read_bytes(), damaged)
+        self.assertEqual(len(self.calls), 1)
+        again.queue_path.write_bytes(original)  # fixture repair preserves every dispatched ID
+        self.assertEqual(again.view()[ADDRESS]["status"], "queued")
+        self.assertEqual(again.queue_error, "")
+        with self.assertRaises(wake.WakeError):
+            again.wake(ADDRESS, self.who)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_unreadable_journal_leaves_views_available_and_blocks_dispatch(self):
+        with mock.patch.object(self.w, "queue_data", side_effect=PermissionError("denied")):
+            self.assertIsInstance(self.w.view(), dict)
+            self.assertEqual(self.w.queue_error, "denied")
+            self.w.auto([ADDRESS], self.who)
+            with self.assertRaises(wake.WakeError):
+                self.w.wake(ADDRESS, self.who)
+        self.assertFalse(self.w.queue_path.exists())
+        self.assertEqual(self.calls, [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -81,6 +81,7 @@ class Waker:
         self.auto_path = Path(home) / "autowake.json" if home else None
         self.queue_path = Path(home) / "queue-wakes.json" if home else None
         self.queue_support = {}
+        self.queue_error = ""
         self.running = {}  # address -> {"pid", "started", "at", "ids", "log"}
         now = time.time()
         for address, a in self.load(self.auto_path).items():  # auto-wake limits from before a restart
@@ -101,7 +102,7 @@ class Waker:
             self.state[address] = {"status": "running", "at": int(w.get("at") or 0), "error": "",
                                    "auto": bool(w.get("auto"))}
             threading.Thread(target=self.watch, args=(address, w), daemon=True).start()  # alive or not: it judges
-        self.refresh_queue()
+        self.refresh_queue(strict=False)
 
     def queue_data(self):
         """Fail closed: losing dispatch history must never silently enable a replay."""
@@ -161,13 +162,20 @@ class Waker:
         if changed:
             atomic_json(self.queue_path, data, durable=True)
 
-    def refresh_queue(self):
+    def refresh_queue(self, strict=True):
         if not self.queue_path:
             return {"version": 1, "batches": []}
-        with self.lock, file_lock(self.queue_path.with_suffix(".lock")):
-            data = self.queue_data()
-            self.reconcile_queue(data)
-            return data
+        try:
+            with self.lock, file_lock(self.queue_path.with_suffix(".lock")):
+                data = self.queue_data()
+                self.reconcile_queue(data)
+                self.queue_error = ""
+                return data
+        except (WakeError, OSError) as e:
+            self.queue_error = str(e)
+            if strict:
+                raise WakeError(f"Queue dispatch history unavailable; wake held: {e}", 503) from e
+            return None  # keep chats/controls available while dispatch fails closed
 
     def supports_queue(self, codex):
         if Path(codex).suffix.lower() in {".cmd", ".bat"}:
@@ -277,7 +285,7 @@ class Waker:
         self.write(self.auto_path, data)
 
     def view(self):
-        self.refresh_queue()
+        self.refresh_queue(strict=False)
         with self.lock:
             out = {a: dict(v) for a, v in self.state.items()}
             now = time.time()
@@ -338,7 +346,8 @@ class Waker:
 
     def auto(self, addresses, who):
         """One auto-wake pass over the sessions in the autoWake setting; `who` is a recent `who --all --json`."""
-        self.refresh_queue()
+        if self.refresh_queue(strict=False) is None:
+            return
         now = time.time()
         for address in addresses:
             with self.lock:

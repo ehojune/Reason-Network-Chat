@@ -104,6 +104,17 @@ class ContextTests(unittest.TestCase):
             self.turn()
         self.assertEqual(self.calls, [])
 
+    def test_non_stream_cli_commands_are_not_swallowed_by_context_bridge(self):
+        import subprocess
+        import sys
+        import launcher
+        atomic_json(self.settings, {'claudeContext': True, 'args': []})
+        env = dict(os.environ, REASON_CHAT_SHIM_REAL=sys.executable, REASON_CHAT_SHIM_SETTINGS=str(self.settings))
+        result = subprocess.run([sys.executable, '-c', launcher.SHIM_MAIN.decode(), '-c', 'print("CLI_HELP_OK")'],
+                                input='', capture_output=True, encoding='utf-8', env=env, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), 'CLI_HELP_OK')
+
     def test_legacy_seed_preserves_exact_id_and_checks_sender(self):
         import uuid
         sid = str(uuid.uuid4())

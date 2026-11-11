@@ -322,7 +322,8 @@ if env.get("REASON_CHAT_SHIM_SETTINGS"):
         settings = {}
 if not isinstance(extra, list):
     extra = json.loads(env.get("REASON_CHAT_SHIM_ARGS") or env.get("REASON_CHAT_CODEX_ARGS") or "[]")
-if settings.get("claudeContext") is True:
+native_stream = any(sys.argv[i:i+2] == ["--input-format", "stream-json"] for i in range(1, len(sys.argv)))
+if settings.get("claudeContext") is True and native_stream and not env.get("CLAUDECODE"):
     from claude_context import run
     sys.exit(run(env["REASON_CHAT_SHIM_SETTINGS"], real, sys.argv[1:]))
 if env.get("REASON_CHAT_SHIM_SETTINGS"):

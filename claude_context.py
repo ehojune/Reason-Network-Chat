@@ -273,7 +273,7 @@ def reconcile_terminal(settings, peer, transcript, quota_only=True):
         state.setdefault('failures' if is_quota else 'receipts', {})[pending['id']] = {
             'digest': pending['digest'], 'result': result, 'reason': 'rate_limit' if is_quota else 'recovered_text', 'noSideEffects': True,
             'evidence': str(transcript)}
-        state['pending'] = None
+        state.update(pending=None, started=True)
         atomic_json(path, state, durable=True)
         return True
 

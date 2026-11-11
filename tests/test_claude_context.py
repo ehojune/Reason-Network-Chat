@@ -150,6 +150,9 @@ class ContextTests(unittest.TestCase):
         self.turn()
         self.assertEqual(self.calls,[])
         self.assertEqual(self.events[-1]['result'],'saved answer')
+        self.turn(message('new-after-reconcile'))
+        self.assertIn('--resume',self.calls[-1])
+        self.assertNotIn('--session-id',self.calls[-1])
 
     def test_midturn_settings_change_does_not_interrupt_execution(self):
         def execute(command, request, emit):

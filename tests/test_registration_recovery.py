@@ -72,6 +72,28 @@ class RecoveryTests(unittest.TestCase):
                     kill.assert_not_called()
                     launcher.start_worker.assert_not_called()
 
+    def test_failed_launch_restores_once_only_when_absence_proven(self):
+        with tempfile.TemporaryDirectory() as directory:
+            worker = dict(name='test-worker',pid=42,family='codex',cwd=directory,model='saved-model')
+            for running in (set(), None, {'test-worker'}):
+                launcher = Mock(workers={'test-worker':worker}, records={}, restarting=set(), lock=threading.Lock())
+                launcher.operation.side_effect = contextlib.nullcontext
+                launcher.running_serve_names.return_value = running
+                launcher.start_worker.side_effect = [OSError('transient spawn failure'), dict(worker,pid=43)]
+                with patch('registration_recovery.preflight'), patch('launcher.HOME',Path(directory)), \
+                     patch('launcher.kill_tree'), patch('launcher.list_processes'), \
+                     patch('claude_context.paused_ingress',return_value=contextlib.nullcontext()):
+                    if running == set():
+                        rr.repair(launcher,worker,Mock(return_value={'status':'idle','pending':[]}))
+                        self.assertEqual(launcher.start_worker.call_count,2)
+                        self.assertEqual(launcher.start_worker.call_args_list[0],launcher.start_worker.call_args_list[1])
+                        self.assertEqual(launcher.workers['test-worker']['pid'],43)
+                    else:
+                        with self.assertRaisesRegex(ValueError,'uncertain'):
+                            rr.repair(launcher,worker,Mock(return_value={'status':'idle','pending':[]}))
+                        self.assertEqual(launcher.start_worker.call_count,1)
+                self.assertFalse(launcher.restarting)
+
     def test_missing_replacement_prerequisites_retain_receiver(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

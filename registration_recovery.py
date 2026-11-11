@@ -59,7 +59,7 @@ def repair(launcher, worker, observe):
                 raise ValueError('Receiver termination uncertain; no second receiver started')
         with launcher.lock:
             launcher.restarting.add(name)
-        try:
+        def start():
             replacement = launcher.start_worker(family, cwd, recorded.get('model') or '',
                 recorded.get('effort') or '', name, bool(recorded.get('fullAccess', worker.get('fullAccess'))),
                 recorded.get('fast', worker.get('fast')))
@@ -68,6 +68,19 @@ def repair(launcher, worker, observe):
                 launcher.save()
                 launcher.remember(replacement)
             launcher.settle(replacement)
+        try:
+            try:
+                start()
+            except Exception as failure:
+                # A spawn timeout can hide a live receiver. Never start another until absence is proven.
+                from launcher import list_processes
+                running = launcher.running_serve_names(list_processes())
+                if running is None or name in running:
+                    raise ValueError('Replacement outcome uncertain; no duplicate recovery started') from failure
+                try:
+                    start()  # one bounded restoration of the same recorded model and conversation journals
+                except Exception as recovery:
+                    raise ValueError('Receiver restoration failed; journals and inbox retained: ' + str(recovery)) from failure
         finally:
             with launcher.lock:
                 launcher.restarting.discard(name)

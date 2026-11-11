@@ -5,6 +5,12 @@
 What changed in Reason Network Chat, newest first. Times are KST.
 Each row links to its pull request; the first two commits went straight to `main`.
 
+## 2026-11-11
+
+| Time | Change | What changed |
+| --- | --- | --- |
+| 14:08 | [#70](https://github.com/ehojune/Reason-Network-Chat/pull/70) | Preserve Claude sender conversations when changing model/effort; hold uncertain turns and prevent duplicate execution. |
+
 ## 2026-11-06
 
 | Time | Change | What changed |

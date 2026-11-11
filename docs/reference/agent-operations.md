@@ -64,9 +64,7 @@ usage. Why not `serve` directly:
 - **Managed.** A worker started this way is recorded (`spawned.jsonl`, `worker-records.json`), so the page can
   change, restart and stop it; one you start yourself shows as *started elsewhere* until someone adopts it.
 
-## Codex Fast mode
-
-### Claude model changes without losing conversations
+## Claude model changes without losing conversations
 
 Use `/api/workers/configure` for a model/effort change with unchanged permissions. First migration needs a
 verified idle worker, an empty native queue and existing transcripts. A failed check leaves it running; do not
@@ -79,6 +77,8 @@ new turn; changes during a turn wait for the next input. Claude may compact a la
 transcripts. An uncertain turn is held, not replayed. Resolve it from the transcript before retrying; never
 delete its pending marker to bypass the hold. Previously completed IDs return their saved answer without tools.
 The catalog uses Claude's SDK initialization model list (no model call), with help/cache fallback for older CLIs.
+
+## Codex Fast mode
 
 Codex launch/configure requests accept `fast: true|false|null`: Fast / Standard / inherit CLI config. Omitted speed
 on configure preserves the worker's current choice; old records inherit. Codex live settings update the next

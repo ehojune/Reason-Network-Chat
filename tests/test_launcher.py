@@ -305,6 +305,46 @@ class ConfigureTest(unittest.TestCase):
         self.assertTrue(self.conf(name="a-claude", fullAccess=True)["restarted"])
         self.assertEqual(self.restarts, [("claude", "", "", True)])
 
+    def test_context_claude_changes_live_even_when_busy(self):
+        from unittest.mock import patch
+        w = self.l.workers['a-claude']
+        w.update(claudeContext=True, settings=str(self.settings), fullAccess=False)
+        with patch.object(self.l, 'check_model', return_value=(None, 'new-model', 'medium')):
+            result = self.conf(name='a-claude', model='new-model', effort='medium', busy=True)
+        self.assertFalse(result['restarted'])
+        self.assertEqual(self.restarts, [])
+        self.assertEqual(json.loads(self.settings.read_text())['args'], ['--model', 'new-model', '--effort', 'medium'])
+
+    def test_legacy_context_migration_refuses_racing_inbox_even_with_force(self):
+        from contextlib import nullcontext
+        from unittest.mock import patch
+        idle = {'status': 'idle', 'pending': []}
+        queued = {'status': 'idle', 'pending': ['new-message']}
+        with patch.object(self.l, 'check_model', return_value=(None, 'new-model', 'medium')), \
+             patch('assignments.live_observer') as observer, \
+             patch('claude_context.paused_ingress', return_value=nullcontext()), \
+             patch('launcher.shim_dir', return_value='shim'), \
+             patch('launcher.shim_current', return_value=True), \
+             patch('launcher.kill_tree') as kill:
+            observer.return_value.side_effect = [idle, queued]
+            self.bad(409, name='a-claude', model='new-model', effort='medium', force=True)
+            kill.assert_not_called()
+            self.assertEqual(self.restarts, [])
+
+    def test_legacy_context_migration_refuses_missing_transcript_without_killing(self):
+        from contextlib import nullcontext
+        from unittest.mock import patch
+        with patch.object(self.l, 'check_model', return_value=(None, 'new-model', 'medium')), \
+             patch('assignments.live_observer') as observer, \
+             patch('claude_context.paused_ingress', return_value=nullcontext()), \
+             patch('claude_context.prepare_legacy', side_effect=ValueError('missing transcript')), \
+             patch('launcher.shim_dir', return_value='shim'), \
+             patch('launcher.shim_current', return_value=True), \
+             patch('launcher.kill_tree') as kill:
+            observer.return_value.return_value = {'status': 'idle', 'pending': []}
+            self.bad(409, name='a-claude', model='new-model', effort='medium')
+            kill.assert_not_called()
+
     def test_during_a_restart(self):
         seen = {}
 

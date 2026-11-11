@@ -66,6 +66,20 @@ usage. Why not `serve` directly:
 
 ## Codex Fast mode
 
+### Claude model changes without losing conversations
+
+Use `/api/workers/configure` for a model/effort change with unchanged permissions. First migration needs a
+verified idle worker, an empty native queue and existing transcripts. A failed check leaves it running; do not
+force a busy migration. Windows briefly freezes only the native receiver to close the acceptance race, then
+rechecks the durable queue before replacing an idle receiver. Running model turns are never migrated.
+
+The migrated stream bridge resumes each sender's exact Claude conversation ID. It reads settings before each
+new turn; changes during a turn wait for the next input. Claude may compact a large conversation normally.
+`claude-context/NAME` stores conversation IDs, pending intent and completed receipts. Keep it with settings and
+transcripts. An uncertain turn is held, not replayed. Resolve it from the transcript before retrying; never
+delete its pending marker to bypass the hold. Previously completed IDs return their saved answer without tools.
+The catalog uses Claude's SDK initialization model list (no model call), with help/cache fallback for older CLIs.
+
 Codex launch/configure requests accept `fast: true|false|null`: Fast / Standard / inherit CLI config. Omitted speed
 on configure preserves the worker's current choice; old records inherit. Codex live settings update the next
 invocation without interrupting a turn. Restart records retain speed. Terminal windows receive the same overrides.

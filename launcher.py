@@ -1732,7 +1732,13 @@ class Launcher:
                             raise ValueError('Listener termination is uncertain; no replacement started. Inspect before retrying.')
                 except Exception as exc:
                     raise LaunchError('Context migration refused: ' + str(exc), 409) from exc
-                return self.replace_context_worker(w, fam, model, effort, full, fast)
+                self.restarting.add(name)
+                self.lock.release()
+                try:
+                    return self.replace_context_worker(w, fam, model, effort, full, fast)
+                finally:
+                    self.lock.acquire()
+                    self.restarting.discard(name)
             # Its record stays in workers.json until the new process replaces it, so a server that stops midway
             # still knows the worker; `restarting` keeps the name taken and its place counted meanwhile.
             self.restarting.add(name)

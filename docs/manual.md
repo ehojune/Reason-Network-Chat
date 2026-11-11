@@ -151,7 +151,8 @@ permissions. The row shows the current ones.
 |---|---|
 | Codex worker: model, effort or speed | applies from its next message with live settings, no restart |
 | Codex worker: permissions | restarts it under the same name |
-| Claude worker: anything | restarts it under the same name; the conversations it kept per sender are lost |
+| Claude worker: model or effort | preserves each sender's conversation ID; initial migration requires idle with an empty inbox, later changes apply next turn |
+| Claude worker: permissions | restarts it; an unmigrated worker loses its in-memory conversations |
 
 A restart is a clean stop (the network shows it stopped) and a new `serve` under the same name. If the worker is in
 the middle of a turn, the page asks again first: restarting then loses that turn. Workers started before this

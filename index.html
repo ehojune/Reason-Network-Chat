@@ -2069,7 +2069,7 @@ async function configureWorker(force) {
   const permChanged = !!w.fullAccess !== LF.full;
   if (!permChanged && (w.model || "") === model && (w.effort || "") === effort && (w.fast ?? null) === LF.fast) return hint(t("unchanged"));
   const restart = permChanged || !w.liveSettings;
-  if (!force && restart && !confirm(t(w.family === "claude" ? "restartAskClaude" : "restartAsk"))) return;
+  if (!force && restart && !confirm(t(w.family === "claude" && !permChanged ? "restartAskClaude" : "restartAsk"))) return;
   $("#lfGo").disabled = true; hint(t(restart ? "restarting" : "applying"));
   try {
     const j = await post("/api/workers/configure", {name: w.name, model, effort, fullAccess: LF.full, fast: LF.fast, force, preserveContext: w.family === "claude"});

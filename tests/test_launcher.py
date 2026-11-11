@@ -326,7 +326,7 @@ class ConfigureTest(unittest.TestCase):
              patch('launcher.shim_dir', return_value='shim'), \
              patch('launcher.shim_current', return_value=True), \
              patch('launcher.find_claude', return_value='claude'), \
-             patch('launcher.run_text', return_value='2.1.322'), \
+             patch('launcher.runtime_ready', return_value=True), \
              patch('launcher.kill_tree') as kill:
             observer.return_value.side_effect = [idle, queued]
             self.bad(409, name='a-claude', model='new-model', effort='medium', force=True)
@@ -343,11 +343,30 @@ class ConfigureTest(unittest.TestCase):
              patch('launcher.shim_dir', return_value='shim'), \
              patch('launcher.shim_current', return_value=True), \
              patch('launcher.find_claude', return_value='claude'), \
-             patch('launcher.run_text', return_value='2.1.322'), \
+             patch('launcher.runtime_ready', return_value=True), \
              patch('launcher.kill_tree') as kill:
             observer.return_value.return_value = {'status': 'idle', 'pending': []}
             self.bad(409, name='a-claude', model='new-model', effort='medium')
             kill.assert_not_called()
+
+    def test_runtime_error_text_does_not_allow_migration(self):
+        from unittest.mock import patch
+        import subprocess
+        failed = subprocess.CompletedProcess(['claude', '--version'], 1, b'initialization failed', b'error')
+        with patch('launcher.subprocess.run', return_value=failed):
+            self.assertFalse(launcher.runtime_ready('claude'))
+        with patch.object(self.l, 'check_model', return_value=(None, 'new-model', 'medium')), \
+             patch('assignments.live_observer') as observer, \
+             patch('launcher.shim_dir', return_value='shim'), \
+             patch('launcher.shim_current', return_value=True), \
+             patch('launcher.find_claude', return_value='claude'), \
+             patch('launcher.runtime_ready', return_value=False), \
+             patch('launcher.kill_tree') as kill, \
+             patch('claude_context.paused_ingress') as pause:
+            observer.return_value.return_value = {'status': 'idle', 'pending': []}
+            self.bad(409, name='a-claude', model='new-model', effort='medium')
+            kill.assert_not_called()
+            pause.assert_not_called()
 
     def test_context_replacement_checks_startup_and_recovers_previous_model(self):
         from unittest.mock import patch

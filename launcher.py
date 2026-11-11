@@ -146,6 +146,17 @@ def run_text(args, timeout):
     return p.stdout.decode("utf-8", "replace") + "\n" + p.stderr.decode("utf-8", "replace")
 
 
+def runtime_ready(path):
+    if not path:
+        return False
+    try:
+        p = subprocess.run([path, '--version'], capture_output=True, timeout=10,
+                           stdin=subprocess.DEVNULL, env=base_env(), creationflags=NOWIN)
+        return p.returncode == 0 and bool(p.stdout.strip())
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 # ---------- catalogs ----------
 
 def toml_top(path, keys):
@@ -1690,7 +1701,7 @@ class Launcher:
                     if not shim_dir('claude', context=True) or not shim_current('claude', context=True):
                         raise ValueError('Cannot install the context bridge; old worker retained')
                     runtime = find_claude()
-                    if not runtime or not run_text([runtime, '--version'], 10).strip():
+                    if not runtime_ready(runtime):
                         raise ValueError('Claude runtime is unavailable; old worker retained')
                     with paused_ingress(w['pid']):
                         # No new request can be accepted between this check and replacing the listener.

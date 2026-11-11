@@ -25,7 +25,7 @@ class RecoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             worker = dict(name='test-worker', pid=42, family='claude', claudeContext=True,
                           cwd=directory, model='fable', effort='high', fullAccess=True)
-            launcher = Mock(workers={'test-worker':worker}, restarting=set(),
+            launcher = Mock(workers={'test-worker':worker}, records={}, restarting=set(),
                             lock=threading.Lock(), operation_lock=threading.RLock())
             launcher.alive.return_value = True
             launcher.wait_context_exit.return_value = True
@@ -41,10 +41,20 @@ class RecoveryTests(unittest.TestCase):
                              (directory,'fable','high','test-worker',True,None))
             launcher.settle.assert_called_once()
 
+            # Discovery may know the live identity but only the durable record knows its model.
+            discovered = dict(worker, model=None, effort=None)
+            launcher.workers['test-worker'] = discovered
+            launcher.records['test-worker'] = dict(worker, model='recorded-model',effort='medium',fast=True)
+            with patch('launcher.HOME',Path(directory)), patch('launcher.kill_tree'), \
+                 patch('claude_context.paused_ingress',return_value=contextlib.nullcontext()):
+                rr.repair(launcher,discovered,observe)
+            self.assertEqual(launcher.start_worker.call_args.args[1:],
+                             (directory,'recorded-model','medium','test-worker',True,True))
+
     def test_racing_request_or_unpublished_reply_prevents_kill(self):
         with tempfile.TemporaryDirectory() as directory:
             worker=dict(name='test-worker',pid=42,family='codex')
-            launcher=Mock(workers={'test-worker':worker},restarting=set(),lock=threading.Lock(),
+            launcher=Mock(workers={'test-worker':worker},records={},restarting=set(),lock=threading.Lock(),
                           operation_lock=threading.RLock())
             for outbox in (False,True):
                 observe=Mock(side_effect=[{'status':'idle','pending':[]}, {'status':'idle','pending':['new']}])

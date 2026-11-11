@@ -36,6 +36,7 @@ def repair(launcher, worker, observe):
         with launcher.lock:
             if launcher.workers.get(name) != worker or name in launcher.restarting or not launcher.alive(worker):
                 raise ValueError('Worker identity changed')
+            recorded = dict(launcher.records.get(name) or worker)
         if worker['family'] == 'claude' and not worker.get('claudeContext'):
             raise ValueError('Legacy Claude needs explicit context migration')
         def idle():
@@ -55,9 +56,10 @@ def repair(launcher, worker, observe):
         with launcher.lock:
             launcher.restarting.add(name)
         try:
-            family = launcher.catalog.family(worker['family'])
-            replacement = launcher.start_worker(family, worker['cwd'], worker.get('model') or '',
-                worker.get('effort') or '', name, bool(worker.get('fullAccess')), worker.get('fast'))
+            family = launcher.catalog.family(recorded.get('family') or worker['family'])
+            replacement = launcher.start_worker(family, recorded.get('cwd') or worker['cwd'], recorded.get('model') or '',
+                recorded.get('effort') or '', name, bool(recorded.get('fullAccess', worker.get('fullAccess'))),
+                recorded.get('fast', worker.get('fast')))
             with launcher.lock:
                 launcher.workers[name] = replacement
                 launcher.save()

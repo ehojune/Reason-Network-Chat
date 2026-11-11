@@ -40,6 +40,9 @@ def repair(launcher, worker, observe):
             recorded = dict(launcher.records.get(name) or worker)
         if worker['family'] == 'claude' and not worker.get('claudeContext'):
             raise ValueError('Legacy Claude needs explicit context migration')
+        family = launcher.catalog.family(recorded.get('family') or worker['family'])
+        cwd = recorded.get('cwd') or worker['cwd']
+        preflight(launcher, family, cwd, recorded, worker)
         def idle():
             state = observe(name)
             if state['status'] != 'idle' or state['pending']:
@@ -57,8 +60,7 @@ def repair(launcher, worker, observe):
         with launcher.lock:
             launcher.restarting.add(name)
         try:
-            family = launcher.catalog.family(recorded.get('family') or worker['family'])
-            replacement = launcher.start_worker(family, recorded.get('cwd') or worker['cwd'], recorded.get('model') or '',
+            replacement = launcher.start_worker(family, cwd, recorded.get('model') or '',
                 recorded.get('effort') or '', name, bool(recorded.get('fullAccess', worker.get('fullAccess'))),
                 recorded.get('fast', worker.get('fast')))
             with launcher.lock:
@@ -69,6 +71,25 @@ def repair(launcher, worker, observe):
         finally:
             with launcher.lock:
                 launcher.restarting.discard(name)
+
+
+def preflight(launcher, family, cwd, recorded, worker):
+    """Reject missing replacement prerequisites while the old receiver is still alive."""
+    from launcher import find_claude, find_codex, model_args, shim_current, STATE
+    fid = family['id']
+    real = find_claude() if fid == 'claude' else find_codex()
+    if not Path(cwd).is_dir() or not real or not Path(real).is_file() or not Path(launcher.reason).is_file():
+        raise ValueError('Replacement cwd or runtime unavailable; receiver retained')
+    model_args(fid, recorded.get('model') or '', recorded.get('effort') or '',
+               recorded.get('fast', worker.get('fast')))
+    context = False
+    settings = STATE / 'worker-settings' / (worker['name'] + '.json')
+    if settings.exists():
+        context = json.loads(settings.read_text(encoding='utf-8')).get('claudeContext') is True
+    if fid == 'claude' and context != bool(worker.get('claudeContext')):
+        raise ValueError('Replacement context settings changed; receiver retained')
+    if not shim_current(fid, context=context):
+        raise ValueError('Replacement shim unavailable or outdated; receiver retained')
 
 
 def tick(launcher):

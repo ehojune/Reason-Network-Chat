@@ -32,7 +32,7 @@ class RecoveryTests(unittest.TestCase):
             launcher.wait_context_exit.return_value = True
             launcher.start_worker.return_value = dict(worker, pid=43)
             observe = Mock(return_value={'status':'idle', 'pending':[]})
-            with patch('launcher.HOME', Path(directory)), patch('launcher.kill_tree') as kill, \
+            with patch('registration_recovery.preflight'), patch('launcher.HOME', Path(directory)), patch('launcher.kill_tree') as kill, \
                  patch('claude_context.paused_ingress', return_value=contextlib.nullcontext()):
                 rr.repair(launcher, worker, observe)
             self.assertEqual(observe.call_count,2)
@@ -47,7 +47,7 @@ class RecoveryTests(unittest.TestCase):
             discovered = dict(worker, model=None, effort=None)
             launcher.workers['test-worker'] = discovered
             launcher.records['test-worker'] = dict(worker, model='recorded-model',effort='medium',fast=True)
-            with patch('launcher.HOME',Path(directory)), patch('launcher.kill_tree'), \
+            with patch('registration_recovery.preflight'), patch('launcher.HOME',Path(directory)), patch('launcher.kill_tree'), \
                  patch('claude_context.paused_ingress',return_value=contextlib.nullcontext()):
                 rr.repair(launcher,discovered,observe)
             self.assertEqual(launcher.start_worker.call_args.args[1:],
@@ -55,7 +55,7 @@ class RecoveryTests(unittest.TestCase):
 
     def test_racing_request_or_unpublished_reply_prevents_kill(self):
         with tempfile.TemporaryDirectory() as directory:
-            worker=dict(name='test-worker',pid=42,family='codex')
+            worker=dict(name='test-worker',pid=42,family='codex',cwd=directory)
             launcher=Mock(workers={'test-worker':worker},records={},restarting=set(),lock=threading.Lock(),
                           operation_lock=threading.RLock())
             launcher.operation.side_effect=contextlib.nullcontext
@@ -65,9 +65,31 @@ class RecoveryTests(unittest.TestCase):
                     p=Path(directory)/'.reason/ask-workers/test-worker.json'
                     p.parent.mkdir(parents=True)
                     p.write_text(json.dumps([{'request':{'id':'done'},'reply':'cached'}]))
-                with patch('launcher.HOME',Path(directory)), patch('launcher.kill_tree') as kill, \
+                with patch('registration_recovery.preflight'), patch('launcher.HOME',Path(directory)), patch('launcher.kill_tree') as kill, \
                      patch('claude_context.paused_ingress',return_value=contextlib.nullcontext()):
                     with self.assertRaises(ValueError):
                         rr.repair(launcher,worker,observe)
                     kill.assert_not_called()
+                    launcher.start_worker.assert_not_called()
+
+    def test_missing_replacement_prerequisites_retain_receiver(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            exe = root/'runtime.exe'
+            exe.touch()
+            worker = dict(name='test-worker',pid=42,family='codex',cwd=directory)
+            launcher = Mock(workers={'test-worker':worker},records={},restarting=set(),
+                            lock=threading.Lock(),reason=str(exe))
+            launcher.operation.side_effect = contextlib.nullcontext
+            launcher.catalog.family.return_value = {'id':'codex'}
+            for cwd, runtime, shim in ((str(root/'missing'),str(exe),True),
+                                       (directory,None,True),(directory,str(exe),False)):
+                launcher.records['test-worker'] = dict(worker,cwd=cwd)
+                with patch('launcher.find_codex',return_value=runtime), \
+                     patch('launcher.shim_current',return_value=shim), patch('launcher.STATE',root), \
+                     patch('launcher.kill_tree') as kill, patch('claude_context.paused_ingress') as pause:
+                    with self.assertRaises(ValueError):
+                        rr.repair(launcher,worker,Mock())
+                    kill.assert_not_called()
+                    pause.assert_not_called()
                     launcher.start_worker.assert_not_called()

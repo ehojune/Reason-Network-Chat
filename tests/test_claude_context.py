@@ -17,6 +17,24 @@ def message(mid='m1', peer='person/terminal', body='hello'):
 
 
 class ContextTests(unittest.TestCase):
+    @unittest.skipIf(os.name == 'nt', 'POSIX process suspension')
+    def test_posix_listener_resumes_even_if_migration_refuses(self):
+        import subprocess
+        import sys
+        proc = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
+        try:
+            with self.assertRaisesRegex(ValueError, 'refused'):
+                with cc.paused_ingress(proc.pid):
+                    state = subprocess.check_output(['ps', '-o', 'stat=', '-p', str(proc.pid)])
+                    self.assertTrue(state.strip().startswith(b'T'))
+                    raise ValueError('refused')
+            proc.terminate()
+            proc.wait(timeout=3)  # would time out if still stopped
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=3)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

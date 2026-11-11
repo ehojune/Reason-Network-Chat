@@ -8,6 +8,8 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import signal
+import time
 import uuid
 
 from storage import atomic_json, file_lock
@@ -21,7 +23,9 @@ def paused_ingress(pid):
     durable queue entry makes migration refuse; no busy child is interrupted.
     """
     if os.name != 'nt':
-        raise ValueError('Legacy migration currently requires Windows process suspension')
+        with paused_posix(pid):
+            yield
+        return
     import ctypes
     from ctypes import wintypes
     kernel = ctypes.WinDLL('kernel32', use_last_error=True)
@@ -44,6 +48,28 @@ def paused_ingress(pid):
         if suspended:
             native.NtResumeProcess(handle)  # harmless if this verified idle listener was replaced
         kernel.CloseHandle(handle)
+
+
+@contextlib.contextmanager
+def paused_posix(pid):
+    """Stop only the ingress process; confirm it stopped before inspecting its queue."""
+    os.kill(pid, signal.SIGSTOP)
+    try:
+        deadline = time.monotonic() + 3
+        while True:
+            status = subprocess.run(['ps', '-o', 'stat=', '-p', str(pid)],
+                                    capture_output=True, timeout=2, check=True).stdout.strip()
+            if status.startswith(b'T'):
+                break
+            if time.monotonic() >= deadline:
+                raise OSError('Could not confirm stopped listener')
+            time.sleep(.02)
+        yield
+    finally:
+        try:
+            os.kill(pid, signal.SIGCONT)
+        except ProcessLookupError:
+            pass  # verified idle listener was replaced
 
 
 def root(settings):

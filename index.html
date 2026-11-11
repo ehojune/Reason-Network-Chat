@@ -2078,7 +2078,7 @@ async function configureWorker(force) {
     poll();
   } catch (err) {
     $("#lfGo").disabled = false;
-    if (w.family !== "claude" && err.status === 409 && !force && confirm(t("busyAsk").replace("{name}", w.name))) return configureWorker(true);
+    if ((w.family !== "claude" || permChanged) && err.status === 409 && !force && confirm(t("busyAsk").replace("{name}", w.name))) return configureWorker(true);
     hint(t("failed") + err.message, true);
   } finally { $("#lfGo").disabled = false; }
 }

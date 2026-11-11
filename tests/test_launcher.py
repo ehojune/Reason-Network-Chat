@@ -633,6 +633,19 @@ class DiscoverTest(unittest.TestCase):
         self.l.discover(self.procs)
         self.assertIsNone(self.l.foreign['their-codex']['fast'])
 
+    def test_owned_rediscovered_claude_recovers_context_settings(self):
+        path = launcher.STATE / 'worker-settings' / 'lost-claude.json'
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(json.dumps({'claudeContext': True,
+                                   'args': ['--model', 'claude-fable-5-2', '--effort', 'high']}), encoding='utf-8')
+        self.addCleanup(path.unlink)
+        self.l.discover(self.procs)
+        worker = self.l.workers['lost-claude']
+        self.assertTrue(worker['claudeContext'])
+        self.assertEqual(worker['settings'], str(path))
+        self.assertTrue(self.l.live_settings(worker))
+        self.assertEqual((worker['model'], worker['effort']), ('claude-fable-5-2', 'high'))
+
     def test_same_name_new_process_is_not_ours(self):
         launcher.ledger_path().write_text("", encoding="utf-8")
         launcher.record_spawn("lost-claude", 999, "t999")  # an earlier process of that name, long gone

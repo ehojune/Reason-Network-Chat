@@ -1357,6 +1357,17 @@ class Launcher:
                 # at start, or it has written its log here since it started. A log alone outlives its worker.
                 if ((f["pid"], started) in ours or wrote_our_log(f["name"], started)) and f["name"] not in self.workers:
                     w['fast'] = self.records.get(f['name'], {}).get('fast')
+                    settings = STATE / 'worker-settings' / (f['name'] + '.json')
+                    if f['family'] == 'claude':
+                        try:
+                            saved = json.loads(settings.read_text(encoding='utf-8'))
+                            if (isinstance(saved, dict) and saved.get('claudeContext') is True
+                                    and isinstance(saved.get('args'), list)
+                                    and all(isinstance(a, str) for a in saved['args'])):
+                                w.update(settings=str(settings), claudeContext=True)
+                                w['model'], w['effort'] = model_from_args('claude', saved['args'])
+                        except (OSError, ValueError, TypeError):
+                            pass
                     self.workers[f["name"]] = w
                     self.stopped.discard(f["name"])
                     self.save()

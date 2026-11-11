@@ -17,6 +17,15 @@ def message(mid='m1', peer='person/terminal', body='hello'):
 
 
 class ContextTests(unittest.TestCase):
+    def test_bridge_reads_native_utf8_even_with_legacy_console_encoding(self):
+        import subprocess
+        import sys
+        code = "import claude_context as c; c.turn=lambda s,r,a,m,e: e({'result':m['message']['content']}); raise SystemExit(c.run('unused','unused',[]))"
+        body = json.dumps({'message': {'content': '한글 확인'}}, ensure_ascii=False).encode('utf-8') + b'\n'
+        result = subprocess.run([sys.executable, '-c', code], input=body, capture_output=True,
+                                env=dict(os.environ, PYTHONIOENCODING='cp949'), timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout.decode('utf-8'))['result'], '한글 확인')
     @unittest.skipIf(os.name == 'nt', 'POSIX process suspension')
     def test_posix_listener_resumes_even_if_migration_refuses(self):
         import subprocess

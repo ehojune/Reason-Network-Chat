@@ -325,6 +325,8 @@ class ConfigureTest(unittest.TestCase):
              patch('claude_context.paused_ingress', return_value=nullcontext()), \
              patch('launcher.shim_dir', return_value='shim'), \
              patch('launcher.shim_current', return_value=True), \
+             patch('launcher.find_claude', return_value='claude'), \
+             patch('launcher.run_text', return_value='2.1.322'), \
              patch('launcher.kill_tree') as kill:
             observer.return_value.side_effect = [idle, queued]
             self.bad(409, name='a-claude', model='new-model', effort='medium', force=True)
@@ -340,10 +342,43 @@ class ConfigureTest(unittest.TestCase):
              patch('claude_context.prepare_legacy', side_effect=ValueError('missing transcript')), \
              patch('launcher.shim_dir', return_value='shim'), \
              patch('launcher.shim_current', return_value=True), \
+             patch('launcher.find_claude', return_value='claude'), \
+             patch('launcher.run_text', return_value='2.1.322'), \
              patch('launcher.kill_tree') as kill:
             observer.return_value.return_value = {'status': 'idle', 'pending': []}
             self.bad(409, name='a-claude', model='new-model', effort='medium')
             kill.assert_not_called()
+
+    def test_context_replacement_checks_startup_and_recovers_previous_model(self):
+        from unittest.mock import patch
+        old = dict(self.l.workers['a-claude'], model='old', effort='high')
+        self.l.running_serve_names = lambda procs: set()
+        with patch('launcher.list_processes', return_value=[]), \
+             patch.object(self.l, 'settle', side_effect=[launcher.LaunchError('exited', 502), None]) as settle:
+            with self.assertRaisesRegex(launcher.LaunchError, 'previous model listener was restored'):
+                self.l.replace_context_worker(old, self.l.catalog.family('claude'), 'new', 'medium', False, None)
+        self.assertEqual(settle.call_count, 2)
+        self.assertEqual(self.restarts, [('claude', 'new', 'medium', False), ('claude', 'old', 'high', False)])
+        self.assertEqual(self.l.workers['a-claude']['model'], 'old')
+
+    def test_context_replacement_never_starts_second_uncertain_listener(self):
+        from unittest.mock import patch
+        old = dict(self.l.workers['a-claude'], model='old', effort='high')
+        self.l.running_serve_names = lambda procs: {'a-claude'}
+        with patch('launcher.list_processes', return_value=[]), \
+             patch.object(self.l, 'start_worker', side_effect=OSError('unknown spawn outcome')) as start:
+            with self.assertRaisesRegex(launcher.LaunchError, 'could not be verified'):
+                self.l.replace_context_worker(old, self.l.catalog.family('claude'), 'new', 'medium', False, None)
+        self.assertEqual(start.call_count, 1)
+
+    def test_context_replacement_reports_recovery_failure_honestly(self):
+        from unittest.mock import patch
+        old = dict(self.l.workers['a-claude'], model='old', effort='high')
+        self.l.running_serve_names = lambda procs: set()
+        with patch('launcher.list_processes', return_value=[]), \
+             patch.object(self.l, 'start_worker', side_effect=OSError('runtime unavailable')):
+            with self.assertRaisesRegex(launcher.LaunchError, 'worker needs startup repair'):
+                self.l.replace_context_worker(old, self.l.catalog.family('claude'), 'new', 'medium', False, None)
 
     def test_during_a_restart(self):
         seen = {}

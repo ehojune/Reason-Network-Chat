@@ -1688,6 +1688,9 @@ class Launcher:
                         raise ValueError('Wait for the current turn and native inbox to finish; force is not allowed.')
                     if not shim_dir('claude', context=True) or not shim_current('claude', context=True):
                         raise ValueError('Cannot install the context bridge; old worker retained')
+                    runtime = find_claude()
+                    if not runtime or not run_text([runtime, '--version'], 10).strip():
+                        raise ValueError('Claude runtime is unavailable; old worker retained')
                     with paused_ingress(w['pid']):
                         # No new request can be accepted between this check and replacing the listener.
                         observed = observe(name)
@@ -1704,13 +1707,9 @@ class Launcher:
                         kill_tree(w['pid'])
                         if self.alive(w):
                             raise ValueError('Old listener did not exit; refusing a second writer')
-                    nw = self.start_worker(fam, w['cwd'], model, effort, name, full, fast)
-                    self.workers[name] = nw
-                    self.save()
-                    self.remember(nw)
-                    return {'ok': True, 'restarted': True}
                 except Exception as exc:
                     raise LaunchError('Context migration refused: ' + str(exc), 409) from exc
+                return self.replace_context_worker(w, fam, model, effort, full, fast)
             # Its record stays in workers.json until the new process replaces it, so a server that stops midway
             # still knows the worker; `restarting` keeps the name taken and its place counted meanwhile.
             self.restarting.add(name)
@@ -1726,6 +1725,36 @@ class Launcher:
             self.restarting.discard(name)
         self.settle(nw)
         return {"ok": True, "restarted": True}
+
+    def replace_context_worker(self, old, fam, model, effort, full, fast):
+        """Called only after an idle legacy listener was removed with durable resume evidence."""
+        name = old['name']
+        def start(m, e, f):
+            worker = self.start_worker(fam, old['cwd'], m, e, name, full, f)
+            self.workers[name] = worker
+            self.save()
+            self.remember(worker)
+            self.settle(worker)
+            return worker
+        try:
+            start(model, effort, fast)
+            return {'ok': True, 'restarted': True}
+        except Exception as failure:
+            # Keep the same sender journals. Never fall back to a new conversation,
+            # kill a possibly busy replacement, or replay a request to repair startup.
+            settings = STATE / 'worker-settings' / (name + '.json')
+            write_settings(settings, model_args('claude', old.get('model') or '', old.get('effort') or ''))
+            running = self.running_serve_names(list_processes())
+            if running is None or name in running:
+                raise LaunchError('Replacement startup could not be verified. Previous model settings restored; '
+                                  'existing processes, messages and context were retained. Inspect the listener before retrying.', 502) from failure
+            try:
+                start(old.get('model') or '', old.get('effort') or '', old.get('fast'))
+            except Exception as recovery:
+                raise LaunchError('Replacement and recovery startup failed. Previous settings, conversation IDs and '
+                                  'inbox are preserved, but this worker needs startup repair: ' + str(recovery), 502) from failure
+            raise LaunchError('Requested settings were not applied: replacement startup failed. '
+                              'The previous model listener was restored with the same conversation IDs.', 502) from failure
 
     def start_worker(self, fam, cwd, model, effort, name, full=False, fast=None):
         env = base_env()

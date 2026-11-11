@@ -1728,8 +1728,8 @@ class Launcher:
                         # Only idle children exist: every accepted request remains in Reason's queue
                         # until its answer is delivered. Do not signal a suspended process and wait.
                         kill_tree(w['pid'])
-                        if self.alive(w):
-                            raise ValueError('Old listener did not exit; refusing a second writer')
+                        if not self.wait_context_exit(w):
+                            raise ValueError('Listener termination is uncertain; no replacement started. Inspect before retrying.')
                 except Exception as exc:
                     raise LaunchError('Context migration refused: ' + str(exc), 409) from exc
                 return self.replace_context_worker(w, fam, model, effort, full, fast)
@@ -1748,6 +1748,23 @@ class Launcher:
             self.restarting.discard(name)
         self.settle(nw)
         return {"ok": True, "restarted": True}
+
+    def wait_context_exit(self, worker, timeout=3):
+        """Allow delayed process death; POSIX zombies no longer own an inbox/socket."""
+        deadline = time.monotonic() + timeout
+        while self.alive(worker):
+            if not WIN:
+                try:
+                    result = subprocess.run(['ps', '-o', 'stat=', '-p', str(worker['pid'])],
+                                            capture_output=True, timeout=1)
+                    if result.returncode == 0 and result.stdout.strip().startswith(b'Z'):
+                        return True
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(.05)
+        return True
 
     def replace_context_worker(self, old, fam, model, effort, full, fast):
         """Called only after an idle legacy listener was removed with durable resume evidence."""

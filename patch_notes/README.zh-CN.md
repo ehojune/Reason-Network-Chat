@@ -5,6 +5,12 @@
 Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（KST）。
 每一行都链接到对应的 PR；最早的两个提交直接推到了 `main`。
 
+## 2026-11-12
+
+| Time | Change | What changed |
+| --- | --- | --- |
+| 03:20 | [#73](https://github.com/ehojune/Reason-Network-Chat/pull/73) | 恢复未执行工作的 Claude 限额失败及空闲接收器注册错误，不重放消息。 |
+
 ## 2026-11-11
 
 | 时间 | 变更 | 内容 |

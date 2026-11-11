@@ -151,6 +151,8 @@ def discover_loop():
     while True:
         try:
             LAUNCHER.discover()
+            from registration_recovery import tick
+            tick(LAUNCHER)
         except Exception as e:  # a bad pass must not end the loop
             print(f"worker discovery: {e}", file=sys.stderr, flush=True)
         time.sleep(POLL_DISCOVER)

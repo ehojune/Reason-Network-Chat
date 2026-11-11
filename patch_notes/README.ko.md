@@ -5,6 +5,12 @@
 Reason Network Chat에서 바뀐 것을 최신순으로 적는다. 시간은 한국 시간이다.
 줄마다 해당 PR로 연결된다. 처음 두 커밋은 `main`에 바로 올렸다.
 
+## 2026-11-12
+
+| Time | Change | What changed |
+| --- | --- | --- |
+| 03:20 | [#73](https://github.com/ehojune/Reason-Network-Chat/pull/73) | 실행 없는 Claude 한도 오류와 유휴 수신기의 등록 오류를 기존 메시지 재실행 없이 복구. |
+
 ## 2026-11-11
 
 | 시각 | 변경 | 내용 |

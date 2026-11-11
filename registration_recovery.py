@@ -1,5 +1,6 @@
 """Bounded local recovery for proven idle, owned native receivers. No model calls."""
 import json
+import re
 from pathlib import Path
 import time
 
@@ -18,6 +19,7 @@ def registration_error(log):
     # A new receiver or successful reply supersedes old failures.
     count = 0
     for line in lines:
+        line = re.sub(r'\x1b\[[0-9;]*m', '', line)
         if ' takes work on Reason Network ' in line or line.startswith('→ '):
             count = 0
         if line.strip() == ERROR:

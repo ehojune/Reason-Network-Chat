@@ -15,6 +15,8 @@ class RecoveryTests(unittest.TestCase):
             p = Path(directory)/'worker.log'
             p.write_text(rr.ERROR+'\n'+rr.ERROR, encoding='utf-8')
             self.assertTrue(rr.registration_error(p))
+            p.write_text('\x1b[2m'+rr.ERROR+'\x1b[22m\n'+rr.ERROR,encoding='utf-8')
+            self.assertTrue(rr.registration_error(p))
             for suffix in ('\n→ peer 1s · OK', '\n● owner/name takes work on Reason Network · Claude'):
                 p.write_text(rr.ERROR+'\n'+rr.ERROR+suffix, encoding='utf-8')
                 self.assertFalse(rr.registration_error(p))

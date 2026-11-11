@@ -129,6 +129,28 @@ class ContextTests(unittest.TestCase):
         self.turn(message('new'))
         self.assertEqual(len(self.calls),1)
 
+    def test_recover_terminal_text_without_reexecuting_it(self):
+        with self.assertRaises(ValueError):
+            self.turn(execute=lambda *args:1)
+        state=json.loads(cc.peer_path(self.settings,'person/terminal').read_text())
+        transcript=Path(self.tmp.name)/(state['session']+'.jsonl')
+        original=dict(message(),sessionId=state['session'])
+        final={'type':'assistant','sessionId':state['session'],
+               'message':{'model':'real','stop_reason':'end_turn','content':[{'type':'text','text':'saved answer'}]}}
+        def write(events):
+            transcript.write_text('\n'.join(json.dumps(e) for e in events),encoding='utf-8')
+        write([original,final])
+        with self.assertRaises(ValueError):
+            cc.reconcile_quota(self.settings,'person/terminal',transcript)
+        write([original,final,dict(message('new'),sessionId=state['session'])])
+        with self.assertRaises(ValueError):
+            cc.reconcile_text_answer(self.settings,'person/terminal',transcript)
+        write([original,final])
+        self.assertTrue(cc.reconcile_text_answer(self.settings,'person/terminal',transcript))
+        self.turn()
+        self.assertEqual(self.calls,[])
+        self.assertEqual(self.events[-1]['result'],'saved answer')
+
     def test_midturn_settings_change_does_not_interrupt_execution(self):
         def execute(command, request, emit):
             atomic_json(self.settings, {'args': ['--model', 'next']})

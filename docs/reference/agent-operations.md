@@ -81,6 +81,9 @@ failure, while new requests may proceed after the provider recovers. Unknown fai
 For an older quota-held journal, first prove the receiver idle with an empty native inbox, then use
 `claude_context.reconcile_quota(settings, peer, transcript)` under an ingress pause. It requires the exact
 original request and only a synthetic rate-limit response; it archives evidence without replaying old work.
+The same idle/ingress checks apply to `reconcile_text_answer`: only one exact tool-free terminal `end_turn`
+answer can become a cached receipt. It never executes or republishes the old request. Other cases stay held.
+Failed turns retain exit/result diagnostics and a per-conversation stderr log for diagnosis without replay.
 
 The existing discovery loop repairs repeated native registration errors only for owned, idle receivers with
 empty native inbox **and outbox**. It preserves settings and Claude conversation journals, pauses ingress and

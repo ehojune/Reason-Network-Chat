@@ -171,7 +171,10 @@ def prepare_legacy(settings, log, cwd):
             sender = re.sub(r'/ask-[0-9a-f]{6}$', '/ask', match[1])
             peers[sender] = None  # latest request must have a transcript, not an older fallback
         elif sender and line.strip().startswith('transcript '):
-            peers[sender] = Path(line.strip()[11:].replace('~', str(Path.home()), 1))
+            value = line.strip()[11:]
+            if value.startswith(('~/', '~\\')):
+                value = str(Path.home()) + value[1:]
+            peers[sender] = Path(value)
     if not peers:
         raise ValueError('No existing conversation evidence; refusing a context-losing restart')
     expected_cwd = os.path.normcase(os.path.abspath(cwd))

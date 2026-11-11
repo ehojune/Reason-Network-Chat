@@ -123,7 +123,9 @@ class ContextTests(unittest.TestCase):
     def test_legacy_migration_ignores_old_listener_and_allows_tool_cwd_changes(self):
         import uuid
         sid = str(uuid.uuid4())
-        transcript = Path(self.tmp.name) / (sid + '.jsonl')
+        directory = Path(self.tmp.name) / 'RUNNER~1'
+        directory.mkdir()
+        transcript = directory / (sid + '.jsonl')
         first = dict(message(), sessionId=sid, cwd=os.getcwd())
         later = dict(message('m2'), sessionId=sid, cwd=str(Path(os.getcwd()) / 'worktree'))
         transcript.write_text(json.dumps(first) + '\n' + json.dumps(later), encoding='utf-8')

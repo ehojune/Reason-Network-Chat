@@ -31,8 +31,9 @@ def repair(launcher, worker, observe):
     from claude_context import paused_ingress
     from launcher import kill_tree, HOME
     name = worker['name']
-    # operation_lock serializes explicit configuration and recovery, without holding self.lock in settle().
-    with launcher.operation_lock:
+    # The normal operation context locks across processes and reloads shared records.
+    # Do not hold self.lock during settle().
+    with launcher.operation():
         with launcher.lock:
             if launcher.workers.get(name) != worker or name in launcher.restarting or not launcher.alive(worker):
                 raise ValueError('Worker identity changed')

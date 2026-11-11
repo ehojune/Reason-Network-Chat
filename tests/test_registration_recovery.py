@@ -28,6 +28,7 @@ class RecoveryTests(unittest.TestCase):
             launcher = Mock(workers={'test-worker':worker}, records={}, restarting=set(),
                             lock=threading.Lock(), operation_lock=threading.RLock())
             launcher.alive.return_value = True
+            launcher.operation.side_effect = contextlib.nullcontext
             launcher.wait_context_exit.return_value = True
             launcher.start_worker.return_value = dict(worker, pid=43)
             observe = Mock(return_value={'status':'idle', 'pending':[]})
@@ -40,6 +41,7 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(launcher.start_worker.call_args.args[1:],
                              (directory,'fable','high','test-worker',True,None))
             launcher.settle.assert_called_once()
+            launcher.operation.assert_called_once()
 
             # Discovery may know the live identity but only the durable record knows its model.
             discovered = dict(worker, model=None, effort=None)
@@ -56,6 +58,7 @@ class RecoveryTests(unittest.TestCase):
             worker=dict(name='test-worker',pid=42,family='codex')
             launcher=Mock(workers={'test-worker':worker},records={},restarting=set(),lock=threading.Lock(),
                           operation_lock=threading.RLock())
+            launcher.operation.side_effect=contextlib.nullcontext
             for outbox in (False,True):
                 observe=Mock(side_effect=[{'status':'idle','pending':[]}, {'status':'idle','pending':['new']}])
                 if outbox:

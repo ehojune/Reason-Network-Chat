@@ -9,6 +9,7 @@ Reason Network Chat에서 바뀐 것을 최신순으로 적는다. 시간은 한
 
 | 시각 | 변경 | 내용 |
 | --- | --- | --- |
+| 14:54 | [#71](https://github.com/ehojune/Reason-Network-Chat/pull/71) | Windows Claude 수신기의 한글 메시지 인코딩을 UTF-8로 고정. |
 | 14:08 | [#70](https://github.com/ehojune/Reason-Network-Chat/pull/70) | Claude 모델·추론 노력 변경 시 대화 ID를 보존하고 불확실한 턴의 중복 실행을 막음. |
 
 ## 2026-11-06

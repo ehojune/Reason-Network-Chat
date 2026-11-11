@@ -384,15 +384,22 @@ class ConfigureTest(unittest.TestCase):
         from unittest.mock import patch
         import subprocess
         worker = self.l.workers['a-claude']
-        with patch.object(self.l, 'alive', side_effect=[True, True, False]), \
+        with patch('launcher.list_processes', side_effect=[[(worker['pid'],)], [(worker['pid'],)], []]), \
              patch('launcher.WIN', True), patch('launcher.time.sleep') as sleep:
             self.assertTrue(self.l.wait_context_exit(worker))
             self.assertEqual(sleep.call_count, 2)
-        with patch.object(self.l, 'alive', return_value=True), patch('launcher.WIN', False), \
+        with patch('launcher.os.kill'), patch('launcher.WIN', False), \
              patch('launcher.subprocess.run', return_value=subprocess.CompletedProcess([], 0, b'Z', b'')):
             self.assertTrue(self.l.wait_context_exit(worker))
-        with patch.object(self.l, 'alive', return_value=True), patch('launcher.WIN', True):
+        with patch('launcher.list_processes', return_value=[(worker['pid'],)]), patch('launcher.WIN', True):
             self.assertFalse(self.l.wait_context_exit(worker, timeout=0))
+        with patch('launcher.list_processes', return_value=None), patch('launcher.WIN', True):
+            self.assertFalse(self.l.wait_context_exit(worker))
+        with patch('launcher.os.kill'), patch('launcher.WIN', False), \
+             patch('launcher.subprocess.run', side_effect=OSError('ps unavailable')):
+            self.assertFalse(self.l.wait_context_exit(worker))
+        with patch('launcher.os.kill', side_effect=ProcessLookupError), patch('launcher.WIN', False):
+            self.assertTrue(self.l.wait_context_exit(worker))
 
     def test_context_replacement_never_starts_second_uncertain_listener(self):
         from unittest.mock import patch

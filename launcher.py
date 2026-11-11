@@ -1752,19 +1752,30 @@ class Launcher:
     def wait_context_exit(self, worker, timeout=3):
         """Allow delayed process death; POSIX zombies no longer own an inbox/socket."""
         deadline = time.monotonic() + timeout
-        while self.alive(worker):
-            if not WIN:
+        while True:
+            if WIN:
+                processes = list_processes()
+                if processes is None:
+                    return False
+                if not any(p[0] == worker['pid'] for p in processes):
+                    return True
+            else:
+                try:
+                    os.kill(worker['pid'], 0)
+                except ProcessLookupError:
+                    return True
+                except OSError:
+                    return False
                 try:
                     result = subprocess.run(['ps', '-o', 'stat=', '-p', str(worker['pid'])],
                                             capture_output=True, timeout=1)
                     if result.returncode == 0 and result.stdout.strip().startswith(b'Z'):
                         return True
                 except (OSError, subprocess.TimeoutExpired):
-                    pass
+                    return False
             if time.monotonic() >= deadline:
                 return False
             time.sleep(.05)
-        return True
 
     def replace_context_worker(self, old, fam, model, effort, full, fast):
         """Called only after an idle legacy listener was removed with durable resume evidence."""

@@ -111,7 +111,7 @@ def turn(settings, real, args, message, emit, execute=None):
     path = peer_path(settings, peer)
     with file_lock(path.with_suffix('.lock'), timeout=2):
         state = read_state(path, peer, os.path.normcase(os.path.abspath(os.getcwd())))
-        receipt = state['receipts'].get(mid)
+        receipt = state['receipts'].get(mid) or state.get('failures', {}).get(mid)
         if receipt:
             if receipt['digest'] != digest:
                 raise ValueError('Previously answered ID has different contents')
@@ -130,8 +130,10 @@ def turn(settings, real, args, message, emit, execute=None):
         state['pending'] = {'id': mid, 'digest': digest}
         atomic_json(path, state, durable=True)  # before any possible model/tool side effect
         result = None
+        quota = False
+        acted = False
         def consume(event):
-            nonlocal result
+            nonlocal result, quota, acted
             sid = event.get('session_id')
             if sid and sid != state['session']:
                 raise ValueError('Claude resumed a different conversation; request held')
@@ -140,9 +142,32 @@ def turn(settings, real, args, message, emit, execute=None):
                     raise ValueError('Multiple Claude terminal results')
                 result = event
             else:
+                if event.get('type') == 'assistant':
+                    safe_quota = (event.get('error') == 'rate_limit'
+                                  and event.get('message', {}).get('model') == '<synthetic>'
+                                  and all(b.get('type') == 'text' for b in event.get('message', {}).get('content', [])))
+                    quota = quota or safe_quota
+                    acted = acted or not safe_quota
+                if event.get('type') not in ('assistant', 'system', 'rate_limit_event'):
+                    acted = True  # tool results or unexpected conversation input
                 emit(event)
-        code = (execute or run_child)(command, message, consume)
+        try:
+            code = execute(command, message, consume) if execute else run_child(
+                command, message, consume, path.with_suffix('.stderr.log'))
+        except Exception as exc:
+            state['pending']['error'] = str(exc)[:1000]
+            atomic_json(path, state, durable=True)
+            raise
+        if quota and not acted and result and result.get('is_error') and result.get('session_id') == state['session']:
+            state.setdefault('failures', {})[mid] = {'digest': digest, 'result': result,
+                                                    'reason': 'rate_limit', 'noSideEffects': True}
+            state.update(started=True, pending=None)
+            atomic_json(path, state, durable=True)
+            emit(result)  # preserve failure, never report it as successful work or retry it
+            return
         if code != 0 or result is None or result.get('is_error') or result.get('session_id') != state['session']:
+            state['pending'].update(exitCode=code, result=result)
+            atomic_json(path, state, durable=True)
             raise ValueError('Claude did not complete successfully; request held without replay')
         state.update(started=True, pending=None, model=extra)
         state['receipts'][mid] = {'digest': digest, 'result': result}
@@ -150,10 +175,16 @@ def turn(settings, real, args, message, emit, execute=None):
         emit(result)
 
 
-def run_child(command, message, emit):
+def run_child(command, message, emit, error_log=None):
     # This child lasts one turn, not a detached service. EOF ends the stream after this input.
-    child = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                             stderr=None, encoding='utf-8', errors='strict', bufsize=1)
+    error_file = open(error_log, 'w', encoding='utf-8') if error_log else None
+    try:
+        child = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                 stderr=error_file, encoding='utf-8', errors='strict', bufsize=1)
+    except BaseException:
+        if error_file:
+            error_file.close()
+        raise
     try:
         child.stdin.write(json.dumps(message, ensure_ascii=False) + '\n')
         child.stdin.close()
@@ -167,6 +198,8 @@ def run_child(command, message, emit):
         raise
     finally:
         child.stdout.close()
+        if error_file:
+            error_file.close()
 
 
 def run(settings, real, args):
@@ -183,6 +216,66 @@ def run(settings, real, args):
             print('Claude context held: ' + str(exc), file=sys.stderr, flush=True)
             return 1
     return 0
+
+
+def reconcile_quota(settings, peer, transcript):
+    return reconcile_terminal(settings, peer, transcript, quota_only=True)
+
+
+def reconcile_text_answer(settings, peer, transcript):
+    return reconcile_terminal(settings, peer, transcript, quota_only=False)
+
+
+def reconcile_terminal(settings, peer, transcript, quota_only=True):
+    """Operator-only: after proving the receiver idle, archive one proven no-action quota failure.
+
+    Does not replay the old request. Unknown failures and tool execution remain held.
+    """
+    path = peer_path(settings, peer)
+    with file_lock(path.with_suffix('.lock'), timeout=2):
+        state = json.loads(path.read_text(encoding='utf-8'))
+        pending = state.get('pending')
+        if not pending:
+            return False
+        if Path(transcript).stem != state['session']:
+            raise ValueError('Transcript session mismatch')
+        events = [json.loads(line) for line in Path(transcript).read_text(encoding='utf-8').splitlines() if line.strip()]
+        matches = []
+        for i, event in enumerate(events):
+            try:
+                who, mid, digest = identity(event)
+            except ValueError:
+                continue
+            if mid == pending['id']:
+                if who != peer or digest != pending['digest'] or event.get('sessionId') != state['session']:
+                    raise ValueError('Original request evidence mismatch')
+                matches.append(i)
+        if len(matches) != 1:
+            raise ValueError('Expected one exact original request')
+        answer = None
+        is_quota = False
+        count = 0
+        for event in events[matches[0]+1:]:
+            if event.get('type') in ('assistant', 'user'):
+                msg = event.get('message', {})
+                if (event.get('type') != 'assistant' or event.get('sessionId') != state['session']
+                        or not isinstance(msg.get('content'), list)
+                        or not all(b.get('type') == 'text' for b in msg['content'])):
+                    raise ValueError('Work or later conversation exists; manual reconciliation required')
+                is_quota = event.get('error') == 'rate_limit' and msg.get('model') == '<synthetic>'
+                if not is_quota and (quota_only or event.get('error') or msg.get('stop_reason') != 'end_turn'):
+                    raise ValueError('No proven terminal text answer')
+                count += 1
+                answer = '\n'.join(b.get('text', '') for b in msg['content'])
+        if not answer or count != 1:
+            raise ValueError('Expected one terminal response')
+        result = {'type': 'result', 'is_error': is_quota, 'session_id': state['session'], 'result': answer}
+        state.setdefault('failures' if is_quota else 'receipts', {})[pending['id']] = {
+            'digest': pending['digest'], 'result': result, 'reason': 'rate_limit' if is_quota else 'recovered_text', 'noSideEffects': True,
+            'evidence': str(transcript)}
+        state.update(pending=None, started=True)
+        atomic_json(path, state, durable=True)
+        return True
 
 
 def prepare_legacy(settings, log, cwd):

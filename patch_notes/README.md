@@ -5,6 +5,12 @@
 What changed in Reason Network Chat, newest first. Times are KST.
 Each row links to its pull request; the first two commits went straight to `main`.
 
+## 2026-11-12
+
+| Time | Change | What changed |
+| --- | --- | --- |
+| 03:20 | [#73](https://github.com/ehojune/Reason-Network-Chat/pull/73) | Recover proven no-action Claude quota failures and idle receivers with lost registrations without replaying messages. |
+
 ## 2026-11-11
 
 | Time | Change | What changed |

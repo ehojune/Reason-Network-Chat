@@ -88,6 +88,72 @@ class ContextTests(unittest.TestCase):
                 self.turn(msg)
         self.assertEqual(self.calls, [])
 
+    def test_quota_failure_does_not_poison_new_requests_or_replay_old_one(self):
+        def quota(command, request, emit):
+            self.calls.append(command)
+            emit({'type':'assistant', 'error':'rate_limit',
+                  'message':{'model':'<synthetic>', 'content':[{'type':'text','text':'quota'}]}})
+            emit({'type':'result', 'session_id':command[-1], 'is_error':True, 'result':'quota'})
+            return 1
+        self.turn(execute=quota)
+        self.turn()  # same ID returns saved failure without invoking a model
+        self.assertEqual(len(self.calls), 1)
+        self.assertTrue(self.events[-1]['is_error'])
+        self.turn(message('new'))
+        self.assertEqual(len(self.calls), 2)
+
+    def test_quota_after_model_work_remains_held(self):
+        def mixed(command, request, emit):
+            emit({'type':'assistant', 'message':{'model':'real', 'content':[{'type':'tool_use'}]}})
+            emit({'type':'assistant', 'error':'rate_limit', 'message':{'model':'<synthetic>', 'content':[]}})
+            emit({'type':'result', 'session_id':command[-1], 'is_error':True})
+            return 1
+        with self.assertRaisesRegex(ValueError, 'held'):
+            self.turn(execute=mixed)
+        with self.assertRaisesRegex(ValueError, 'Uncertain'):
+            self.turn(message('new'))
+
+    def test_reconcile_only_exact_no_action_quota_transcript(self):
+        with self.assertRaises(ValueError):
+            self.turn(execute=lambda *args:1)
+        path=cc.peer_path(self.settings, 'person/terminal')
+        state=json.loads(path.read_text())
+        transcript=Path(self.tmp.name)/(state['session']+'.jsonl')
+        original=dict(message(), sessionId=state['session'])
+        failure={'type':'assistant','sessionId':state['session'],'error':'rate_limit',
+                 'message':{'model':'<synthetic>','content':[{'type':'text','text':'quota'}]}}
+        transcript.write_text('\n'.join(json.dumps(x) for x in (original, failure)), encoding='utf-8')
+        self.assertTrue(cc.reconcile_quota(self.settings,'person/terminal',transcript))
+        self.turn()  # archived failure is not rerun
+        self.assertEqual(self.calls, [])
+        self.turn(message('new'))
+        self.assertEqual(len(self.calls),1)
+
+    def test_recover_terminal_text_without_reexecuting_it(self):
+        with self.assertRaises(ValueError):
+            self.turn(execute=lambda *args:1)
+        state=json.loads(cc.peer_path(self.settings,'person/terminal').read_text())
+        transcript=Path(self.tmp.name)/(state['session']+'.jsonl')
+        original=dict(message(),sessionId=state['session'])
+        final={'type':'assistant','sessionId':state['session'],
+               'message':{'model':'real','stop_reason':'end_turn','content':[{'type':'text','text':'saved answer'}]}}
+        def write(events):
+            transcript.write_text('\n'.join(json.dumps(e) for e in events),encoding='utf-8')
+        write([original,final])
+        with self.assertRaises(ValueError):
+            cc.reconcile_quota(self.settings,'person/terminal',transcript)
+        write([original,final,dict(message('new'),sessionId=state['session'])])
+        with self.assertRaises(ValueError):
+            cc.reconcile_text_answer(self.settings,'person/terminal',transcript)
+        write([original,final])
+        self.assertTrue(cc.reconcile_text_answer(self.settings,'person/terminal',transcript))
+        self.turn()
+        self.assertEqual(self.calls,[])
+        self.assertEqual(self.events[-1]['result'],'saved answer')
+        self.turn(message('new-after-reconcile'))
+        self.assertIn('--resume',self.calls[-1])
+        self.assertNotIn('--session-id',self.calls[-1])
+
     def test_midturn_settings_change_does_not_interrupt_execution(self):
         def execute(command, request, emit):
             atomic_json(self.settings, {'args': ['--model', 'next']})

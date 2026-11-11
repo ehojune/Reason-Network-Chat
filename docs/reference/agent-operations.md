@@ -76,6 +76,20 @@ new turn; changes during a turn wait for the next input. Claude may compact a la
 `claude-context/NAME` stores conversation IDs, pending intent and completed receipts. Keep it with settings and
 transcripts. An uncertain turn is held, not replayed. Resolve it from the transcript before retrying; never
 delete its pending marker to bypass the hold. Previously completed IDs return their saved answer without tools.
+Explicit terminal quota rejections with no model work are archived as failures: repeated IDs return the same
+failure, while new requests may proceed after the provider recovers. Unknown failures still hold the session.
+For an older quota-held journal, first prove the receiver idle with an empty native inbox, then use
+`claude_context.reconcile_quota(settings, peer, transcript)` under an ingress pause. It requires the exact
+original request and only a synthetic rate-limit response; it archives evidence without replaying old work.
+The same idle/ingress checks apply to `reconcile_text_answer`: only one exact tool-free terminal `end_turn`
+answer can become a cached receipt. It never executes or republishes the old request. Other cases stay held.
+Failed turns retain exit/result diagnostics and a per-conversation stderr log for diagnosis without replay.
+
+The existing discovery loop repairs repeated native registration errors only for owned, idle receivers with
+empty native inbox **and outbox**. It preserves settings and Claude conversation journals, pauses ingress and
+rechecks before replacement. No model calls or new scheduled tasks are created. Attempts are recorded in
+`registration-recovery.json`, at least five minutes apart and capped at three per worker. A restart is recorded
+as awaiting a response, never as proof of healthy model output. Busy/uncertain receivers remain untouched.
 The catalog uses Claude's SDK initialization model list (no model call), with help/cache fallback for older CLIs.
 
 ## Codex Fast mode

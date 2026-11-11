@@ -9,6 +9,7 @@ Each row links to its pull request; the first two commits went straight to `main
 
 | Time | Change | What changed |
 | --- | --- | --- |
+| 14:54 | [#71](https://github.com/ehojune/Reason-Network-Chat/pull/71) | Keep Korean Claude bridge messages in UTF-8 on Windows. |
 | 14:08 | [#70](https://github.com/ehojune/Reason-Network-Chat/pull/70) | Preserve Claude sender conversations when changing model/effort; hold uncertain turns and prevent duplicate execution. |
 
 ## 2026-11-06

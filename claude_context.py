@@ -170,6 +170,9 @@ def run_child(command, message, emit):
 
 
 def run(settings, real, args):
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8')
     def emit(event):
         print(json.dumps(event, ensure_ascii=False), flush=True)
     for line in sys.stdin:

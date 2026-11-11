@@ -9,6 +9,7 @@ Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（
 
 | 时间 | 变更 | 内容 |
 | --- | --- | --- |
+| 14:54 | [#71](https://github.com/ehojune/Reason-Network-Chat/pull/71) | Windows Claude 桥接消息统一使用 UTF-8。 |
 | 14:08 | [#70](https://github.com/ehojune/Reason-Network-Chat/pull/70) | 切换 Claude 模型与推理强度时保留会话 ID，并阻止不确定轮次重复执行。 |
 
 ## 2026-11-06

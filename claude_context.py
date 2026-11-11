@@ -159,9 +159,13 @@ def run(settings, real, args):
 def prepare_legacy(settings, log, cwd):
     """Seed only proven transcript IDs; caller must verify idle and empty native queue first."""
     text = Path(log).read_text(encoding='utf-8', errors='strict')
+    text = re.sub(r'\x1b\[[0-9;]*m', '', text)
     peers = {}
     sender = None
     for line in text.splitlines():
+        if re.match(r'● \S+ takes work on Reason Network ', line):
+            peers, sender = {}, None  # never revive retired conversations from an earlier listener
+            continue
         match = re.match(r'← (\S+) ', line)
         if match:
             sender = re.sub(r'/ask-[0-9a-f]{6}$', '/ask', match[1])
@@ -184,9 +188,11 @@ def prepare_legacy(settings, log, cwd):
                     who, _, _ = identity(event)
                 except ValueError:
                     continue
-                if who != peer or os.path.normcase(os.path.abspath(event.get('cwd', ''))) != expected_cwd:
-                    raise ValueError('Transcript sender or folder mismatch')
-                seen = True
+                if who != peer:
+                    raise ValueError('Transcript sender mismatch')
+                # Claude records later cwd changes made by tools; require an anchor at the launch folder.
+                if os.path.normcase(os.path.abspath(event.get('cwd', ''))) == expected_cwd:
+                    seen = True
         if not seen:
             raise ValueError('Transcript does not prove sender and conversation')
         path = peer_path(settings, peer)

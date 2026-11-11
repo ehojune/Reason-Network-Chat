@@ -112,13 +112,28 @@ class ContextTests(unittest.TestCase):
         original.update(sessionId=sid, cwd=os.getcwd())
         transcript.write_text(json.dumps(original), encoding='utf-8')
         log = Path(self.tmp.name) / 'worker.log'
-        log.write_text(f'← person/terminal request\n  transcript {transcript}\n', encoding='utf-8')
+        log.write_text(f'\x1b[34m←\x1b[39m person/terminal request\n  \x1b[2mtranscript {transcript}\x1b[22m\n', encoding='utf-8')
         cc.prepare_legacy(self.settings, log, os.getcwd())
         self.turn(message('m2'))
         self.assertEqual(self.calls[0][-2:], ['--resume', sid])
         log.write_text(f'← person/wrong request\n  transcript {transcript}\n', encoding='utf-8')
         with self.assertRaisesRegex(ValueError, 'sender'):
             cc.prepare_legacy(self.settings, log, os.getcwd())
+
+    def test_legacy_migration_ignores_old_listener_and_allows_tool_cwd_changes(self):
+        import uuid
+        sid = str(uuid.uuid4())
+        transcript = Path(self.tmp.name) / (sid + '.jsonl')
+        first = dict(message(), sessionId=sid, cwd=os.getcwd())
+        later = dict(message('m2'), sessionId=sid, cwd=str(Path(os.getcwd()) / 'worktree'))
+        transcript.write_text(json.dumps(first) + '\n' + json.dumps(later), encoding='utf-8')
+        log = Path(self.tmp.name) / 'worker.log'
+        log.write_text('← retired/peer old\n  transcript /missing/old.jsonl\n'
+                       '● person/worker takes work on Reason Network · Claude\n'
+                       f'← person/terminal new\n  transcript {transcript}\n', encoding='utf-8')
+        self.assertEqual(cc.prepare_legacy(self.settings, log, os.getcwd()), 1)
+        self.turn(message('m3'))
+        self.assertEqual(self.calls[0][-1], sid)
 
 
 if __name__ == '__main__':

@@ -146,6 +146,17 @@ def run_text(args, timeout):
     return p.stdout.decode("utf-8", "replace") + "\n" + p.stderr.decode("utf-8", "replace")
 
 
+def runtime_ready(path):
+    if not path:
+        return False
+    try:
+        p = subprocess.run([path, '--version'], capture_output=True, timeout=10,
+                           stdin=subprocess.DEVNULL, env=base_env(), creationflags=NOWIN)
+        return p.returncode == 0 and bool(p.stdout.strip())
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 # ---------- catalogs ----------
 
 def toml_top(path, keys):
@@ -222,6 +233,25 @@ def claude_catalog(exe):
         v = o.get("value") if isinstance(o, dict) else None
         if isinstance(v, str) and MODEL_RE.match(v) and all(m["id"] != v for m in models):
             models.append({"id": v, "label": f'{o.get("label") or v} ({v})', "efforts": efforts, "defaultEffort": None})
+    # SDK initialization lists account-supported IDs without a model turn.
+    try:
+        probe = subprocess.run([exe, '-p', '--input-format', 'stream-json', '--output-format', 'stream-json',
+                                '--verbose', '--strict-mcp-config', '--settings', '{"disableAllHooks":true}'],
+            input=json.dumps({'type': 'control_request', 'request_id': 'rnc-models',
+                              'request': {'subtype': 'initialize'}}) + '\n',
+            capture_output=True, text=True, encoding='utf-8', timeout=30, env=base_env())
+        for line in probe.stdout.splitlines():
+            event = json.loads(line)
+            response = event.get('response', {})
+            if event.get('type') != 'control_response' or response.get('request_id') != 'rnc-models':
+                continue
+            for option in response.get('response', {}).get('models', []):
+                for value in (option.get('value'), option.get('resolvedModel')):
+                    if isinstance(value, str) and MODEL_RE.fullmatch(value) and not any(x['id'] == value for x in models):
+                        models.append({'id': value, 'label': f"{option.get('displayName') or value} ({value})",
+                                       'efforts': option.get('supportedEffortLevels') or efforts, 'defaultEffort': None})
+    except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+        pass  # Older CLI: retain its help/cache catalog, never invent model IDs.
     try:
         settings = json.loads((HOME / ".claude" / "settings.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -303,6 +333,10 @@ if env.get("REASON_CHAT_SHIM_SETTINGS"):
         settings = {}
 if not isinstance(extra, list):
     extra = json.loads(env.get("REASON_CHAT_SHIM_ARGS") or env.get("REASON_CHAT_CODEX_ARGS") or "[]")
+native_stream = any(sys.argv[i:i+2] == ["--input-format", "stream-json"] for i in range(1, len(sys.argv)))
+if settings.get("claudeContext") is True and native_stream and not env.get("CLAUDECODE"):
+    from claude_context import run
+    sys.exit(run(env["REASON_CHAT_SHIM_SETTINGS"], real, sys.argv[1:]))
 if env.get("REASON_CHAT_SHIM_SETTINGS"):
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -336,7 +370,7 @@ def _shim_zip():
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:  # fixed timestamp: the same Python gives the same bytes
         z.writestr(zipfile.ZipInfo("__main__.py", date_time=(1980, 1, 1, 0, 0, 0)), SHIM_MAIN)
-        for name in ("inbox_batch.py", "storage.py", "recovery.py", "capacity_probe.py"):
+        for name in ("inbox_batch.py", "storage.py", "recovery.py", "capacity_probe.py", "claude_context.py"):
             z.writestr(zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0)), Path(__file__).with_name(name).read_bytes())
     return buf.getvalue()
 
@@ -374,15 +408,16 @@ def write_settings(path, args):
         atomic_json(path, settings)
 
 
-def shim_current(kind):
+def shim_current(kind, context=False):
     """The shim on disk is this version (it can stay older while a running turn holds the old .exe open)."""
-    target = STATE / f"{kind}-shim" / (f"{kind}.exe" if WIN else kind)
+    folder = STATE / (f"{kind}-context-shim" if context else f"{kind}-shim")
+    target = folder / (f"{kind}.exe" if WIN else kind)
     if not WIN:
-        target = STATE / f"{kind}-shim" / f"{kind}_shim.py"
+        target = folder / f"{kind}_shim.py"
         try:
             return target.read_bytes() == SHIM_MAIN and all(
                 (target.parent / name).read_bytes() == Path(__file__).with_name(name).read_bytes()
-                for name in ("inbox_batch.py", "storage.py", "recovery.py", "capacity_probe.py"))
+                for name in ("inbox_batch.py", "storage.py", "recovery.py", "capacity_probe.py", "claude_context.py"))
         except OSError:
             return False
     try:
@@ -391,11 +426,11 @@ def shim_current(kind):
         return False
 
 
-def shim_dir(kind="codex"):
+def shim_dir(kind="codex", context=False):
     """Folder holding the `codex` or `claude` shim, built on first use; None when it cannot be built."""
     if kind not in SHIM_AGENTS:
         raise ValueError(kind)
-    d = STATE / f"{kind}-shim"
+    d = STATE / (f"{kind}-context-shim" if context else f"{kind}-shim")
     target = d / (f"{kind}.exe" if WIN else kind)
     exe = sys.executable.encode("utf-8")
     extra = []  # (path, bytes) written next to the shim
@@ -410,7 +445,7 @@ def shim_dir(kind="codex"):
         q = lambda b: b"'" + b.replace(b"'", b"'\\''") + b"'"
         main = d / f"{kind}_shim.py"
         extra.append((main, SHIM_MAIN))
-        for name in ("inbox_batch.py", "storage.py", "recovery.py", "capacity_probe.py"):
+        for name in ("inbox_batch.py", "storage.py", "recovery.py", "capacity_probe.py", "claude_context.py"):
             extra.append((d / name, Path(__file__).with_name(name).read_bytes()))
         data = b"#!/bin/sh\nexec " + q(exe) + b" " + q(str(main).encode("utf-8")) + b' "$@"\n'
     try:
@@ -1322,6 +1357,17 @@ class Launcher:
                 # at start, or it has written its log here since it started. A log alone outlives its worker.
                 if ((f["pid"], started) in ours or wrote_our_log(f["name"], started)) and f["name"] not in self.workers:
                     w['fast'] = self.records.get(f['name'], {}).get('fast')
+                    settings = STATE / 'worker-settings' / (f['name'] + '.json')
+                    if f['family'] == 'claude':
+                        try:
+                            saved = json.loads(settings.read_text(encoding='utf-8'))
+                            if (isinstance(saved, dict) and saved.get('claudeContext') is True
+                                    and isinstance(saved.get('args'), list)
+                                    and all(isinstance(a, str) for a in saved['args'])):
+                                w.update(settings=str(settings), claudeContext=True)
+                                w['model'], w['effort'] = model_from_args('claude', saved['args'])
+                        except (OSError, ValueError, TypeError):
+                            pass
                     self.workers[f["name"]] = w
                     self.stopped.discard(f["name"])
                     self.save()
@@ -1380,7 +1426,8 @@ class Launcher:
     @staticmethod
     def live_settings(w):
         """A Codex worker started with a settings file takes a new model or effort with its next message."""
-        return w.get("family") == "codex" and bool(w.get("settings"))
+        return bool(w.get("settings")) and (w.get("family") == "codex" or
+                (w.get("family") == "claude" and w.get("claudeContext") is True))
 
     @worker_operation
     def stop(self, name):
@@ -1652,6 +1699,46 @@ class Launcher:
                 return {"ok": True, "restarted": False}
             if busy and not force:
                 raise LaunchError("It is busy: restarting it now loses the turn it is in.", 409)
+            if w['family'] == 'claude' and same_perm:
+                if not same_perm:
+                    raise LaunchError('Change permissions separately; context migration preserves permissions.', 409)
+                from assignments import live_observer
+                from claude_context import prepare_legacy, paused_ingress
+                try:
+                    observe = live_observer(HOME / '.reason', STATE)
+                    observed = observe(name)
+                    if busy or observed['status'] != 'idle' or observed['pending']:
+                        raise ValueError('Wait for the current turn and native inbox to finish; force is not allowed.')
+                    if not shim_dir('claude', context=True) or not shim_current('claude', context=True):
+                        raise ValueError('Cannot install the context bridge; old worker retained')
+                    runtime = find_claude()
+                    if not runtime_ready(runtime):
+                        raise ValueError('Claude runtime is unavailable; old worker retained')
+                    with paused_ingress(w['pid']):
+                        # No new request can be accepted between this check and replacing the listener.
+                        observed = observe(name)
+                        if observed['status'] != 'idle' or observed['pending']:
+                            raise ValueError('A request arrived during migration; old worker retained')
+                        settings_path = STATE / 'worker-settings' / (name + '.json')
+                        prepare_legacy(settings_path, w['log'], w['cwd'])
+                        with file_lock(settings_path.with_suffix('.lock')):
+                            saved = json.loads(settings_path.read_text(encoding='utf-8'))
+                            saved['claudeContext'] = True
+                            atomic_json(settings_path, saved, durable=True)
+                        # Only idle children exist: every accepted request remains in Reason's queue
+                        # until its answer is delivered. Do not signal a suspended process and wait.
+                        kill_tree(w['pid'])
+                        if not self.wait_context_exit(w):
+                            raise ValueError('Listener termination is uncertain; no replacement started. Inspect before retrying.')
+                except Exception as exc:
+                    raise LaunchError('Context migration refused: ' + str(exc), 409) from exc
+                self.restarting.add(name)
+                self.lock.release()
+                try:
+                    return self.replace_context_worker(w, fam, model, effort, full, fast)
+                finally:
+                    self.lock.acquire()
+                    self.restarting.discard(name)
             # Its record stays in workers.json until the new process replaces it, so a server that stops midway
             # still knows the worker; `restarting` keeps the name taken and its place counted meanwhile.
             self.restarting.add(name)
@@ -1667,6 +1754,64 @@ class Launcher:
             self.restarting.discard(name)
         self.settle(nw)
         return {"ok": True, "restarted": True}
+
+    def wait_context_exit(self, worker, timeout=3):
+        """Allow delayed process death; POSIX zombies no longer own an inbox/socket."""
+        deadline = time.monotonic() + timeout
+        while True:
+            if WIN:
+                processes = list_processes()
+                if processes is None:
+                    return False
+                if not any(p[0] == worker['pid'] for p in processes):
+                    return True
+            else:
+                try:
+                    os.kill(worker['pid'], 0)
+                except ProcessLookupError:
+                    return True
+                except OSError:
+                    return False
+                try:
+                    result = subprocess.run(['ps', '-o', 'stat=', '-p', str(worker['pid'])],
+                                            capture_output=True, timeout=1)
+                    if result.returncode == 0 and result.stdout.strip().startswith(b'Z'):
+                        return True
+                except (OSError, subprocess.TimeoutExpired):
+                    return False
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(.05)
+
+    def replace_context_worker(self, old, fam, model, effort, full, fast):
+        """Called only after an idle legacy listener was removed with durable resume evidence."""
+        name = old['name']
+        def start(m, e, f):
+            worker = self.start_worker(fam, old['cwd'], m, e, name, full, f)
+            self.workers[name] = worker
+            self.save()
+            self.remember(worker)
+            self.settle(worker)
+            return worker
+        try:
+            start(model, effort, fast)
+            return {'ok': True, 'restarted': True}
+        except Exception as failure:
+            # Keep the same sender journals. Never fall back to a new conversation,
+            # kill a possibly busy replacement, or replay a request to repair startup.
+            settings = STATE / 'worker-settings' / (name + '.json')
+            write_settings(settings, model_args('claude', old.get('model') or '', old.get('effort') or ''))
+            running = self.running_serve_names(list_processes())
+            if running is None or name in running:
+                raise LaunchError('Replacement startup could not be verified. Previous model settings restored; '
+                                  'existing processes, messages and context were retained. Inspect the listener before retrying.', 502) from failure
+            try:
+                start(old.get('model') or '', old.get('effort') or '', old.get('fast'))
+            except Exception as recovery:
+                raise LaunchError('Replacement and recovery startup failed. Previous settings, conversation IDs and '
+                                  'inbox are preserved, but this worker needs startup repair: ' + str(recovery), 502) from failure
+            raise LaunchError('Requested settings were not applied: replacement startup failed. '
+                              'The previous model listener was restored with the same conversation IDs.', 502) from failure
 
     def start_worker(self, fam, cwd, model, effort, name, full=False, fast=None):
         env = base_env()
@@ -1697,13 +1842,18 @@ class Launcher:
         dirs = [str(Path(real).parent)]  # the real CLI ahead of any .cmd shim on PATH
         extra = model_args(fid, model, effort, fast)
         settings = None
-        shim = shim_dir(fid)
+        context = False
+        if fid == 'claude':
+            prior_settings = STATE / 'worker-settings' / f'{name}.json'
+            if prior_settings.exists():
+                context = json.loads(prior_settings.read_text(encoding='utf-8')).get('claudeContext') is True
+        shim = shim_dir(fid, context=True) if context else shim_dir(fid)
         if shim:  # always, so a Codex worker can change model later without a restart
             dirs.insert(0, shim)
             # The old names too: a shim from before (still held open by a running turn) reads only those.
             env.update(REASON_CHAT_SHIM_REAL=real, REASON_CHAT_SHIM_ARGS=json.dumps(extra),
                        REASON_CHAT_CODEX_REAL=real, REASON_CHAT_CODEX_ARGS=json.dumps(extra))
-            if shim_current(fid):  # an older shim ignores the settings file: then changes restart the worker
+            if (shim_current(fid, context=True) if context else shim_current(fid)):
                 settings = STATE / "worker-settings" / f"{name}.json"
                 write_settings(settings, extra)
                 env["REASON_CHAT_SHIM_SETTINGS"] = str(settings)
@@ -1718,7 +1868,8 @@ class Launcher:
         record_spawn(name, pid, started)
         return {"name": name, "pid": pid, "started": started, "family": fid,
                 "model": model or None, "effort": effort or None, "cwd": cwd, "log": str(log_path),
-                "fullAccess": full, "fast": fast, "settings": str(settings) if settings else None}
+                "fullAccess": full, "fast": fast, "settings": str(settings) if settings else None,
+                "claudeContext": context}
 
     def open_window(self, fam, cwd, model, effort, full=False, fast=None):
         spawn(window_args(fam["id"], model, effort, full, fast), cwd, base_env(), NEW_CONSOLE)

@@ -305,6 +305,121 @@ class ConfigureTest(unittest.TestCase):
         self.assertTrue(self.conf(name="a-claude", fullAccess=True)["restarted"])
         self.assertEqual(self.restarts, [("claude", "", "", True)])
 
+    def test_context_claude_changes_live_even_when_busy(self):
+        from unittest.mock import patch
+        w = self.l.workers['a-claude']
+        w.update(claudeContext=True, settings=str(self.settings), fullAccess=False)
+        with patch.object(self.l, 'check_model', return_value=(None, 'new-model', 'medium')):
+            result = self.conf(name='a-claude', model='new-model', effort='medium', busy=True)
+        self.assertFalse(result['restarted'])
+        self.assertEqual(self.restarts, [])
+        self.assertEqual(json.loads(self.settings.read_text())['args'], ['--model', 'new-model', '--effort', 'medium'])
+
+    def test_legacy_context_migration_refuses_racing_inbox_even_with_force(self):
+        from contextlib import nullcontext
+        from unittest.mock import patch
+        idle = {'status': 'idle', 'pending': []}
+        queued = {'status': 'idle', 'pending': ['new-message']}
+        with patch.object(self.l, 'check_model', return_value=(None, 'new-model', 'medium')), \
+             patch('assignments.live_observer') as observer, \
+             patch('claude_context.paused_ingress', return_value=nullcontext()), \
+             patch('launcher.shim_dir', return_value='shim'), \
+             patch('launcher.shim_current', return_value=True), \
+             patch('launcher.find_claude', return_value='claude'), \
+             patch('launcher.runtime_ready', return_value=True), \
+             patch('launcher.kill_tree') as kill:
+            observer.return_value.side_effect = [idle, queued]
+            self.bad(409, name='a-claude', model='new-model', effort='medium', force=True)
+            kill.assert_not_called()
+            self.assertEqual(self.restarts, [])
+
+    def test_legacy_context_migration_refuses_missing_transcript_without_killing(self):
+        from contextlib import nullcontext
+        from unittest.mock import patch
+        with patch.object(self.l, 'check_model', return_value=(None, 'new-model', 'medium')), \
+             patch('assignments.live_observer') as observer, \
+             patch('claude_context.paused_ingress', return_value=nullcontext()), \
+             patch('claude_context.prepare_legacy', side_effect=ValueError('missing transcript')), \
+             patch('launcher.shim_dir', return_value='shim'), \
+             patch('launcher.shim_current', return_value=True), \
+             patch('launcher.find_claude', return_value='claude'), \
+             patch('launcher.runtime_ready', return_value=True), \
+             patch('launcher.kill_tree') as kill:
+            observer.return_value.return_value = {'status': 'idle', 'pending': []}
+            self.bad(409, name='a-claude', model='new-model', effort='medium')
+            kill.assert_not_called()
+
+    def test_runtime_error_text_does_not_allow_migration(self):
+        from unittest.mock import patch
+        import subprocess
+        failed = subprocess.CompletedProcess(['claude', '--version'], 1, b'initialization failed', b'error')
+        with patch('launcher.subprocess.run', return_value=failed):
+            self.assertFalse(launcher.runtime_ready('claude'))
+        with patch.object(self.l, 'check_model', return_value=(None, 'new-model', 'medium')), \
+             patch('assignments.live_observer') as observer, \
+             patch('launcher.shim_dir', return_value='shim'), \
+             patch('launcher.shim_current', return_value=True), \
+             patch('launcher.find_claude', return_value='claude'), \
+             patch('launcher.runtime_ready', return_value=False), \
+             patch('launcher.kill_tree') as kill, \
+             patch('claude_context.paused_ingress') as pause:
+            observer.return_value.return_value = {'status': 'idle', 'pending': []}
+            self.bad(409, name='a-claude', model='new-model', effort='medium')
+            kill.assert_not_called()
+            pause.assert_not_called()
+
+    def test_context_replacement_checks_startup_and_recovers_previous_model(self):
+        from unittest.mock import patch
+        old = dict(self.l.workers['a-claude'], model='old', effort='high')
+        self.l.running_serve_names = lambda procs: set()
+        with patch('launcher.list_processes', return_value=[]), \
+             patch.object(self.l, 'settle', side_effect=[launcher.LaunchError('exited', 502), None]) as settle:
+            with self.assertRaisesRegex(launcher.LaunchError, 'previous model listener was restored'):
+                self.l.replace_context_worker(old, self.l.catalog.family('claude'), 'new', 'medium', False, None)
+        self.assertEqual(settle.call_count, 2)
+        self.assertEqual(self.restarts, [('claude', 'new', 'medium', False), ('claude', 'old', 'high', False)])
+        self.assertEqual(self.l.workers['a-claude']['model'], 'old')
+
+    def test_context_exit_waits_and_accepts_dead_posix_zombie(self):
+        from unittest.mock import patch
+        import subprocess
+        worker = self.l.workers['a-claude']
+        with patch('launcher.list_processes', side_effect=[[(worker['pid'],)], [(worker['pid'],)], []]), \
+             patch('launcher.WIN', True), patch('launcher.time.sleep') as sleep:
+            self.assertTrue(self.l.wait_context_exit(worker))
+            self.assertEqual(sleep.call_count, 2)
+        with patch('launcher.os.kill'), patch('launcher.WIN', False), \
+             patch('launcher.subprocess.run', return_value=subprocess.CompletedProcess([], 0, b'Z', b'')):
+            self.assertTrue(self.l.wait_context_exit(worker))
+        with patch('launcher.list_processes', return_value=[(worker['pid'],)]), patch('launcher.WIN', True):
+            self.assertFalse(self.l.wait_context_exit(worker, timeout=0))
+        with patch('launcher.list_processes', return_value=None), patch('launcher.WIN', True):
+            self.assertFalse(self.l.wait_context_exit(worker))
+        with patch('launcher.os.kill'), patch('launcher.WIN', False), \
+             patch('launcher.subprocess.run', side_effect=OSError('ps unavailable')):
+            self.assertFalse(self.l.wait_context_exit(worker))
+        with patch('launcher.os.kill', side_effect=ProcessLookupError), patch('launcher.WIN', False):
+            self.assertTrue(self.l.wait_context_exit(worker))
+
+    def test_context_replacement_never_starts_second_uncertain_listener(self):
+        from unittest.mock import patch
+        old = dict(self.l.workers['a-claude'], model='old', effort='high')
+        self.l.running_serve_names = lambda procs: {'a-claude'}
+        with patch('launcher.list_processes', return_value=[]), \
+             patch.object(self.l, 'start_worker', side_effect=OSError('unknown spawn outcome')) as start:
+            with self.assertRaisesRegex(launcher.LaunchError, 'could not be verified'):
+                self.l.replace_context_worker(old, self.l.catalog.family('claude'), 'new', 'medium', False, None)
+        self.assertEqual(start.call_count, 1)
+
+    def test_context_replacement_reports_recovery_failure_honestly(self):
+        from unittest.mock import patch
+        old = dict(self.l.workers['a-claude'], model='old', effort='high')
+        self.l.running_serve_names = lambda procs: set()
+        with patch('launcher.list_processes', return_value=[]), \
+             patch.object(self.l, 'start_worker', side_effect=OSError('runtime unavailable')):
+            with self.assertRaisesRegex(launcher.LaunchError, 'worker needs startup repair'):
+                self.l.replace_context_worker(old, self.l.catalog.family('claude'), 'new', 'medium', False, None)
+
     def test_during_a_restart(self):
         seen = {}
 
@@ -538,6 +653,19 @@ class DiscoverTest(unittest.TestCase):
         self.l.records['their-codex'] = {'fast': True}
         self.l.discover(self.procs)
         self.assertIsNone(self.l.foreign['their-codex']['fast'])
+
+    def test_owned_rediscovered_claude_recovers_context_settings(self):
+        path = launcher.STATE / 'worker-settings' / 'lost-claude.json'
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(json.dumps({'claudeContext': True,
+                                   'args': ['--model', 'claude-fable-5-2', '--effort', 'high']}), encoding='utf-8')
+        self.addCleanup(path.unlink)
+        self.l.discover(self.procs)
+        worker = self.l.workers['lost-claude']
+        self.assertTrue(worker['claudeContext'])
+        self.assertEqual(worker['settings'], str(path))
+        self.assertTrue(self.l.live_settings(worker))
+        self.assertEqual((worker['model'], worker['effort']), ('claude-fable-5-2', 'high'))
 
     def test_same_name_new_process_is_not_ours(self):
         launcher.ledger_path().write_text("", encoding="utf-8")

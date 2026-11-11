@@ -77,8 +77,12 @@ get the new token, and a newer server also triggers a reload.
 - `POST /api/workers/configure` `{name, model, effort, fast, fullAccess, force}` → changes a worker this server started
   (404 otherwise); model and effort are checked against its family's catalog as for a launch. A Codex worker started
   with a settings file gets the new model/effort/speed written to `worker-settings/<name>.json` and uses it from its next
-  `codex exec` (`{restarted: false}`). A permission change, any Claude change, or a worker from before settings files
-  restarts it: Ctrl+C, a 1 s pause, `serve` again under the same name (`{restarted: true}`). The server asks `who`
+  `codex exec` (`{restarted: false}`). A permission change or an old Codex worker without settings files
+  restarts it: Ctrl+C, a 1 s pause, `serve` again under the same name (`{restarted: true}`). Claude model-only
+  changes instead preserve sender conversation IDs: legacy migration verifies transcripts and idle/empty queues,
+  freezes native ingress for a final check, and replaces only the idle listener. `force` cannot bypass this check.
+  Migrated Claude workers report `liveSettings: true`; later changes apply between turns without restarting.
+  The server asks `who`
   first; a busy worker that needs a restart answers 409 unless `force` is true. `{unchanged: true}` when nothing differs. While it
   restarts, its `workers.json` record stays until the new process replaces it, its name stays taken, it counts
   toward `MAX_WORKERS`, and configure or stop on it answers 409.

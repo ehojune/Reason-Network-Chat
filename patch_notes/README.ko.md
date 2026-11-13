@@ -5,6 +5,12 @@
 Reason Network Chat에서 바뀐 것을 최신순으로 적는다. 시간은 한국 시간이다.
 줄마다 해당 PR로 연결된다. 처음 두 커밋은 `main`에 바로 올렸다.
 
+## 2026-11-13
+
+| 시각 | 변경 | 내용 |
+| --- | --- | --- |
+| 18:40 | [#74](https://github.com/ehojune/Reason-Network-Chat/pull/74) | Claude 백그라운드 작업 알림이 추가 종료 결과를 보내도 원래 답변을 보존하고 작업 재실행 없이 다음 메시지를 받도록 수정했습니다. |
+
 ## 2026-11-12
 
 | Time | Change | What changed |

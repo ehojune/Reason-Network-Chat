@@ -5,6 +5,12 @@
 Reason Network Chat 的变更记录，最新的在前。时间为韩国时间（KST）。
 每一行都链接到对应的 PR；最早的两个提交直接推到了 `main`。
 
+## 2026-11-13
+
+| 时间 | 变更 | 内容 |
+| --- | --- | --- |
+| 18:40 | [#74](https://github.com/ehojune/Reason-Network-Chat/pull/74) | Claude 后台任务通知产生额外结束结果时保留原始回答，不重复执行任务，并允许处理后续消息。 |
+
 ## 2026-11-12
 
 | Time | Change | What changed |

@@ -5,6 +5,12 @@
 What changed in Reason Network Chat, newest first. Times are KST.
 Each row links to its pull request; the first two commits went straight to `main`.
 
+## 2026-11-13
+
+| Time | Change | What changed |
+| --- | --- | --- |
+| 18:40 | [#74](https://github.com/ehojune/Reason-Network-Chat/pull/74) | Preserve Claude's original answer when background task notifications produce additional completion results, without replaying work. |
+
 ## 2026-11-12
 
 | Time | Change | What changed |

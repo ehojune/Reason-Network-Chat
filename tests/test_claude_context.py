@@ -80,6 +80,36 @@ class ContextTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'different contents'):
             self.turn(message(body='changed'))
 
+    def test_background_terminal_preserves_first_answer_and_no_replay(self):
+        def background(command, request, emit):
+            self.calls.append(command)
+            emit({'type':'result','session_id':command[-1],'result':'work complete'})
+            emit({'type':'system','subtype':'task_notification','session_id':command[-1]})
+            emit({'type':'result','session_id':command[-1],'result':'-'})
+            return 0
+        self.turn(execute=background)
+        self.turn()
+        self.assertEqual(len(self.calls),1)
+        self.assertEqual([e['result'] for e in self.events if e['type']=='result'],['work complete','work complete'])
+        state=json.loads(cc.peer_path(self.settings,'person/terminal').read_text())
+        self.assertEqual(len(state['receipts']['m1']['terminalResults']),2)
+        self.assertIsNone(state['pending'])
+        self.turn(message('m2'))
+        self.assertEqual(len(self.calls),2)
+
+    def test_background_failure_or_wrong_session_remains_held(self):
+        for tail in ({'is_error':True},{'session_id':'wrong'}):
+            with self.subTest(tail=tail):
+                path=cc.peer_path(self.settings,'person/terminal')
+                if path.exists(): path.unlink()
+                def background(command, request, emit):
+                    emit({'type':'result','session_id':command[-1],'result':'first'})
+                    emit(dict({'type':'result','session_id':command[-1],'result':'later'},**tail))
+                    return 0
+                with self.assertRaises(ValueError): self.turn(execute=background)
+                self.assertIsNotNone(json.loads(path.read_text())['pending'])
+                with self.assertRaisesRegex(ValueError,'Uncertain'): self.turn(message('m2'))
+
     def test_failed_turn_is_not_replayed_even_for_a_new_message(self):
         with self.assertRaisesRegex(ValueError, 'held'):
             self.turn(execute=lambda *args: 1)

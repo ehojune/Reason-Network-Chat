@@ -130,6 +130,7 @@ def turn(settings, real, args, message, emit, execute=None):
         state['pending'] = {'id': mid, 'digest': digest}
         atomic_json(path, state, durable=True)  # before any possible model/tool side effect
         result = None
+        results = []
         quota = False
         acted = False
         def consume(event):
@@ -138,9 +139,13 @@ def turn(settings, real, args, message, emit, execute=None):
             if sid and sid != state['session']:
                 raise ValueError('Claude resumed a different conversation; request held')
             if event.get('type') == 'result':
-                if result is not None:
-                    raise ValueError('Multiple Claude terminal results')
-                result = event
+                # Background task notifications can finish another turn before EOF.
+                # Preserve the original request's answer, not the later acknowledgement.
+                if event.get('session_id') != state['session']:
+                    raise ValueError('Claude terminal result has no matching conversation')
+                results.append(event)
+                if result is None:
+                    result = event
             else:
                 if event.get('type') == 'assistant':
                     safe_quota = (event.get('error') == 'rate_limit'
@@ -156,6 +161,7 @@ def turn(settings, real, args, message, emit, execute=None):
                 command, message, consume, path.with_suffix('.stderr.log'))
         except Exception as exc:
             state['pending']['error'] = str(exc)[:1000]
+            state['pending']['results'] = results
             atomic_json(path, state, durable=True)
             raise
         if quota and not acted and result and result.get('is_error') and result.get('session_id') == state['session']:
@@ -165,12 +171,12 @@ def turn(settings, real, args, message, emit, execute=None):
             atomic_json(path, state, durable=True)
             emit(result)  # preserve failure, never report it as successful work or retry it
             return
-        if code != 0 or result is None or result.get('is_error') or result.get('session_id') != state['session']:
-            state['pending'].update(exitCode=code, result=result)
+        if code != 0 or result is None or any(r.get('is_error') for r in results) or result.get('session_id') != state['session']:
+            state['pending'].update(exitCode=code, result=result, results=results)
             atomic_json(path, state, durable=True)
             raise ValueError('Claude did not complete successfully; request held without replay')
         state.update(started=True, pending=None, model=extra)
-        state['receipts'][mid] = {'digest': digest, 'result': result}
+        state['receipts'][mid] = {'digest': digest, 'result': result, 'terminalResults': results}
         atomic_json(path, state, durable=True)  # persist answer before Reason can acknowledge it
         emit(result)
 
